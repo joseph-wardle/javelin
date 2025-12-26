@@ -9,4 +9,5 @@ target_sources(javelin
         FILES
             math/vec2.cppm
             math/vec3.cppm
+            math/vec4.cppm
 )

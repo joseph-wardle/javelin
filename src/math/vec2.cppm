@@ -49,7 +49,6 @@ struct Vec2 final {
         return std::isfinite(x) && std::isfinite(y);
     }
 
-    // ---- constants ----
     [[nodiscard]] static constexpr Vec2 zero()   noexcept { return Vec2{0.0f, 0.0f}; }
     [[nodiscard]] static constexpr Vec2 one()    noexcept { return Vec2{1.0f, 1.0f}; }
     [[nodiscard]] static constexpr Vec2 unit_x() noexcept { return Vec2{1.0f, 0.0f}; }

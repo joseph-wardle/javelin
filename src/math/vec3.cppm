@@ -51,7 +51,6 @@ struct Vec3 final {
         return std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
     }
 
-    // Handy constants (kept explicit and discoverable)
     [[nodiscard]] static constexpr Vec3 zero()   noexcept { return Vec3{0.0f, 0.0f, 0.0f}; }
     [[nodiscard]] static constexpr Vec3 one()    noexcept { return Vec3{1.0f, 1.0f, 1.0f}; }
     [[nodiscard]] static constexpr Vec3 unit_x() noexcept { return Vec3{1.0f, 0.0f, 0.0f}; }
@@ -66,7 +65,6 @@ struct Vec3 final {
 [[nodiscard]] constexpr Vec3 operator*(const float s, Vec3 v) noexcept { return v *= s; }
 [[nodiscard]] constexpr Vec3 operator/(Vec3 v, const float s) noexcept { return v /= s; }
 
-// ---- core vector ops ----
 [[nodiscard]] constexpr float dot(const Vec3 a, const Vec3 b) noexcept {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -110,7 +108,6 @@ struct Vec3 final {
     };
 }
 
-// Float comparisons: don’t overload == with “approx”; keep it explicit.
 [[nodiscard]] inline bool approx_equal(const Vec3 a, const Vec3 b, const float eps = 1e-5f) noexcept {
     auto close = [eps](const float u, const float v) noexcept {
         const float diff = std::fabs(u - v);
