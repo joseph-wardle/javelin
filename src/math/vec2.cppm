@@ -15,13 +15,6 @@ struct Vec2 final {
     [[nodiscard]] constexpr float* data() noexcept { return &x; }
     [[nodiscard]] constexpr const float* data() const noexcept { return &x; }
 
-    [[nodiscard]] constexpr float& operator[](const size_t i) noexcept {
-        return data()[i];
-    }
-    [[nodiscard]] constexpr float operator[](const size_t i) const noexcept {
-        return data()[i];
-    }
-
     constexpr Vec2& operator+=(const Vec2 rhs) noexcept { x += rhs.x; y += rhs.y; return *this; }
     constexpr Vec2& operator-=(const Vec2 rhs) noexcept { x -= rhs.x; y -= rhs.y; return *this; }
     constexpr Vec2& operator*=(const float s)  noexcept { x *= s; y *= s; return *this; }
