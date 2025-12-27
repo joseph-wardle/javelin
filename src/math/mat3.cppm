@@ -1,4 +1,4 @@
-export module core.math.mat3;
+export module javelin.math.mat3;
 
 import std;
 
