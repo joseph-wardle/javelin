@@ -10,6 +10,7 @@ target_sources(javelin
             core/types.cppm
             math/mat3.cppm
             math/mat4.cppm
+            math/quaternion.cppm
             math/vec2.cppm
             math/vec3.cppm
             math/vec4.cppm
