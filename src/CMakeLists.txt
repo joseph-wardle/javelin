@@ -7,6 +7,7 @@ target_sources(javelin
         BASE_DIRS
             ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
+            core/types.cppm
             math/vec2.cppm
             math/vec3.cppm
             math/vec4.cppm

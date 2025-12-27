@@ -1,45 +1,47 @@
-export module core.math.vec3;
+export module javelin.math.vec3;
 
 import std;
+
+import javelin.core.types;
 
 export namespace javelin::math {
 
 struct Vec3 final {
-    float x{};
-    float y{};
-    float z{};
+    f32 x{};
+    f32 y{};
+    f32 z{};
 
     constexpr Vec3() noexcept = default;
-    constexpr Vec3(const float x_, const float y_, const float z_) noexcept : x{x_}, y{y_}, z{z_} {}
-    explicit constexpr Vec3(const float s) noexcept : x{s}, y{s}, z{s} {}
+    constexpr Vec3(const f32 x_, const f32 y_, const f32 z_) noexcept : x{x_}, y{y_}, z{z_} {}
+    explicit constexpr Vec3(const f32 s) noexcept : x{s}, y{s}, z{s} {}
 
-    [[nodiscard]] constexpr float* data() noexcept { return &x; }
-    [[nodiscard]] constexpr const float* data() const noexcept { return &x; }
+    [[nodiscard]] constexpr f32* data() noexcept { return &x; }
+    [[nodiscard]] constexpr const f32* data() const noexcept { return &x; }
 
     constexpr Vec3& operator+=(const Vec3 rhs) noexcept { x += rhs.x; y += rhs.y; z += rhs.z; return *this; }
     constexpr Vec3& operator-=(const Vec3 rhs) noexcept { x -= rhs.x; y -= rhs.y; z -= rhs.z; return *this; }
-    constexpr Vec3& operator*=(const float s) noexcept  { x *= s; y *= s; z *= s; return *this; }
-    constexpr Vec3& operator/=(const float s) noexcept  { const float inv = 1.0f / s; x *= inv; y *= inv; z *= inv; return *this; }
+    constexpr Vec3& operator*=(const f32 s) noexcept  { x *= s; y *= s; z *= s; return *this; }
+    constexpr Vec3& operator/=(const f32 s) noexcept  { const f32 inv = 1.0f / s; x *= inv; y *= inv; z *= inv; return *this; }
 
     [[nodiscard]] constexpr Vec3 operator-() const noexcept { return Vec3{-x, -y, -z}; }
 
-    [[nodiscard]] constexpr float length_sq() const noexcept { return x * x + y * y + z * z; }
+    [[nodiscard]] constexpr f32 length_sq() const noexcept { return x * x + y * y + z * z; }
 
-    [[nodiscard]] float length() const noexcept { return std::sqrt(length_sq()); }
+    [[nodiscard]] f32 length() const noexcept { return std::sqrt(length_sq()); }
 
-    bool try_normalize(const float eps = 1e-8f) noexcept {
-        const float len2 = length_sq();
-        if (const float eps2 = eps * eps; len2 <= eps2) {
+    bool try_normalize(const f32 eps = 1e-8f) noexcept {
+        const f32 len2 = length_sq();
+        if (const f32 eps2 = eps * eps; len2 <= eps2) {
             return false;
         }
-        const float inv_len = 1.0f / std::sqrt(len2);
+        const f32 inv_len = 1.0f / std::sqrt(len2);
         x *= inv_len;
         y *= inv_len;
         z *= inv_len;
         return true;
     }
 
-    [[nodiscard]] Vec3 normalized_or_zero(const float eps = 1e-8f) const noexcept {
+    [[nodiscard]] Vec3 normalized_or_zero(const f32 eps = 1e-8f) const noexcept {
         Vec3 v = *this;
         if (!v.try_normalize(eps)) {
             return Vec3{};
@@ -61,11 +63,11 @@ struct Vec3 final {
 [[nodiscard]] constexpr Vec3 operator+(Vec3 a, const Vec3 b) noexcept { return a += b; }
 [[nodiscard]] constexpr Vec3 operator-(Vec3 a, const Vec3 b) noexcept { return a -= b; }
 
-[[nodiscard]] constexpr Vec3 operator*(Vec3 v, const float s) noexcept { return v *= s; }
-[[nodiscard]] constexpr Vec3 operator*(const float s, Vec3 v) noexcept { return v *= s; }
-[[nodiscard]] constexpr Vec3 operator/(Vec3 v, const float s) noexcept { return v /= s; }
+[[nodiscard]] constexpr Vec3 operator*(Vec3 v, const f32 s) noexcept { return v *= s; }
+[[nodiscard]] constexpr Vec3 operator*(const f32 s, Vec3 v) noexcept { return v *= s; }
+[[nodiscard]] constexpr Vec3 operator/(Vec3 v, const f32 s) noexcept { return v /= s; }
 
-[[nodiscard]] constexpr float dot(const Vec3 a, const Vec3 b) noexcept {
+[[nodiscard]] constexpr f32 dot(const Vec3 a, const Vec3 b) noexcept {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
@@ -81,16 +83,16 @@ struct Vec3 final {
     return Vec3{a.x * b.x, a.y * b.y, a.z * b.z};
 }
 
-[[nodiscard]] constexpr float distance_sq(const Vec3 a, const Vec3 b) noexcept {
+[[nodiscard]] constexpr f32 distance_sq(const Vec3 a, const Vec3 b) noexcept {
     const Vec3 d = a - b;
     return d.length_sq();
 }
 
-[[nodiscard]] float distance(const Vec3 a, const Vec3 b) noexcept {
+[[nodiscard]] f32 distance(const Vec3 a, const Vec3 b) noexcept {
     return std::sqrt(distance_sq(a, b));
 }
 
-[[nodiscard]] constexpr Vec3 lerp(const Vec3 a, const Vec3 b, const float t) noexcept {
+[[nodiscard]] constexpr Vec3 lerp(const Vec3 a, const Vec3 b, const f32 t) noexcept {
     return a + (b - a) * t;
 }
 
@@ -108,10 +110,10 @@ struct Vec3 final {
     };
 }
 
-[[nodiscard]] inline bool approx_equal(const Vec3 a, const Vec3 b, const float eps = 1e-5f) noexcept {
-    auto close = [eps](const float u, const float v) noexcept {
-        const float diff = std::fabs(u - v);
-        const float scale = std::max(1.0f, std::max(std::fabs(u), std::fabs(v)));
+[[nodiscard]] inline bool approx_equal(const Vec3 a, const Vec3 b, const f32 eps = 1e-5f) noexcept {
+    auto close = [eps](const f32 u, const f32 v) noexcept {
+        const f32 diff = std::fabs(u - v);
+        const f32 scale = std::max(1.0f, std::max(std::fabs(u), std::fabs(v)));
         return diff <= eps * scale;
     };
     return close(a.x, b.x) && close(a.y, b.y) && close(a.z, b.z);
