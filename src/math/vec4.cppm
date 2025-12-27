@@ -20,6 +20,9 @@ struct Vec4 final {
     [[nodiscard]] constexpr f32* data() noexcept { return &x; }
     [[nodiscard]] constexpr const f32* data() const noexcept { return &x; }
 
+    [[nodiscard]] constexpr float& operator[](const usize i) noexcept { return data()[i]; }
+    [[nodiscard]] constexpr float  operator[](const usize i) const noexcept { return data()[i]; }
+
     constexpr Vec4& operator+=(const Vec4 rhs) noexcept { x += rhs.x; y += rhs.y; z += rhs.z; w += rhs.w; return *this; }
     constexpr Vec4& operator-=(const Vec4 rhs) noexcept { x -= rhs.x; y -= rhs.y; z -= rhs.z; w -= rhs.w; return *this; }
     constexpr Vec4& operator*=(const f32 s) noexcept  { x *= s; y *= s; z *= s; w *= s; return *this; }
