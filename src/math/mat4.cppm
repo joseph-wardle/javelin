@@ -42,8 +42,7 @@ struct Mat4 final {
     [[nodiscard]] constexpr f32 operator()(const usize row, const usize col) const noexcept { return (&c0)[col][row]; }
 
     [[nodiscard]] constexpr Vec4 col(const usize i) const noexcept { return (&c0)[i]; }
-    [[nodiscard]] constexpr Vec4 row(const usize i) const noexcept { return Vec4{(*this)(i, 0), (*this)(i, 1), (*this)(i, 2), (*this)(i, 3)};
-    }
+    [[nodiscard]] constexpr Vec4 row(const usize i) const noexcept { return Vec4{(*this)(i, 0), (*this)(i, 1), (*this)(i, 2), (*this)(i, 3)}; }
 
     [[nodiscard]] bool is_finite() const noexcept {
         return c0.is_finite() && c1.is_finite() && c2.is_finite() && c3.is_finite();
@@ -245,4 +244,4 @@ namespace detail {
     );
 }
 
-} // namespace core::math
+} // namespace javelin::math

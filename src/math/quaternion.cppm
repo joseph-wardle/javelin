@@ -1,4 +1,4 @@
-export module core.math.quat;
+export module javelin.math.quat;
 
 import std;
 
@@ -205,4 +205,4 @@ struct Quat final {
     return (a * w0 + b * w1).normalized_or_identity();
 }
 
-} // namespace core::math
+} // namespace javelin::math

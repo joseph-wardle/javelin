@@ -8,6 +8,7 @@ target_sources(javelin
             ${CMAKE_CURRENT_SOURCE_DIR}
         FILES
             core/types.cppm
+            math/constants.cppm
             math/mat3.cppm
             math/mat4.cppm
             math/quaternion.cppm

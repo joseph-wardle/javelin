@@ -19,4 +19,4 @@ namespace javelin {
 
     export using f32 = float;
     export using f64 = double;
-}
+} // namespace javelin

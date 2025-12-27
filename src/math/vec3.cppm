@@ -18,8 +18,8 @@ struct Vec3 final {
     [[nodiscard]] constexpr f32* data() noexcept { return &x; }
     [[nodiscard]] constexpr const f32* data() const noexcept { return &x; }
 
-    [[nodiscard]] constexpr float& operator[](const usize i) noexcept { return data()[i]; }
-    [[nodiscard]] constexpr float  operator[](const usize i) const noexcept { return data()[i]; }
+    [[nodiscard]] constexpr f32& operator[](const usize i) noexcept { return data()[i]; }
+    [[nodiscard]] constexpr f32  operator[](const usize i) const noexcept { return data()[i]; }
 
     constexpr Vec3& operator+=(const Vec3 rhs) noexcept { x += rhs.x; y += rhs.y; z += rhs.z; return *this; }
     constexpr Vec3& operator-=(const Vec3 rhs) noexcept { x -= rhs.x; y -= rhs.y; z -= rhs.z; return *this; }
