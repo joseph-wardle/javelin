@@ -6,7 +6,7 @@ import javelin.core.types;
 export import javelin.math.vec3;
 export import javelin.math.mat3;
 
-export namespace javelin::math {
+export namespace javelin {
 
 struct Quat final {
     f32 x{};

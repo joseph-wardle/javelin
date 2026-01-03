@@ -2,7 +2,7 @@ export module javelin.math.constants;
 
 import javelin.core.types;
 
-export namespace javelin::math {
+export namespace javelin {
     constexpr f32 PI         = 3.14159265358979323846f;
     constexpr f32 TWO_PI     = 6.28318530717958647692f;
     constexpr f32 HALF_PI    = 1.57079632679489661923f;

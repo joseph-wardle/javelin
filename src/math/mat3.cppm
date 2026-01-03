@@ -5,7 +5,7 @@ import std;
 import javelin.core.types;
 export import javelin.math.vec3;
 
-export namespace javelin::math {
+export namespace javelin {
 
 struct Mat3 final {
     // Column-major: columns are basis vectors.

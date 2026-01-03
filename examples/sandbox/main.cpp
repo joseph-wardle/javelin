@@ -20,24 +20,23 @@ int main() {
     log::error("This is a error log");
     log::critical("This is a critical log");
 
-
-    auto a = math::Vec2(1.0f, 2.0f);
+    auto a = Vec2(1.0f, 2.0f);
     log::info("Vec2 a: ({}, {})", a.x, a.y);
-    auto b = math::Vec2(3.0f, 4.0f);
+    auto b = Vec2(3.0f, 4.0f);
     log::info("Vec2 b: ({}, {})", b.x, b.y);
-    math::Vec2 c = a + b;
+    Vec2 c = a + b;
     log::info("Vec2 c = a + b: ({}, {})", c.x, c.y);
 
-    auto u = math::Vec3(1.0f, 0.0f, 0.0f);
+    auto u = Vec3(1.0f, 0.0f, 0.0f);
     log::info("Vec3 u: ({}, {}, {})", u.x, u.y, u.z);
-    auto v = math::Vec3(0.0f, 1.0f, 0.0f);
+    auto v = Vec3(0.0f, 1.0f, 0.0f);
     log::info("Vec3 v: ({}, {}, {})", v.x, v.y, v.z);
-    math::Vec3 w = math::cross(u, v);
+    Vec3 w = cross(u, v);
     log::info("Vec3 w = cross(u, v): ({}, {}, {})", w.x, w.y, w.z);
 
-    auto q = math::Quat::identity();
+    auto q = Quat::identity();
     log::info("Quat q (identity): ({}, {}, {}, {})", q.x, q.y, q.z, q.w);
-    math::Vec3 rotated_v = math::rotate(q, v);
+    Vec3 rotated_v = rotate(q, v);
     log::info("Rotated v by q: ({}, {}, {})", rotated_v.x, rotated_v.y, rotated_v.z);
 
     return 0;

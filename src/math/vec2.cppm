@@ -4,7 +4,7 @@ import std;
 
 import javelin.core.types;
 
-export namespace javelin::math {
+export namespace javelin {
 
 struct Vec2 final {
     f32 x{};

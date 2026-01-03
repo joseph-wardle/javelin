@@ -7,7 +7,7 @@ export import javelin.math.vec3;
 export import javelin.math.vec4;
 export import javelin.math.mat3;
 
-export namespace javelin::math {
+export namespace javelin {
 
 struct Mat4 final {
     // Column-major: columns are basis + translation.
