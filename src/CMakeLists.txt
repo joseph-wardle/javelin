@@ -1,7 +1,7 @@
 include_guard(GLOBAL)
 
-# Canonical source lists live here (and only here).
 set(JAVELIN_MODULE_REL
+        core/logging.cppm
         core/types.cppm
         math/constants.cppm
         math/mat3.cppm
@@ -39,7 +39,6 @@ function(javelin_attach_sources target)
             ${cpp_abs}
     )
 
-    # Helpful once you start having non-module includes or C deps:
     target_include_directories(${target} PUBLIC "${src_dir}")
 endfunction()
 
