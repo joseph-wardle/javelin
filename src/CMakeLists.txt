@@ -10,7 +10,9 @@ target_sources(javelin
         FILE_SET javelin_modules
         TYPE CXX_MODULES
         FILES
+            core/app.cppm
             core/logging.cppm
+            core/time.cppm
             core/types.cppm
             math/constants.cppm
             math/mat3.cppm
@@ -19,6 +21,10 @@ target_sources(javelin
             math/vec2.cppm
             math/vec3.cppm
             math/vec4.cppm
+            physics/physics_system.cppm
+            platform/platform.cppm
+            render/render_system.cppm
+            scene/scene.cppm
 )
 
 
