@@ -1,6 +1,6 @@
 function(javelin_add_example_from_dir dir)
     get_filename_component(name "${dir}" NAME)
-    set(target "javelin_example_${name}")
+    set(target "javelin_${name}")
 
     add_executable(${target})
     target_sources(${target} PRIVATE "${dir}/main.cpp")

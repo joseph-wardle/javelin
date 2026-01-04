@@ -129,4 +129,4 @@ struct Vec4 final {
     return close(a.x, b.x) && close(a.y, b.y) && close(a.z, b.z) && close(a.w, b.w);
 }
 
-} // namespace javelin::math
+} // namespace javelin

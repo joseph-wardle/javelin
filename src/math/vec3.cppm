@@ -122,4 +122,4 @@ struct Vec3 final {
     return close(a.x, b.x) && close(a.y, b.y) && close(a.z, b.z);
 }
 
-} // namespace javelin::math
+} // namespace javelin

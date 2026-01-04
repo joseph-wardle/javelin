@@ -145,4 +145,4 @@ struct Mat3 final {
     return transpose(*inv);
 }
 
-} // namespace javelin::math
+} // namespace javelin

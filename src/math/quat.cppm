@@ -205,4 +205,4 @@ struct Quat final {
     return (a * w0 + b * w1).normalized_or_identity();
 }
 
-} // namespace javelin::math
+} // namespace javelin

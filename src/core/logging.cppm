@@ -1,3 +1,9 @@
+module;
+
+#if defined(TRACY_ENABLE)
+    #include <tracy/Tracy.hpp>
+#endif
+
 export module javelin.core.logging;
 
 import std;
@@ -23,8 +29,8 @@ enum class Level : u8 { trace = 0, debug, info, warn, error, critical, off };
 #if !defined(JAVELIN_LOG_LEVEL)
 inline constexpr auto compile_time_level = Level::info;
 #else
-static_assert(JAVELIN_LOG_LEVEL >= 0, "JAVELIN_LOG_LEVEL must be in [0, 6].");
-static_assert(JAVELIN_LOG_LEVEL <= 6, "JAVELIN_LOG_LEVEL must be in [0, 6].");
+static_assert(JAVELIN_LOG_LEVEL >= 0);
+static_assert(JAVELIN_LOG_LEVEL <= 6);
 inline constexpr Level compile_time_level = static_cast<Level>(JAVELIN_LOG_LEVEL);
 #endif
 
@@ -38,14 +44,23 @@ namespace detail {
         return t0;
     }
 
-    inline void default_sink(std::string_view s) {
+    inline void default_sink(std::string_view s) noexcept {
         std::cerr.write(s.data(), static_cast<std::streamsize>(s.size()));
     }
 
-    inline std::atomic g_sink{&default_sink};
+    inline std::atomic<Sink> g_sink{&default_sink};
 
     [[nodiscard]] inline Sink sink() noexcept {
         return g_sink.load(std::memory_order_acquire);
+    }
+
+    inline void tracy_message(const Level lvl, std::string_view s) noexcept {
+#if defined(TRACY_ENABLE)
+        TracyMessage(s.data(), s.size());
+#else
+        (void)lvl;
+        (void)s;
+#endif
     }
 } // namespace detail
 
@@ -65,35 +80,19 @@ void log(std::format_string<Args...> fmt, Args&&... args) {
     line.clear();
     line.reserve(256);
 
-    std::format_to(std::back_inserter(line), "[{:>8} ms] [{:^7}] ", ms, to_string(level));
+    std::format_to(std::back_inserter(line), "[{:>6} ms] [{:^6}] ", ms, to_string(level));
     std::format_to(std::back_inserter(line), fmt, std::forward<Args>(args)...);
     line.push_back('\n');
 
+    detail::tracy_message(level, line);
     detail::sink()(line);
 }
 
-template<class... A>
-void trace(std::format_string<A...> f, A&&... a)
-{ log<Level::trace>(f, std::forward<A>(a)...); }
-
-template<class... A>
-void debug(std::format_string<A...> f, A&&... a)
-{ log<Level::debug>(f, std::forward<A>(a)...); }
-
-template<class... A>
-void info(std::format_string<A...> f, A&&... a)
-{ log<Level::info>(f, std::forward<A>(a)...); }
-
-template<class... A>
-void warn(std::format_string<A...> f, A&&... a)
-{ log<Level::warn>(f, std::forward<A>(a)...); }
-
-template<class... A>
-void error(std::format_string<A...> f, A&&... a)
-{ log<Level::error>(f, std::forward<A>(a)...); }
-
-template<class... A>
-void critical(std::format_string<A...> f, A&&... a)
-{ log<Level::critical>(f, std::forward<A>(a)...); }
+template<class... A> void trace(std::format_string<A...> f, A&&... a) { log<Level::trace>(f, std::forward<A>(a)...); }
+template<class... A> void debug(std::format_string<A...> f, A&&... a) { log<Level::debug>(f, std::forward<A>(a)...); }
+template<class... A> void info (std::format_string<A...> f, A&&... a) { log<Level::info >(f, std::forward<A>(a)...); }
+template<class... A> void warn (std::format_string<A...> f, A&&... a) { log<Level::warn >(f, std::forward<A>(a)...); }
+template<class... A> void error(std::format_string<A...> f, A&&... a) { log<Level::error>(f, std::forward<A>(a)...); }
+template<class... A> void critical(std::format_string<A...> f, A&&... a) { log<Level::critical>(f, std::forward<A>(a)...); }
 
 } // namespace javelin::log

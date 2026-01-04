@@ -115,4 +115,4 @@ struct Vec2 final {
     return close(a.x, b.x) && close(a.y, b.y);
 }
 
-} // namespace javelin::math
+} // namespace javelin

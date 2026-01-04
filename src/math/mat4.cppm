@@ -244,4 +244,4 @@ namespace detail {
     );
 }
 
-} // namespace javelin::math
+} // namespace javelin
