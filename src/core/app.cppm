@@ -1,11 +1,11 @@
 export module javelin.core.app;
 
+import std;
 import javelin.core.time;
 import javelin.physics.physics_system;
 import javelin.platform;
 import javelin.render.render_system;
 import javelin.scene;
-#include <filesystem>
 
 export namespace javelin {
     struct App {
