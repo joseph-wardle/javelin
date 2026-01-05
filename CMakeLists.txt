@@ -19,7 +19,7 @@ set(CMAKE_EXPERIMENTAL_CXX_MODULE_DYNDEP 1)
 
 option(JAVELIN_BUILD_EXAMPLES "Build example executables." ON)
 option(JAVELIN_ENABLE_TESTS   "Build unit/integration tests."  OFF)
-option(JAVELIN_ENABLE_TRACY   "Enable Tracy instrumentation."  OFF)
+option(JAVELIN_ENABLE_TRACY   "Enable Tracy instrumentation."  ON)
 
 project(javelin VERSION 0.1.0 LANGUAGES CXX C)
 

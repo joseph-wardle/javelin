@@ -7,8 +7,7 @@ using namespace javelin;
 
 int main() {
     App app {};
-    app.init("");
-    app.run();
+    app.run("This should be a path to a scene file, but is temp for now");
 
     return 0;
 }

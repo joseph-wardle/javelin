@@ -1,13 +1,19 @@
 export module javelin.platform;
 
+export import javelin.platform.window;
+
 import javelin.core.types;
 
 export namespace javelin {
-    struct Platform {
+    struct Platform final {
         void init() {}
-        [[nodiscard]] bool quit_requested() const { return false; }
+        [[nodiscard]] WindowHandle window_handle() const noexcept { return window_; }
+        [[nodiscard]] bool quit_requested() const { return quit_; }
         void poll_events() {}
-        [[nodiscard]] f64 time_seconds() const { return 0.016; }
         void shutdown() {}
+
+    private:
+        WindowHandle window_{};
+        bool quit_{false};
     };
 }

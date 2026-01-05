@@ -1,3 +1,7 @@
+module;
+
+#include <tracy/Tracy.hpp>
+
 export module javelin.core.app;
 
 import std;
@@ -13,38 +17,30 @@ export namespace javelin {
         RenderSystem renderer;
         PhysicsSystem physics;
         Scene scene;
-        FixedStepClock clock;
 
-        void init(const std::filesystem::path& scene_path) {
+        void run(const std::filesystem::path& scene_path) {
+            ZoneScoped;
             platform.init();
-            renderer.init();
-            physics.init();
 
             scene = load_scene_from_disk(scene_path);
 
-            physics.build_runtime(scene);
-            renderer.build_runtime(scene);
-        }
+            renderer.init(scene);                      // CPU only
+            renderer.start(platform.window_handle());  // spawn render thread
 
-        void run() {
+            physics.init(scene);  // CPU-only
+            physics.start();      // spawn physics thread
+
             while (!platform.quit_requested()) {
+                ZoneScopedN("Main");
                 platform.poll_events();
-                // scene.presentation.camera.publish(platform.camera_state()); gonna need better input handling
 
-                clock.advance(platform.time_seconds());
+                // build actions here later
 
-                while (clock.consume_step()) {
-                    physics.step(clock.delta());
-                    //physics.publish_snapshot(scene.presentation); // needs to be atomic
-                }
-
-                shutdown();
+                FrameMarkNamed("App");
             }
-        }
 
-        void shutdown() {
-            renderer.shutdown();
-            physics.shutdown();
+            physics.stop();
+            renderer.stop();
             platform.shutdown();
         }
     };

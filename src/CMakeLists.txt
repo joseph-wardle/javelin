@@ -23,6 +23,7 @@ target_sources(javelin
             math/vec4.cppm
             physics/physics_system.cppm
             platform/platform.cppm
+            platform/window.cppm
             render/render_system.cppm
             scene/scene.cppm
 )
