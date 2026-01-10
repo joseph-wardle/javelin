@@ -1,12 +1,12 @@
 module;
 
 #include <tracy/Tracy.hpp>
-#include <immintrin.h> // _mm_pause
 
 export module javelin.physics.physics_system;
 
 import std;
-import javelin.core.logging;
+import javelin.core.time;
+import javelin.core.types;
 import javelin.scene;
 
 export namespace javelin {
@@ -17,43 +17,29 @@ export namespace javelin {
         void start() {
             if (thread_.joinable()) return;
 
-            thread_ = std::jthread([this](std::stop_token st) {
+            thread_ = std::jthread([this](const std::stop_token& stop_token) {
                 tracy::SetThreadName("Physics");
-                // ZoneScopedN("Physics thread");
 
-                using clock = std::chrono::steady_clock;
-
-                const auto step = std::chrono::duration_cast<clock::duration>(
-                    std::chrono::duration<double>(fixed_dt_seconds_)
+                constexpr auto delta_time = std::chrono::duration_cast<SteadyClock::duration>(
+                    std::chrono::duration<f64>(1.0 / 60.0)
                 );
+                FixedRateTicker ticker{delta_time};
 
-                auto next = clock::now();
-                auto prev = next;
+                while (!stop_token.stop_requested()) {
+                    const auto t = ticker.wait_next(stop_token);
 
-                while (!st.stop_requested()) {
-                    next += step;
-
-                    while (clock::now() < next) {
-                        if (st.stop_requested()) return;
-                        _mm_pause(); // busy-wait hint (x86_64)
-                    }
-
-                    const auto now = clock::now();
-                    const double wall_dt = std::chrono::duration<double>(now - prev).count();
-                    prev = now;
-
-                    if (wall_dt > 0.0) TracyPlot("physics_hz", 1.0 / wall_dt);
+                    TracyPlot("physics_tick_interval_error_us", t.interval_error_us);
 
                     {
                         ZoneScopedN("Physics tick");
-                        // TODO: drain actions
-                        // TODO: step simulation
-                        // TODO: publish snapshot
-                        log::info("Physics tick");
+                        // step_simulation_fixed(1.0 / 60.0);
+                        // publish_snapshot();
                     }
 
                     FrameMarkNamed("Physics");
                 }
+
+
             });
         }
 
@@ -65,7 +51,6 @@ export namespace javelin {
 
     private:
         Scene* scene_{nullptr};
-        double fixed_dt_seconds_{1.0 / 60.0};
         std::jthread thread_{};
     };
 

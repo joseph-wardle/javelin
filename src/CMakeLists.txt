@@ -33,3 +33,5 @@ if(JAVELIN_ENABLE_TRACY)
     target_compile_definitions(javelin PUBLIC TRACY_ENABLE)
     target_link_libraries(javelin PRIVATE TracyClient)
 endif()
+
+target_link_libraries(javelin PRIVATE glad glfw imgui)

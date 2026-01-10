@@ -93,6 +93,6 @@ template<class... A> void debug(std::format_string<A...> f, A&&... a) { log<Leve
 template<class... A> void info (std::format_string<A...> f, A&&... a) { log<Level::info >(f, std::forward<A>(a)...); }
 template<class... A> void warn (std::format_string<A...> f, A&&... a) { log<Level::warn >(f, std::forward<A>(a)...); }
 template<class... A> void error(std::format_string<A...> f, A&&... a) { log<Level::error>(f, std::forward<A>(a)...); }
-template<class... A> void critical(std::format_string<A...> f, A&&... a) { log<Level::critical>(f, std::forward<A>(a)...); }
+template<class... A> void critical(std::format_string<A...> f, A&&... a) { log<Level::critical>(f, std::forward<A>(a)...); std::exit(1); }
 
 } // namespace javelin::log

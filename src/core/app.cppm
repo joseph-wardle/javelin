@@ -5,43 +5,56 @@ module;
 export module javelin.core.app;
 
 import std;
-import javelin.core.time;
 import javelin.physics.physics_system;
 import javelin.platform;
 import javelin.render.render_system;
 import javelin.scene;
 
 export namespace javelin {
-    struct App {
-        Platform platform;
-        RenderSystem renderer;
-        PhysicsSystem physics;
-        Scene scene;
+
+    struct App final {
+        Platform      platform{};
+        RenderSystem  renderer{};
+        PhysicsSystem physics{};
+        Scene         scene{};
 
         void run(const std::filesystem::path& scene_path) {
+            tracy::SetThreadName("Main");
             ZoneScoped;
-            platform.init();
 
+            platform.init();
             scene = load_scene_from_disk(scene_path);
 
-            renderer.init(scene);                      // CPU only
-            renderer.start(platform.window_handle());  // spawn render thread
+            renderer.init_cpu(scene);
+            renderer.init_gpu(platform.window_handle());
 
-            physics.init(scene);  // CPU-only
-            physics.start();      // spawn physics thread
+            physics.init(scene);
+            physics.start();
+
+            using clock = std::chrono::steady_clock;
+            auto prev = clock::now();
 
             while (!platform.quit_requested()) {
-                ZoneScopedN("Main");
+                ZoneScopedN("Frame");
+
                 platform.poll_events();
 
-                // build actions here later
+                const auto now = clock::now();
+                const double dt = std::chrono::duration<double>(now - prev).count();
+                prev = now;
 
-                FrameMarkNamed("App");
+                // TODO: build Actions from input (and optionally push commands/settings to physics)
+                // actions = input.map(platform.input_state());
+
+                renderer.render_frame(dt);
+
+                FrameMark;
             }
 
             physics.stop();
-            renderer.stop();
+            renderer.shutdown();
             platform.shutdown();
         }
     };
-}
+
+} // namespace javelin

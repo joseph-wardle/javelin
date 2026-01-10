@@ -4,10 +4,16 @@ function(javelin_add_example_from_dir dir)
 
     add_executable(${target})
     target_sources(${target} PRIVATE "${dir}/main.cpp")
-    target_link_libraries(${target} PRIVATE javelin::javelin)
 
-    target_link_libraries(${target} PRIVATE glfw glad::glad)
+    target_link_libraries(${target}
+            PRIVATE
+            javelin::javelin
+            glfw
+            glad::glad
+            imgui::imgui
+    )
 endfunction()
+
 
 file(GLOB _example_mains CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/*/main.cpp"
