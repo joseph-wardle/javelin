@@ -17,16 +17,41 @@ struct Vec4 final {
 
     explicit constexpr Vec4(const f32 s) noexcept : x{s}, y{s}, z{s}, w{s} {}
 
-    [[nodiscard]] constexpr f32* data() noexcept { return &x; }
-    [[nodiscard]] constexpr const f32* data() const noexcept { return &x; }
+    [[nodiscard]] constexpr f32 *data() noexcept { return &x; }
+    [[nodiscard]] constexpr const f32 *data() const noexcept { return &x; }
 
-    [[nodiscard]] constexpr f32& operator[](const usize i) noexcept { return data()[i]; }
-    [[nodiscard]] constexpr f32  operator[](const usize i) const noexcept { return data()[i]; }
+    [[nodiscard]] constexpr f32 &operator[](const usize i) noexcept { return data()[i]; }
+    [[nodiscard]] constexpr f32 operator[](const usize i) const noexcept { return data()[i]; }
 
-    constexpr Vec4& operator+=(const Vec4 rhs) noexcept { x += rhs.x; y += rhs.y; z += rhs.z; w += rhs.w; return *this; }
-    constexpr Vec4& operator-=(const Vec4 rhs) noexcept { x -= rhs.x; y -= rhs.y; z -= rhs.z; w -= rhs.w; return *this; }
-    constexpr Vec4& operator*=(const f32 s) noexcept  { x *= s; y *= s; z *= s; w *= s; return *this; }
-    constexpr Vec4& operator/=(const f32 s) noexcept  { const f32 inv = 1.0f / s; x *= inv; y *= inv; z *= inv; w *= inv; return *this; }
+    constexpr Vec4 &operator+=(const Vec4 rhs) noexcept {
+        x += rhs.x;
+        y += rhs.y;
+        z += rhs.z;
+        w += rhs.w;
+        return *this;
+    }
+    constexpr Vec4 &operator-=(const Vec4 rhs) noexcept {
+        x -= rhs.x;
+        y -= rhs.y;
+        z -= rhs.z;
+        w -= rhs.w;
+        return *this;
+    }
+    constexpr Vec4 &operator*=(const f32 s) noexcept {
+        x *= s;
+        y *= s;
+        z *= s;
+        w *= s;
+        return *this;
+    }
+    constexpr Vec4 &operator/=(const f32 s) noexcept {
+        const f32 inv = 1.0f / s;
+        x *= inv;
+        y *= inv;
+        z *= inv;
+        w *= inv;
+        return *this;
+    }
 
     [[nodiscard]] constexpr Vec4 operator-() const noexcept { return Vec4{-x, -y, -z, -w}; }
 
@@ -59,8 +84,8 @@ struct Vec4 final {
         return std::isfinite(x) && std::isfinite(y) && std::isfinite(z) && std::isfinite(w);
     }
 
-    [[nodiscard]] static constexpr Vec4 zero()   noexcept { return Vec4{0.0f, 0.0f, 0.0f, 0.0f}; }
-    [[nodiscard]] static constexpr Vec4 one()    noexcept { return Vec4{1.0f, 1.0f, 1.0f, 1.0f}; }
+    [[nodiscard]] static constexpr Vec4 zero() noexcept { return Vec4{0.0f, 0.0f, 0.0f, 0.0f}; }
+    [[nodiscard]] static constexpr Vec4 one() noexcept { return Vec4{1.0f, 1.0f, 1.0f, 1.0f}; }
     [[nodiscard]] static constexpr Vec4 unit_x() noexcept { return Vec4{1.0f, 0.0f, 0.0f, 0.0f}; }
     [[nodiscard]] static constexpr Vec4 unit_y() noexcept { return Vec4{0.0f, 1.0f, 0.0f, 0.0f}; }
     [[nodiscard]] static constexpr Vec4 unit_z() noexcept { return Vec4{0.0f, 0.0f, 1.0f, 0.0f}; }
@@ -87,13 +112,9 @@ struct Vec4 final {
     return d.length_sq();
 }
 
-[[nodiscard]] f32 distance(const Vec4 a, const Vec4 b) noexcept {
-    return std::sqrt(distance_sq(a, b));
-}
+[[nodiscard]] f32 distance(const Vec4 a, const Vec4 b) noexcept { return std::sqrt(distance_sq(a, b)); }
 
-[[nodiscard]] constexpr Vec4 lerp(const Vec4 a, const Vec4 b, const f32 t) noexcept {
-    return a + (b - a) * t;
-}
+[[nodiscard]] constexpr Vec4 lerp(const Vec4 a, const Vec4 b, const f32 t) noexcept { return a + (b - a) * t; }
 
 [[nodiscard]] constexpr Vec4 min(const Vec4 a, const Vec4 b) noexcept {
     return Vec4{

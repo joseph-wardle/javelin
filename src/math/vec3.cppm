@@ -15,16 +15,37 @@ struct Vec3 final {
     constexpr Vec3(const f32 x_, const f32 y_, const f32 z_) noexcept : x{x_}, y{y_}, z{z_} {}
     explicit constexpr Vec3(const f32 s) noexcept : x{s}, y{s}, z{s} {}
 
-    [[nodiscard]] constexpr f32* data() noexcept { return &x; }
-    [[nodiscard]] constexpr const f32* data() const noexcept { return &x; }
+    [[nodiscard]] constexpr f32 *data() noexcept { return &x; }
+    [[nodiscard]] constexpr const f32 *data() const noexcept { return &x; }
 
-    [[nodiscard]] constexpr f32& operator[](const usize i) noexcept { return data()[i]; }
-    [[nodiscard]] constexpr f32  operator[](const usize i) const noexcept { return data()[i]; }
+    [[nodiscard]] constexpr f32 &operator[](const usize i) noexcept { return data()[i]; }
+    [[nodiscard]] constexpr f32 operator[](const usize i) const noexcept { return data()[i]; }
 
-    constexpr Vec3& operator+=(const Vec3 rhs) noexcept { x += rhs.x; y += rhs.y; z += rhs.z; return *this; }
-    constexpr Vec3& operator-=(const Vec3 rhs) noexcept { x -= rhs.x; y -= rhs.y; z -= rhs.z; return *this; }
-    constexpr Vec3& operator*=(const f32 s) noexcept  { x *= s; y *= s; z *= s; return *this; }
-    constexpr Vec3& operator/=(const f32 s) noexcept  { const f32 inv = 1.0f / s; x *= inv; y *= inv; z *= inv; return *this; }
+    constexpr Vec3 &operator+=(const Vec3 rhs) noexcept {
+        x += rhs.x;
+        y += rhs.y;
+        z += rhs.z;
+        return *this;
+    }
+    constexpr Vec3 &operator-=(const Vec3 rhs) noexcept {
+        x -= rhs.x;
+        y -= rhs.y;
+        z -= rhs.z;
+        return *this;
+    }
+    constexpr Vec3 &operator*=(const f32 s) noexcept {
+        x *= s;
+        y *= s;
+        z *= s;
+        return *this;
+    }
+    constexpr Vec3 &operator/=(const f32 s) noexcept {
+        const f32 inv = 1.0f / s;
+        x *= inv;
+        y *= inv;
+        z *= inv;
+        return *this;
+    }
 
     [[nodiscard]] constexpr Vec3 operator-() const noexcept { return Vec3{-x, -y, -z}; }
 
@@ -52,12 +73,10 @@ struct Vec3 final {
         return v;
     }
 
-    [[nodiscard]] bool is_finite() const noexcept {
-        return std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
-    }
+    [[nodiscard]] bool is_finite() const noexcept { return std::isfinite(x) && std::isfinite(y) && std::isfinite(z); }
 
-    [[nodiscard]] static constexpr Vec3 zero()   noexcept { return Vec3{0.0f, 0.0f, 0.0f}; }
-    [[nodiscard]] static constexpr Vec3 one()    noexcept { return Vec3{1.0f, 1.0f, 1.0f}; }
+    [[nodiscard]] static constexpr Vec3 zero() noexcept { return Vec3{0.0f, 0.0f, 0.0f}; }
+    [[nodiscard]] static constexpr Vec3 one() noexcept { return Vec3{1.0f, 1.0f, 1.0f}; }
     [[nodiscard]] static constexpr Vec3 unit_x() noexcept { return Vec3{1.0f, 0.0f, 0.0f}; }
     [[nodiscard]] static constexpr Vec3 unit_y() noexcept { return Vec3{0.0f, 1.0f, 0.0f}; }
     [[nodiscard]] static constexpr Vec3 unit_z() noexcept { return Vec3{0.0f, 0.0f, 1.0f}; }
@@ -70,9 +89,7 @@ struct Vec3 final {
 [[nodiscard]] constexpr Vec3 operator*(const f32 s, Vec3 v) noexcept { return v *= s; }
 [[nodiscard]] constexpr Vec3 operator/(Vec3 v, const f32 s) noexcept { return v /= s; }
 
-[[nodiscard]] constexpr f32 dot(const Vec3 a, const Vec3 b) noexcept {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
+[[nodiscard]] constexpr f32 dot(const Vec3 a, const Vec3 b) noexcept { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
 [[nodiscard]] constexpr Vec3 cross(const Vec3 a, const Vec3 b) noexcept {
     return Vec3{
@@ -91,19 +108,15 @@ struct Vec3 final {
     return d.length_sq();
 }
 
-[[nodiscard]] f32 distance(const Vec3 a, const Vec3 b) noexcept {
-    return std::sqrt(distance_sq(a, b));
-}
+[[nodiscard]] f32 distance(const Vec3 a, const Vec3 b) noexcept { return std::sqrt(distance_sq(a, b)); }
 
-[[nodiscard]] constexpr Vec3 lerp(const Vec3 a, const Vec3 b, const f32 t) noexcept {
-    return a + (b - a) * t;
-}
+[[nodiscard]] constexpr Vec3 lerp(const Vec3 a, const Vec3 b, const f32 t) noexcept { return a + (b - a) * t; }
 
 [[nodiscard]] constexpr Vec3 min(const Vec3 a, const Vec3 b) noexcept {
-    return Vec3{ std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z) };
+    return Vec3{std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z)};
 }
 [[nodiscard]] constexpr Vec3 max(const Vec3 a, const Vec3 b) noexcept {
-    return Vec3{ std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z) };
+    return Vec3{std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z)};
 }
 [[nodiscard]] constexpr Vec3 clamp(const Vec3 v, const Vec3 lo, const Vec3 hi) noexcept {
     return Vec3{

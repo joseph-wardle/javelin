@@ -20,7 +20,7 @@ struct Mat3 final {
     [[nodiscard]] static constexpr Mat3 identity() noexcept { return Mat3{}; }
 
     [[nodiscard]] static constexpr Mat3 diagonal(const f32 d0, const f32 d1, const f32 d2) noexcept {
-        return Mat3{ Vec3{d0, 0.0f, 0.0f}, Vec3{0.0f, d1, 0.0f}, Vec3{0.0f, 0.0f, d2} };
+        return Mat3{Vec3{d0, 0.0f, 0.0f}, Vec3{0.0f, d1, 0.0f}, Vec3{0.0f, 0.0f, d2}};
     }
 
     [[nodiscard]] static constexpr Mat3 from_columns(const Vec3 c0_, const Vec3 c1_, const Vec3 c2_) noexcept {
@@ -35,56 +35,36 @@ struct Mat3 final {
         };
     }
 
-    [[nodiscard]] constexpr f32* data() noexcept { return &c0.x; }
-    [[nodiscard]] constexpr const f32* data() const noexcept { return &c0.x; }
+    [[nodiscard]] constexpr f32 *data() noexcept { return &c0.x; }
+    [[nodiscard]] constexpr const f32 *data() const noexcept { return &c0.x; }
 
-    [[nodiscard]] constexpr f32& operator()(const usize row, const usize col) noexcept {
-        return (&c0)[col][row];
-    }
-    [[nodiscard]] constexpr f32 operator()(const usize row, const usize col) const noexcept {
-        return (&c0)[col][row];
-    }
+    [[nodiscard]] constexpr f32 &operator()(const usize row, const usize col) noexcept { return (&c0)[col][row]; }
+    [[nodiscard]] constexpr f32 operator()(const usize row, const usize col) const noexcept { return (&c0)[col][row]; }
 
-    [[nodiscard]] constexpr Vec3 col(const usize i) const noexcept {
-        return (&c0)[i];
-    }
+    [[nodiscard]] constexpr Vec3 col(const usize i) const noexcept { return (&c0)[i]; }
 
     [[nodiscard]] constexpr Vec3 row(const usize i) const noexcept {
         return Vec3{(*this)(i, 0), (*this)(i, 1), (*this)(i, 2)};
     }
 
-    [[nodiscard]] bool is_finite() const noexcept {
-        return c0.is_finite() && c1.is_finite() && c2.is_finite();
-    }
+    [[nodiscard]] bool is_finite() const noexcept { return c0.is_finite() && c1.is_finite() && c2.is_finite(); }
 
     [[nodiscard]] static Mat3 rotation_x(const f32 radians) noexcept {
         const f32 s = std::sin(radians);
         const f32 c = std::cos(radians);
-        return from_rows(
-            Vec3{1.0f, 0.0f, 0.0f},
-            Vec3{0.0f,    c,   -s},
-            Vec3{0.0f,    s,    c}
-        );
+        return from_rows(Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, c, -s}, Vec3{0.0f, s, c});
     }
 
     [[nodiscard]] static Mat3 rotation_y(const f32 radians) noexcept {
         const f32 s = std::sin(radians);
         const f32 c = std::cos(radians);
-        return from_rows(
-            Vec3{   c, 0.0f,    s},
-            Vec3{0.0f, 1.0f, 0.0f},
-            Vec3{  -s, 0.0f,    c}
-        );
+        return from_rows(Vec3{c, 0.0f, s}, Vec3{0.0f, 1.0f, 0.0f}, Vec3{-s, 0.0f, c});
     }
 
     [[nodiscard]] static Mat3 rotation_z(const f32 radians) noexcept {
         const f32 s = std::sin(radians);
         const f32 c = std::cos(radians);
-        return from_rows(
-            Vec3{   c,  -s,  0.0f},
-            Vec3{   s,   c,  0.0f},
-            Vec3{0.0f, 0.0f, 1.0f}
-        );
+        return from_rows(Vec3{c, -s, 0.0f}, Vec3{s, c, 0.0f}, Vec3{0.0f, 0.0f, 1.0f});
     }
 };
 
@@ -101,16 +81,10 @@ struct Mat3 final {
     return Mat3::from_columns(a * b.c0, a * b.c1, a * b.c2);
 }
 
-[[nodiscard]] constexpr f32 determinant(const Mat3 &m) noexcept {
-    return dot(m.c0, cross(m.c1, m.c2));
-}
+[[nodiscard]] constexpr f32 determinant(const Mat3 &m) noexcept { return dot(m.c0, cross(m.c1, m.c2)); }
 
 [[nodiscard]] constexpr Mat3 transpose(const Mat3 &m) noexcept {
-    return Mat3::from_rows(
-        Vec3{m.c0.x, m.c1.x, m.c2.x},
-        Vec3{m.c0.y, m.c1.y, m.c2.y},
-        Vec3{m.c0.z, m.c1.z, m.c2.z}
-    );
+    return Mat3::from_rows(Vec3{m.c0.x, m.c1.x, m.c2.x}, Vec3{m.c0.y, m.c1.y, m.c2.y}, Vec3{m.c0.z, m.c1.z, m.c2.z});
 }
 
 [[nodiscard]] inline std::optional<Mat3> try_inverse(const Mat3 &m, const f32 eps = 1e-8f) noexcept {

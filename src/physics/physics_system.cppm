@@ -11,47 +11,46 @@ import javelin.scene;
 
 export namespace javelin {
 
-    struct PhysicsSystem final {
-        void init(Scene& scene) noexcept { scene_ = &scene; }
+struct PhysicsSystem final {
+    void init(Scene &scene) noexcept { scene_ = &scene; }
 
-        void start() {
-            if (thread_.joinable()) return;
+    void start() {
+        if (thread_.joinable())
+            return;
 
-            thread_ = std::jthread([this](const std::stop_token& stop_token) {
-                tracy::SetThreadName("Physics");
+        thread_ = std::jthread([this](const std::stop_token &stop_token) {
+            tracy::SetThreadName("Physics");
 
-                constexpr auto delta_time = std::chrono::duration_cast<SteadyClock::duration>(
-                    std::chrono::duration<f64>(1.0 / 60.0)
-                );
-                FixedRateTicker ticker{delta_time};
+            constexpr auto delta_time =
+                std::chrono::duration_cast<SteadyClock::duration>(std::chrono::duration<f64>(1.0 / 60.0));
+            FixedRateTicker ticker{delta_time};
 
-                while (!stop_token.stop_requested()) {
-                    const auto t = ticker.wait_next(stop_token);
+            while (!stop_token.stop_requested()) {
+                const auto t = ticker.wait_next(stop_token);
 
-                    TracyPlot("physics_tick_interval_error_us", t.interval_error_us);
+                TracyPlot("physics_tick_interval_error_us", t.interval_error_us);
 
-                    {
-                        ZoneScopedN("Physics tick");
-                        // step_simulation_fixed(1.0 / 60.0);
-                        // publish_snapshot();
-                    }
-
-                    FrameMarkNamed("Physics");
+                {
+                    ZoneScopedN("Physics tick");
+                    // step_simulation_fixed(1.0 / 60.0);
+                    // publish_snapshot();
                 }
 
+                FrameMarkNamed("Physics");
+            }
+        });
+    }
 
-            });
-        }
+    void stop() noexcept {
+        if (!thread_.joinable())
+            return;
+        thread_.request_stop();
+        thread_.join();
+    }
 
-        void stop() noexcept {
-            if (!thread_.joinable()) return;
-            thread_.request_stop();
-            thread_.join();
-        }
-
-    private:
-        Scene* scene_{nullptr};
-        std::jthread thread_{};
-    };
+  private:
+    Scene *scene_{nullptr};
+    std::jthread thread_{};
+};
 
 } // namespace javelin

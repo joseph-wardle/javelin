@@ -3,12 +3,12 @@ module;
 #include <tracy/Tracy.hpp>
 
 #define GLFW_INCLUDE_NONE
-#include <glad/gl.h>
 #include <GLFW/glfw3.h>
+#include <glad/gl.h>
 
-#include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
+#include <imgui.h>
 
 export module javelin.render.render_system;
 
@@ -20,7 +20,7 @@ import javelin.platform.window;
 export namespace javelin {
 
 struct RenderSystem final {
-    void init_cpu(const Scene& scene) noexcept {
+    void init_cpu(const Scene &scene) noexcept {
         scene_ = &scene;
         // TODO: build CPU-side render runtime:
         // - mesh/material registries
@@ -53,7 +53,8 @@ struct RenderSystem final {
             TracyPlot("render_dt_ms", dt * 1000.0);
         }
 
-        if (!gpu_ready_) return;
+        if (!gpu_ready_)
+            return;
 
         // --- ImGui frame ---
         {
@@ -106,7 +107,7 @@ struct RenderSystem final {
         window_ = {};
     }
 
-private:
+  private:
     void init_imgui_() const {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -117,14 +118,15 @@ private:
     }
 
     static void shutdown_imgui_() noexcept {
-        if (ImGui::GetCurrentContext() == nullptr) return;
+        if (ImGui::GetCurrentContext() == nullptr)
+            return;
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext();
     }
 
-private:
-    const Scene* scene_ = nullptr;
+  private:
+    const Scene *scene_ = nullptr;
     WindowHandle window_{};
 
     bool gpu_ready_ = false;

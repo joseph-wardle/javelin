@@ -1,7 +1,7 @@
 module;
 
 #if defined(TRACY_ENABLE)
-    #include <tracy/Tracy.hpp>
+#include <tracy/Tracy.hpp>
 #endif
 
 export module javelin.core.logging;
@@ -15,13 +15,20 @@ enum class Level : u8 { trace = 0, debug, info, warn, error, critical, off };
 
 [[nodiscard]] consteval std::string_view to_string(const Level level) noexcept {
     switch (level) {
-        case Level::trace:    return "TRACE";
-        case Level::debug:    return "DEBUG";
-        case Level::info:     return "INFO";
-        case Level::warn:     return "WARN";
-        case Level::error:    return "ERROR";
-        case Level::critical: return "CRIT";
-        case Level::off:      return "OFF";
+    case Level::trace:
+        return "TRACE";
+    case Level::debug:
+        return "DEBUG";
+    case Level::info:
+        return "INFO";
+    case Level::warn:
+        return "WARN";
+    case Level::error:
+        return "ERROR";
+    case Level::critical:
+        return "CRIT";
+    case Level::off:
+        return "OFF";
     }
     return "UNKNOWN";
 }
@@ -34,47 +41,44 @@ static_assert(JAVELIN_LOG_LEVEL <= 6);
 inline constexpr Level compile_time_level = static_cast<Level>(JAVELIN_LOG_LEVEL);
 #endif
 
-using Sink = void(*)(std::string_view);
+using Sink = void (*)(std::string_view);
 
 namespace detail {
-    using clock = std::chrono::steady_clock;
+using clock = std::chrono::steady_clock;
 
-    [[nodiscard]] inline const clock::time_point& start_time() noexcept {
-        static const clock::time_point t0 = clock::now();
-        return t0;
-    }
+[[nodiscard]] inline const clock::time_point &start_time() noexcept {
+    static const clock::time_point t0 = clock::now();
+    return t0;
+}
 
-    inline void default_sink(std::string_view s) noexcept {
-        std::cerr.write(s.data(), static_cast<std::streamsize>(s.size()));
-    }
+inline void default_sink(std::string_view s) noexcept {
+    std::cerr.write(s.data(), static_cast<std::streamsize>(s.size()));
+}
 
-    inline std::atomic<Sink> g_sink{&default_sink};
+inline std::atomic<Sink> g_sink{&default_sink};
 
-    [[nodiscard]] inline Sink sink() noexcept {
-        return g_sink.load(std::memory_order_acquire);
-    }
+[[nodiscard]] inline Sink sink() noexcept { return g_sink.load(std::memory_order_acquire); }
 
-    inline void tracy_message(const Level lvl, std::string_view s) noexcept {
+inline void tracy_message(const Level lvl, std::string_view s) noexcept {
 #if defined(TRACY_ENABLE)
-        TracyMessage(s.data(), s.size());
+    TracyMessage(s.data(), s.size());
 #else
-        (void)lvl;
-        (void)s;
+    (void)lvl;
+    (void)s;
 #endif
-    }
+}
 } // namespace detail
 
 inline void set_sink(const Sink s) noexcept {
     detail::g_sink.store(s ? s : &detail::default_sink, std::memory_order_release);
 }
 
-template<Level level, class... Args>
-void log(std::format_string<Args...> fmt, Args&&... args) {
-    if constexpr (level < compile_time_level) return;
+template <Level level, class... Args> void log(std::format_string<Args...> fmt, Args &&...args) {
+    if constexpr (level < compile_time_level)
+        return;
 
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        detail::clock::now() - detail::start_time()
-    ).count();
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(detail::clock::now() - detail::start_time()).count();
 
     thread_local std::string line;
     line.clear();
@@ -88,11 +92,14 @@ void log(std::format_string<Args...> fmt, Args&&... args) {
     detail::sink()(line);
 }
 
-template<class... A> void trace(std::format_string<A...> f, A&&... a) { log<Level::trace>(f, std::forward<A>(a)...); }
-template<class... A> void debug(std::format_string<A...> f, A&&... a) { log<Level::debug>(f, std::forward<A>(a)...); }
-template<class... A> void info (std::format_string<A...> f, A&&... a) { log<Level::info >(f, std::forward<A>(a)...); }
-template<class... A> void warn (std::format_string<A...> f, A&&... a) { log<Level::warn >(f, std::forward<A>(a)...); }
-template<class... A> void error(std::format_string<A...> f, A&&... a) { log<Level::error>(f, std::forward<A>(a)...); }
-template<class... A> void critical(std::format_string<A...> f, A&&... a) { log<Level::critical>(f, std::forward<A>(a)...); std::exit(1); }
+template <class... A> void trace(std::format_string<A...> f, A &&...a) { log<Level::trace>(f, std::forward<A>(a)...); }
+template <class... A> void debug(std::format_string<A...> f, A &&...a) { log<Level::debug>(f, std::forward<A>(a)...); }
+template <class... A> void info(std::format_string<A...> f, A &&...a) { log<Level::info>(f, std::forward<A>(a)...); }
+template <class... A> void warn(std::format_string<A...> f, A &&...a) { log<Level::warn>(f, std::forward<A>(a)...); }
+template <class... A> void error(std::format_string<A...> f, A &&...a) { log<Level::error>(f, std::forward<A>(a)...); }
+template <class... A> void critical(std::format_string<A...> f, A &&...a) {
+    log<Level::critical>(f, std::forward<A>(a)...);
+    std::exit(1);
+}
 
 } // namespace javelin::log

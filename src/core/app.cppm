@@ -12,49 +12,49 @@ import javelin.scene;
 
 export namespace javelin {
 
-    struct App final {
-        Platform      platform{};
-        RenderSystem  renderer{};
-        PhysicsSystem physics{};
-        Scene         scene{};
+struct App final {
+    Platform platform{};
+    RenderSystem renderer{};
+    PhysicsSystem physics{};
+    Scene scene{};
 
-        void run(const std::filesystem::path& scene_path) {
-            tracy::SetThreadName("Main");
-            ZoneScoped;
+    void run(const std::filesystem::path &scene_path) {
+        tracy::SetThreadName("Main");
+        ZoneScoped;
 
-            platform.init();
-            scene = load_scene_from_disk(scene_path);
+        platform.init();
+        scene = load_scene_from_disk(scene_path);
 
-            renderer.init_cpu(scene);
-            renderer.init_gpu(platform.window_handle());
+        renderer.init_cpu(scene);
+        renderer.init_gpu(platform.window_handle());
 
-            physics.init(scene);
-            physics.start();
+        physics.init(scene);
+        physics.start();
 
-            using clock = std::chrono::steady_clock;
-            auto prev = clock::now();
+        using clock = std::chrono::steady_clock;
+        auto prev = clock::now();
 
-            while (!platform.quit_requested()) {
-                ZoneScopedN("Frame");
+        while (!platform.quit_requested()) {
+            ZoneScopedN("Frame");
 
-                platform.poll_events();
+            platform.poll_events();
 
-                const auto now = clock::now();
-                const double dt = std::chrono::duration<double>(now - prev).count();
-                prev = now;
+            const auto now = clock::now();
+            const double dt = std::chrono::duration<double>(now - prev).count();
+            prev = now;
 
-                // TODO: build Actions from input (and optionally push commands/settings to physics)
-                // actions = input.map(platform.input_state());
+            // TODO: build Actions from input (and optionally push commands/settings to physics)
+            // actions = input.map(platform.input_state());
 
-                renderer.render_frame(dt);
+            renderer.render_frame(dt);
 
-                FrameMark;
-            }
-
-            physics.stop();
-            renderer.shutdown();
-            platform.shutdown();
+            FrameMark;
         }
-    };
+
+        physics.stop();
+        renderer.shutdown();
+        platform.shutdown();
+    }
+};
 
 } // namespace javelin

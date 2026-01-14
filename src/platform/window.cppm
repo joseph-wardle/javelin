@@ -6,12 +6,10 @@ import javelin.core.types;
 
 export namespace javelin {
 
-    struct WindowHandle final {
-        GLFWwindow* native{};
+struct WindowHandle final {
+    GLFWwindow *native{};
 
-        [[nodiscard]] constexpr explicit operator bool() const noexcept {
-            return native != nullptr;
-        }
-    };
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return native != nullptr; }
+};
 
 } // namespace javelin
