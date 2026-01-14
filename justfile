@@ -5,6 +5,7 @@ default_preset := "dev"
 sandbox_target := "javelin_sandbox"
 fmt_globs := "-g '*.{c,cc,cpp,cxx,cppm,ixx,h,hpp,hxx}'"
 tidy_globs := "-g '*.{c,cc,cpp,cxx,cppm,ixx}'"
+fmt_style := "{BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never, ColumnLimit: 120}"
 
 _check-build-tools:
     @command -v cmake >/dev/null
@@ -64,10 +65,10 @@ fmt mode="": _check-format-tools
     set -euo pipefail
     if [[ "{{ mode }}" == "check" || "{{ mode }}" == "--check" ]]; then
         rg --files -0 {{ fmt_globs }} -g '!build/**' | \
-            xargs -0 clang-format --dry-run --Werror
+            xargs -0 clang-format --dry-run --Werror --style='{{ fmt_style }}'
     else
         rg --files -0 {{ fmt_globs }} -g '!build/**' | \
-            xargs -0 clang-format -i
+            xargs -0 clang-format -i --style='{{ fmt_style }}'
     fi
 
 tidy preset=default_preset: _check-tidy-tools (configure preset)
