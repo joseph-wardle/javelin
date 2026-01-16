@@ -20,8 +20,34 @@ struct Vec4 final {
     [[nodiscard]] constexpr f32 *data() noexcept { return &x; }
     [[nodiscard]] constexpr const f32 *data() const noexcept { return &x; }
 
-    [[nodiscard]] constexpr f32 &operator[](const usize i) noexcept { return data()[i]; }
-    [[nodiscard]] constexpr f32 operator[](const usize i) const noexcept { return data()[i]; }
+    [[nodiscard]] constexpr f32 &operator[](const usize i) noexcept {
+        switch (i) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        case 2:
+            return z;
+        case 3:
+            return w;
+        default:
+            std::unreachable();
+        }
+    }
+    [[nodiscard]] constexpr f32 operator[](const usize i) const noexcept {
+        switch (i) {
+        case 0:
+            return x;
+        case 1:
+            return y;
+        case 2:
+            return z;
+        case 3:
+            return w;
+        default:
+            std::unreachable();
+        }
+    }
 
     constexpr Vec4 &operator+=(const Vec4 rhs) noexcept {
         x += rhs.x;
