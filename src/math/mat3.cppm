@@ -9,13 +9,16 @@ export namespace javelin {
 
 struct Mat3 final {
     // Column-major: columns are basis vectors.
-    // Memory order (data): [c0.x c0.y c0.z  c1.x c1.y c1.z  c2.x c2.y c2.z]
-    Vec3 c0{1.0f, 0.0f, 0.0f};
-    Vec3 c1{0.0f, 1.0f, 0.0f};
-    Vec3 c2{0.0f, 0.0f, 1.0f};
+    // Memory order (data): [cols[0].x cols[0].y cols[0].z  cols[1].x cols[1].y cols[1].z
+    //                      cols[2].x cols[2].y cols[2].z]
+    Vec3 cols[3]{
+        Vec3{1.0f, 0.0f, 0.0f},
+        Vec3{0.0f, 1.0f, 0.0f},
+        Vec3{0.0f, 0.0f, 1.0f},
+    };
 
     constexpr Mat3() noexcept = default;
-    constexpr Mat3(const Vec3 c0_, const Vec3 c1_, const Vec3 c2_) noexcept : c0{c0_}, c1{c1_}, c2{c2_} {}
+    constexpr Mat3(const Vec3 c0_, const Vec3 c1_, const Vec3 c2_) noexcept : cols{c0_, c1_, c2_} {}
 
     [[nodiscard]] static constexpr Mat3 identity() noexcept { return Mat3{}; }
 
@@ -35,45 +38,38 @@ struct Mat3 final {
         };
     }
 
-    [[nodiscard]] constexpr f32 *data() noexcept { return &c0.x; }
-    [[nodiscard]] constexpr const f32 *data() const noexcept { return &c0.x; }
+    [[nodiscard]] constexpr f32 *data() noexcept { return cols[0].data(); }
+    [[nodiscard]] constexpr const f32 *data() const noexcept { return cols[0].data(); }
 
     [[nodiscard]] constexpr f32 &operator()(const usize row, const usize col) noexcept {
         switch (col) {
         case 0:
-            return c0[row];
+            return cols[0][row];
         case 1:
-            return c1[row];
-        case 2:
-            return c2[row];
+            return cols[1][row];
         default:
-            std::unreachable();
+            return cols[2][row];
         }
     }
-
     [[nodiscard]] constexpr f32 operator()(const usize row, const usize col) const noexcept {
         switch (col) {
         case 0:
-            return c0[row];
+            return cols[0][row];
         case 1:
-            return c1[row];
-        case 2:
-            return c2[row];
+            return cols[1][row];
         default:
-            std::unreachable();
+            return cols[2][row];
         }
     }
 
     [[nodiscard]] constexpr Vec3 col(const usize i) const noexcept {
         switch (i) {
         case 0:
-            return c0;
+            return cols[0];
         case 1:
-            return c1;
-        case 2:
-            return c2;
+            return cols[1];
         default:
-            std::unreachable();
+            return cols[2];
         }
     }
 
@@ -81,7 +77,9 @@ struct Mat3 final {
         return Vec3{(*this)(i, 0), (*this)(i, 1), (*this)(i, 2)};
     }
 
-    [[nodiscard]] bool is_finite() const noexcept { return c0.is_finite() && c1.is_finite() && c2.is_finite(); }
+    [[nodiscard]] bool is_finite() const noexcept {
+        return cols[0].is_finite() && cols[1].is_finite() && cols[2].is_finite();
+    }
 
     [[nodiscard]] static Mat3 rotation_x(const f32 radians) noexcept {
         const f32 s = std::sin(radians);
@@ -103,32 +101,33 @@ struct Mat3 final {
 };
 
 [[nodiscard]] constexpr Mat3 operator*(const Mat3 &m, const f32 s) noexcept {
-    return Mat3{m.c0 * s, m.c1 * s, m.c2 * s};
+    return Mat3{m.cols[0] * s, m.cols[1] * s, m.cols[2] * s};
 }
 [[nodiscard]] constexpr Mat3 operator*(const f32 s, const Mat3 &m) noexcept { return m * s; }
 
 [[nodiscard]] constexpr Vec3 operator*(const Mat3 &m, const Vec3 v) noexcept {
-    return m.c0 * v.x + m.c1 * v.y + m.c2 * v.z;
+    return m.cols[0] * v.x + m.cols[1] * v.y + m.cols[2] * v.z;
 }
 
 [[nodiscard]] constexpr Mat3 operator*(const Mat3 &a, const Mat3 &b) noexcept {
-    return Mat3::from_columns(a * b.c0, a * b.c1, a * b.c2);
+    return Mat3::from_columns(a * b.cols[0], a * b.cols[1], a * b.cols[2]);
 }
 
-[[nodiscard]] constexpr f32 determinant(const Mat3 &m) noexcept { return dot(m.c0, cross(m.c1, m.c2)); }
+[[nodiscard]] constexpr f32 determinant(const Mat3 &m) noexcept { return dot(m.cols[0], cross(m.cols[1], m.cols[2])); }
 
 [[nodiscard]] constexpr Mat3 transpose(const Mat3 &m) noexcept {
-    return Mat3::from_rows(Vec3{m.c0.x, m.c1.x, m.c2.x}, Vec3{m.c0.y, m.c1.y, m.c2.y}, Vec3{m.c0.z, m.c1.z, m.c2.z});
+    return Mat3::from_rows(Vec3{m.cols[0].x, m.cols[1].x, m.cols[2].x}, Vec3{m.cols[0].y, m.cols[1].y, m.cols[2].y},
+                           Vec3{m.cols[0].z, m.cols[1].z, m.cols[2].z});
 }
 
 [[nodiscard]] inline std::optional<Mat3> try_inverse(const Mat3 &m, const f32 eps = 1e-8f) noexcept {
     // For M = [a b c] (columns), rows of adjugate are:
     // r0 = cross(b,c), r1 = cross(c,a), r2 = cross(a,b)
-    const Vec3 r0 = cross(m.c1, m.c2);
-    const Vec3 r1 = cross(m.c2, m.c0);
-    const Vec3 r2 = cross(m.c0, m.c1);
+    const Vec3 r0 = cross(m.cols[1], m.cols[2]);
+    const Vec3 r1 = cross(m.cols[2], m.cols[0]);
+    const Vec3 r2 = cross(m.cols[0], m.cols[1]);
 
-    const f32 det = dot(m.c0, r0);
+    const f32 det = dot(m.cols[0], r0);
     if (std::fabs(det) <= eps) {
         return std::nullopt;
     }

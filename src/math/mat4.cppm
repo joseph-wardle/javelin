@@ -11,15 +11,17 @@ export namespace javelin {
 
 struct Mat4 final {
     // Column-major: columns are basis + translation.
-    // data(): [c0.x c0.y c0.z c0.w  c1.x ...  c3.w]
-    Vec4 c0{1.0f, 0.0f, 0.0f, 0.0f};
-    Vec4 c1{0.0f, 1.0f, 0.0f, 0.0f};
-    Vec4 c2{0.0f, 0.0f, 1.0f, 0.0f};
-    Vec4 c3{0.0f, 0.0f, 0.0f, 1.0f};
+    // data(): [cols[0].x cols[0].y cols[0].z cols[0].w  cols[1].x ...  cols[3].w]
+    Vec4 cols[4]{
+        Vec4{1.0f, 0.0f, 0.0f, 0.0f},
+        Vec4{0.0f, 1.0f, 0.0f, 0.0f},
+        Vec4{0.0f, 0.0f, 1.0f, 0.0f},
+        Vec4{0.0f, 0.0f, 0.0f, 1.0f},
+    };
 
     constexpr Mat4() noexcept = default;
     constexpr Mat4(const Vec4 c0_, const Vec4 c1_, const Vec4 c2_, const Vec4 c3_) noexcept
-        : c0{c0_}, c1{c1_}, c2{c2_}, c3{c3_} {}
+        : cols{c0_, c1_, c2_, c3_} {}
 
     [[nodiscard]] static constexpr Mat4 identity() noexcept { return Mat4{}; }
 
@@ -37,51 +39,44 @@ struct Mat4 final {
         };
     }
 
-    [[nodiscard]] constexpr f32 *data() noexcept { return &c0.x; }
-    [[nodiscard]] constexpr const f32 *data() const noexcept { return &c0.x; }
+    [[nodiscard]] constexpr f32 *data() noexcept { return cols[0].data(); }
+    [[nodiscard]] constexpr const f32 *data() const noexcept { return cols[0].data(); }
 
     [[nodiscard]] constexpr f32 &operator()(const usize row, const usize col) noexcept {
         switch (col) {
         case 0:
-            return c0[row];
+            return cols[0][row];
         case 1:
-            return c1[row];
+            return cols[1][row];
         case 2:
-            return c2[row];
-        case 3:
-            return c3[row];
+            return cols[2][row];
         default:
-            std::unreachable();
+            return cols[3][row];
         }
     }
-
     [[nodiscard]] constexpr f32 operator()(const usize row, const usize col) const noexcept {
         switch (col) {
         case 0:
-            return c0[row];
+            return cols[0][row];
         case 1:
-            return c1[row];
+            return cols[1][row];
         case 2:
-            return c2[row];
-        case 3:
-            return c3[row];
+            return cols[2][row];
         default:
-            std::unreachable();
+            return cols[3][row];
         }
     }
 
     [[nodiscard]] constexpr Vec4 col(const usize i) const noexcept {
         switch (i) {
         case 0:
-            return c0;
+            return cols[0];
         case 1:
-            return c1;
+            return cols[1];
         case 2:
-            return c2;
-        case 3:
-            return c3;
+            return cols[2];
         default:
-            std::unreachable();
+            return cols[3];
         }
     }
     [[nodiscard]] constexpr Vec4 row(const usize i) const noexcept {
@@ -89,12 +84,12 @@ struct Mat4 final {
     }
 
     [[nodiscard]] bool is_finite() const noexcept {
-        return c0.is_finite() && c1.is_finite() && c2.is_finite() && c3.is_finite();
+        return cols[0].is_finite() && cols[1].is_finite() && cols[2].is_finite() && cols[3].is_finite();
     }
 
     [[nodiscard]] static constexpr Mat4 translation(const Vec3 t) noexcept {
         Mat4 m{};
-        m.c3 = Vec4{t.x, t.y, t.z, 1.0f};
+        m.cols[3] = Vec4{t.x, t.y, t.z, 1.0f};
         return m;
     }
 
@@ -108,10 +103,13 @@ struct Mat4 final {
     }
 
     [[nodiscard]] static constexpr Mat4 from_affine(const Mat3 &linear, const Vec3 t) noexcept {
+        const Vec3 c0 = linear.col(0);
+        const Vec3 c1 = linear.col(1);
+        const Vec3 c2 = linear.col(2);
         return Mat4{
-            Vec4{linear.c0.x, linear.c0.y, linear.c0.z, 0.0f},
-            Vec4{linear.c1.x, linear.c1.y, linear.c1.z, 0.0f},
-            Vec4{linear.c2.x, linear.c2.y, linear.c2.z, 0.0f},
+            Vec4{c0.x, c0.y, c0.z, 0.0f},
+            Vec4{c1.x, c1.y, c1.z, 0.0f},
+            Vec4{c2.x, c2.y, c2.z, 0.0f},
             Vec4{t.x, t.y, t.z, 1.0f},
         };
     }
@@ -139,16 +137,18 @@ struct Mat4 final {
 };
 
 [[nodiscard]] constexpr Vec4 operator*(const Mat4 &m, const Vec4 v) noexcept {
-    return m.c0 * v.x + m.c1 * v.y + m.c2 * v.z + m.c3 * v.w;
+    return m.cols[0] * v.x + m.cols[1] * v.y + m.cols[2] * v.z + m.cols[3] * v.w;
 }
 
 [[nodiscard]] constexpr Mat4 operator*(const Mat4 &a, const Mat4 &b) noexcept {
-    return Mat4::from_columns(a * b.c0, a * b.c1, a * b.c2, a * b.c3);
+    return Mat4::from_columns(a * b.cols[0], a * b.cols[1], a * b.cols[2], a * b.cols[3]);
 }
 
 [[nodiscard]] inline Mat4 transpose(const Mat4 &m) noexcept {
-    return Mat4::from_rows(Vec4{m.c0.x, m.c1.x, m.c2.x, m.c3.x}, Vec4{m.c0.y, m.c1.y, m.c2.y, m.c3.y},
-                           Vec4{m.c0.z, m.c1.z, m.c2.z, m.c3.z}, Vec4{m.c0.w, m.c1.w, m.c2.w, m.c3.w});
+    return Mat4::from_rows(Vec4{m.cols[0].x, m.cols[1].x, m.cols[2].x, m.cols[3].x},
+                           Vec4{m.cols[0].y, m.cols[1].y, m.cols[2].y, m.cols[3].y},
+                           Vec4{m.cols[0].z, m.cols[1].z, m.cols[2].z, m.cols[3].z},
+                           Vec4{m.cols[0].w, m.cols[1].w, m.cols[2].w, m.cols[3].w});
 }
 
 [[nodiscard]] inline Vec3 transform_vector(const Mat4 &m, const Vec3 v) noexcept {
@@ -266,7 +266,8 @@ namespace detail {
         return std::nullopt;
     }
     const Mat4 n = transpose(*inv);
-    return Mat3::from_columns(Vec3{n.c0.x, n.c0.y, n.c0.z}, Vec3{n.c1.x, n.c1.y, n.c1.z}, Vec3{n.c2.x, n.c2.y, n.c2.z});
+    return Mat3::from_columns(Vec3{n.cols[0].x, n.cols[0].y, n.cols[0].z}, Vec3{n.cols[1].x, n.cols[1].y, n.cols[1].z},
+                              Vec3{n.cols[2].x, n.cols[2].y, n.cols[2].z});
 }
 
 } // namespace javelin
