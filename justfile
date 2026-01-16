@@ -74,5 +74,5 @@ fmt mode="": _check-format-tools
 tidy preset=default_preset: _check-tidy-tools (configure preset)
     #!/usr/bin/env bash
     set -euo pipefail
-    rg --files -0 {{ tidy_globs }} -g '!build/**' | \
+    rg --files -0 {{ tidy_globs }} -g '!build/**' -g '!third_party/**' | \
         xargs -0 clang-tidy -p "{{ build_root }}/{{ preset }}"
