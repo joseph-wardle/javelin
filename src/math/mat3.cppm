@@ -38,10 +38,44 @@ struct Mat3 final {
     [[nodiscard]] constexpr f32 *data() noexcept { return &c0.x; }
     [[nodiscard]] constexpr const f32 *data() const noexcept { return &c0.x; }
 
-    [[nodiscard]] constexpr f32 &operator()(const usize row, const usize col) noexcept { return (&c0)[col][row]; }
-    [[nodiscard]] constexpr f32 operator()(const usize row, const usize col) const noexcept { return (&c0)[col][row]; }
+    [[nodiscard]] constexpr f32 &operator()(const usize row, const usize col) noexcept {
+        switch (col) {
+        case 0:
+            return c0[row];
+        case 1:
+            return c1[row];
+        case 2:
+            return c2[row];
+        default:
+            std::unreachable();
+        }
+    }
 
-    [[nodiscard]] constexpr Vec3 col(const usize i) const noexcept { return (&c0)[i]; }
+    [[nodiscard]] constexpr f32 operator()(const usize row, const usize col) const noexcept {
+        switch (col) {
+        case 0:
+            return c0[row];
+        case 1:
+            return c1[row];
+        case 2:
+            return c2[row];
+        default:
+            std::unreachable();
+        }
+    }
+
+    [[nodiscard]] constexpr Vec3 col(const usize i) const noexcept {
+        switch (i) {
+        case 0:
+            return c0;
+        case 1:
+            return c1;
+        case 2:
+            return c2;
+        default:
+            std::unreachable();
+        }
+    }
 
     [[nodiscard]] constexpr Vec3 row(const usize i) const noexcept {
         return Vec3{(*this)(i, 0), (*this)(i, 1), (*this)(i, 2)};
