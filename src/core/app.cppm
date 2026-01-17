@@ -23,7 +23,7 @@ struct App final {
         ZoneScoped;
 
         platform.init();
-        scene = load_scene_from_disk(scene_path);
+        scene = Scene::load_scene_from_disk(scene_path);
 
         renderer.init_cpu(scene);
         renderer.init_gpu(platform.window_handle());

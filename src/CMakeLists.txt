@@ -25,7 +25,13 @@ target_sources(javelin
             platform/platform.cppm
             platform/window.cppm
             render/render_system.cppm
+            scene/camera.cppm
+            scene/entity.cppm
+            scene/physics_view.cppm
+            scene/pose_channel.cppm
+            scene/render_view.cppm
             scene/scene.cppm
+            scene/shapes.cppm
 )
 
 
