@@ -1,3 +1,41 @@
+```
+src/
+├─ core
+│   ├─ app.cppm
+│   ├─ logging.cppm
+│   ├─ time.cppm
+│   └─ types.cppm
+├─ math
+│   ├─ constants.cppm
+│   ├─ mat3.cppm
+│   ├─ mat4.cppm
+│   ├─ quat.cppm
+│   ├─ vec2.cppm
+│   ├─ vec3.cppm
+│   └─ vec4.cppm
+├─ physics
+│   └─ physics_system.cppm
+├─ platform
+│   ├─ platform.cppm
+│   └─ window.cppm
+├─ render
+│   └─ render_system.cppm
+├─ scene
+│   ├─ camera.cppm
+│   ├─ entity.cppm
+│   ├─ physics_view.cppm
+│   ├─ pose_channel.cppm
+│   ├─ render_view.cppm
+│   ├─ scene.cppm
+│   └─ shapes.cppm
+└─ CMakeLists.txt
+```
+
+---
+
+# CMakeLists.txt
+
+```
 include_guard(GLOBAL)
 
 add_library(javelin STATIC)
@@ -22,19 +60,9 @@ target_sources(javelin
             math/vec3.cppm
             math/vec4.cppm
             physics/physics_system.cppm
-            platform/input.cppm
             platform/platform.cppm
             platform/window.cppm
-            render/fly_camera.cppm
-            render/pipeline.cppm
-            render/render_context.cppm
-            render/render_device.cppm
-            render/render_targets.cppm
             render/render_system.cppm
-            render/types.cppm
-            render/passes/geometry_pass.cppm
-            render/passes/post_pass.cppm
-            render/passes/world_grid_pass.cppm
             scene/camera.cppm
             scene/entity.cppm
             scene/physics_view.cppm
@@ -51,3 +79,5 @@ if(JAVELIN_ENABLE_TRACY)
 endif()
 
 target_link_libraries(javelin PRIVATE glad glfw imgui)
+```
+

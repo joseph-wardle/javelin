@@ -1,0 +1,33 @@
+module;
+
+#include <glad/gl.h>
+
+export module javelin.render.passes.post_pass;
+
+import javelin.render.render_context;
+import javelin.render.render_targets;
+import javelin.render.types;
+
+export namespace javelin {
+
+struct PostPass final {
+    template <class Device> void init(Device &) {}
+
+    template <class Device> void resize(Device &, Extent2D) {}
+
+    template <class Device> void shutdown(Device &) {}
+
+    void execute(RenderContext &ctx) {
+        if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0) {
+            return;
+        }
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, ctx.targets.scene_fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(0, 0, ctx.extent.width, ctx.extent.height);
+        glBlitFramebuffer(0, 0, ctx.extent.width, ctx.extent.height, 0, 0, ctx.extent.width, ctx.extent.height,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
+};
+
+} // namespace javelin
