@@ -33,7 +33,7 @@ void setup_depth_target(TextureHandle texture, const Extent2D extent) noexcept {
 void validate_fbo(const char *label) noexcept {
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        log::error("{} framebuffer incomplete: 0x{:X}", label, static_cast<u32>(status));
+        log::error("[render][targets] {} framebuffer incomplete: 0x{:X}", label, static_cast<u32>(status));
     }
 }
 } // namespace javelin::detail
@@ -61,6 +61,7 @@ struct RenderTargets final {
 
 void RenderTargets::init() {
     ZoneScopedN("RenderTargets init");
+    log::info("[render][targets] init");
     glGenFramebuffers(1, &scene_fbo);
     glGenTextures(1, &scene_color);
     glGenTextures(1, &scene_depth);
@@ -82,6 +83,7 @@ void RenderTargets::resize(const Extent2D new_extent) {
 
     ZoneScopedN("RenderTargets resize");
     extent = new_extent;
+    log::info("[render][targets] resize {}x{}", extent.width, extent.height);
 
     detail::setup_color_target(scene_color, extent);
     detail::setup_depth_target(scene_depth, extent);
@@ -111,6 +113,7 @@ void RenderTargets::resize(const Extent2D new_extent) {
 
 void RenderTargets::shutdown() {
     ZoneScopedN("RenderTargets shutdown");
+    log::info("[render][targets] shutdown");
     if (scene_fbo != 0) {
         glDeleteFramebuffers(1, &scene_fbo);
         scene_fbo = 0;

@@ -5,6 +5,7 @@ module;
 export module javelin.physics.physics_system;
 
 import std;
+import javelin.core.logging;
 import javelin.core.time;
 import javelin.core.types;
 import javelin.scene;
@@ -15,9 +16,12 @@ struct PhysicsSystem final {
     void init(Scene &scene) noexcept { scene_ = &scene; }
 
     void start() {
-        if (thread_.joinable())
+        if (thread_.joinable()) {
+            log::warn("[physics] start ignored (already running)");
             return;
+        }
 
+        log::info("[physics] start");
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -42,8 +46,11 @@ struct PhysicsSystem final {
     }
 
     void stop() noexcept {
-        if (!thread_.joinable())
+        if (!thread_.joinable()) {
+            log::warn("[physics] stop ignored (not running)");
             return;
+        }
+        log::info("[physics] stop");
         thread_.request_stop();
         thread_.join();
     }

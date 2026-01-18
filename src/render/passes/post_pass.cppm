@@ -5,6 +5,7 @@ module;
 
 export module javelin.render.passes.post_pass;
 
+import javelin.core.logging;
 import javelin.render.render_context;
 import javelin.render.render_targets;
 import javelin.render.types;
@@ -12,11 +13,11 @@ import javelin.render.types;
 export namespace javelin {
 
 struct PostPass final {
-    template <class Device> void init(Device &) {}
+    template <class Device> void init(Device &) { log::info("[render][post] init"); }
 
     template <class Device> void resize(Device &, Extent2D) {}
 
-    template <class Device> void shutdown(Device &) {}
+    template <class Device> void shutdown(Device &) { log::info("[render][post] shutdown"); }
 
     void execute(RenderContext &ctx) {
         if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0) {

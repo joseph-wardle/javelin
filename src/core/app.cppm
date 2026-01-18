@@ -5,6 +5,7 @@ module;
 export module javelin.core.app;
 
 import std;
+import javelin.core.logging;
 import javelin.physics.physics_system;
 import javelin.platform;
 import javelin.render.render_system;
@@ -21,6 +22,8 @@ struct App final {
     void run(const std::filesystem::path &scene_path) {
         tracy::SetThreadName("Main");
         ZoneScoped;
+
+        log::info("[app] start scene={}", scene_path.string());
 
         platform.init();
         scene = Scene::load_scene_from_disk(scene_path);
@@ -56,6 +59,8 @@ struct App final {
         physics.stop();
         renderer.shutdown();
         platform.shutdown();
+
+        log::info("[app] shutdown");
     }
 };
 

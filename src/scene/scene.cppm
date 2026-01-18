@@ -2,6 +2,7 @@ export module javelin.scene;
 
 import std;
 
+import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.vec3;
 import javelin.scene.entity;
@@ -67,7 +68,11 @@ struct Scene final {
         poses_.publish();
     }
 
-    static Scene load_scene_from_disk(std::filesystem::path scene_path) { return Scene(); }
+    static Scene load_scene_from_disk(std::filesystem::path scene_path) {
+        log::info("[scene] load {}", scene_path.string());
+        log::warn("[scene] loader stub (returning empty scene)");
+        return Scene();
+    }
 
   private:
     u32 capacity_{0};
