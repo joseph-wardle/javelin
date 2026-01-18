@@ -1,8 +1,7 @@
 module;
 
-#include <tracy/Tracy.hpp>
-
 #include <glad/gl.h>
+#include <tracy/TracyOpenGL.hpp>
 
 export module javelin.render.passes.world_grid_pass;
 
@@ -166,6 +165,7 @@ struct WorldGridPass final {
         }
 
         ZoneScopedN("WorldGridPass");
+        TracyGpuZone("WorldGridPass");
         glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);
         glEnable(GL_DEPTH_TEST);

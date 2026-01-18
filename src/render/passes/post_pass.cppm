@@ -1,8 +1,7 @@
 module;
 
-#include <tracy/Tracy.hpp>
-
 #include <glad/gl.h>
+#include <tracy/TracyOpenGL.hpp>
 
 export module javelin.render.passes.post_pass;
 
@@ -25,6 +24,7 @@ struct PostPass final {
         }
 
         ZoneScopedN("PostPass");
+        TracyGpuZone("PostPass");
         glBindFramebuffer(GL_READ_FRAMEBUFFER, ctx.targets.scene_fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);

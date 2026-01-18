@@ -1,7 +1,5 @@
 module;
 
-#include <tracy/Tracy.hpp>
-
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <glad/gl.h>
@@ -10,6 +8,8 @@ module;
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
 
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyOpenGL.hpp>
 export module javelin.render.render_system;
 
 import javelin.core.types;
@@ -50,6 +50,8 @@ struct RenderSystem final {
         if (gladLoadGL(glfwGetProcAddress) == 0) {
             log::critical("Failed to initialize OpenGL loader!");
         }
+
+        TracyGpuContext;
 
         // 0 uncapped, 1 vsync
         glfwSwapInterval(0);
@@ -137,11 +139,14 @@ struct RenderSystem final {
         }
         {
             ZoneScopedN("Present");
+            TracyGpuZone("Present");
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glViewport(0, 0, extent_.width, extent_.height);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(window_.native);
         }
+
+        TracyGpuCollect;
 
         // You can keep this as FrameMarkNamed("Frame") in App for a single canonical marker.
     }
