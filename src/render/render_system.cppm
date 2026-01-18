@@ -20,9 +20,11 @@ import javelin.render.render_device;
 import javelin.render.render_targets;
 import javelin.render.passes.post_pass;
 import javelin.render.passes.world_grid_pass;
+import javelin.render.fly_camera;
 import javelin.render.types;
 import javelin.scene;
 import javelin.scene.camera;
+import javelin.platform.input;
 import javelin.platform.window;
 
 export namespace javelin {
@@ -66,7 +68,7 @@ struct RenderSystem final {
         log::info("RenderSystem GPU initialized");
     }
 
-    void render_frame(const double dt) noexcept {
+    void render_frame(const double dt, InputState &input) noexcept {
         ZoneScopedN("Render frame");
 
         if (dt > 0.0) {
@@ -102,8 +104,14 @@ struct RenderSystem final {
 
             // ImGui::ShowDemoWindow();
 
+            const ImGuiIO &io = ImGui::GetIO();
+            input.end_frame(io.WantCaptureMouse, io.WantCaptureKeyboard);
             ImGui::Render();
         }
+
+        const CursorMode cursor_mode = fly_camera_.update(camera_, input.frame(), static_cast<f32>(dt));
+        glfwSetInputMode(window_.native, GLFW_CURSOR,
+                         cursor_mode == CursorMode::captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 
         const f32 aspect =
             (extent_.height > 0) ? static_cast<f32>(extent_.width) / static_cast<f32>(extent_.height) : 1.0f;
@@ -156,7 +164,7 @@ struct RenderSystem final {
         ImGui::CreateContext();
         ImGui::StyleColorsDark();
 
-        ImGui_ImplGlfw_InitForOpenGL(window_.native, /*install_callbacks=*/false);
+        ImGui_ImplGlfw_InitForOpenGL(window_.native, /*install_callbacks=*/true);
         ImGui_ImplOpenGL3_Init("#version 460");
     }
 
@@ -179,6 +187,7 @@ struct RenderSystem final {
     Pipeline pipeline_{};
     DebugToggles debug_{};
     CameraState camera_{};
+    FlyCameraController fly_camera_{};
     Extent2D extent_{};
 
     bool gpu_ready_ = false;

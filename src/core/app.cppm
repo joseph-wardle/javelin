@@ -37,6 +37,8 @@ struct App final {
         while (!platform.quit_requested()) {
             ZoneScopedN("Frame");
 
+            auto &input = platform.input_state();
+            input.begin_frame();
             platform.poll_events();
 
             const auto now = clock::now();
@@ -46,7 +48,7 @@ struct App final {
             // TODO: build Actions from input (and optionally push commands/settings to physics)
             // actions = input.map(platform.input_state());
 
-            renderer.render_frame(dt);
+            renderer.render_frame(dt, input);
 
             FrameMark;
         }
