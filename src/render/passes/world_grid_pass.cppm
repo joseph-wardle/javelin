@@ -8,7 +8,7 @@ import std;
 
 import javelin.core.logging;
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math.mat4;
 import javelin.render.render_context;
 import javelin.render.render_targets;
 import javelin.render.types;
@@ -16,19 +16,75 @@ import javelin.render.types;
 namespace javelin::detail {
 constexpr std::string_view kGridVertexShader = R"glsl(
 #version 460 core
-layout(location = 0) in vec3 a_pos;
-uniform mat4 u_view_proj;
+out vec2 v_ndc;
 void main() {
-    gl_Position = u_view_proj * vec4(a_pos, 1.0);
+    const vec2 verts[3] = vec2[](
+        vec2(-1.0, -1.0),
+        vec2(3.0, -1.0),
+        vec2(-1.0, 3.0)
+    );
+    v_ndc = verts[gl_VertexID];
+    gl_Position = vec4(v_ndc, 0.0, 1.0);
 }
 )glsl";
 
 constexpr std::string_view kGridFragmentShader = R"glsl(
 #version 460 core
+in vec2 v_ndc;
+uniform mat4 u_view_proj;
+uniform mat4 u_inv_view_proj;
 uniform vec3 u_color;
+uniform vec3 u_camera_pos;
+uniform float u_minor_cell;
+uniform float u_major_cell;
+uniform float u_minor_width_px;
+uniform float u_major_width_px;
+uniform float u_fade_start;
+uniform float u_fade_end;
 out vec4 frag_color;
+
+float saturate(float x) { return clamp(x, 0.0, 1.0); }
+
+float grid_coverage(vec2 world_xz, float cell_size, float width_px) {
+    vec2 uv = world_xz / cell_size;
+    vec2 duv = fwidth(uv);
+    vec2 cell = abs(fract(uv) - 0.5);
+    vec2 line_half = duv * width_px;
+    vec2 aa = duv * 1.5;
+    vec2 cov = smoothstep(line_half + aa, line_half - aa, 0.5 - cell);
+    return max(cov.x, cov.y);
+}
+
 void main() {
-    frag_color = vec4(u_color, 1.0);
+    vec4 near_h = u_inv_view_proj * vec4(v_ndc, -1.0, 1.0);
+    vec4 far_h = u_inv_view_proj * vec4(v_ndc, 1.0, 1.0);
+    vec3 near = near_h.xyz / near_h.w;
+    vec3 far = far_h.xyz / far_h.w;
+    vec3 dir = normalize(far - near);
+    if (abs(dir.y) < 1e-5) {
+        discard;
+    }
+
+    float t = -near.y / dir.y;
+    if (t <= 0.0) {
+        discard;
+    }
+
+    vec3 world = near + dir * t;
+    vec2 xz = world.xz;
+
+    float dist = length(xz - u_camera_pos.xz);
+    float fade = 1.0 - saturate((dist - u_fade_start) / max(0.0001, (u_fade_end - u_fade_start)));
+
+    float minor = grid_coverage(xz, u_minor_cell, u_minor_width_px) * fade;
+    float major = grid_coverage(xz, u_major_cell, u_major_width_px) * fade;
+
+    float coverage = max(minor * 0.35, major * 0.9);
+    frag_color = vec4(u_color, coverage);
+
+    vec4 clip = u_view_proj * vec4(world, 1.0);
+    float depth = clip.z / clip.w * 0.5 + 0.5;
+    gl_FragDepth = clamp(depth, 0.0, 1.0);
 }
 )glsl";
 
@@ -82,8 +138,12 @@ export namespace javelin {
 
 struct WorldGridPass final {
     struct Settings final {
-        f32 half_extent{20.0f};
-        f32 step{1.0f};
+        f32 minor_cell{1.0f};
+        f32 major_cell{5.0f};
+        f32 minor_width_px{1.0f};
+        f32 major_width_px{1.6f};
+        f32 fade_start{20.0f};
+        f32 fade_end{50.0f};
         Vec3 color{0.28f, 0.30f, 0.34f};
     };
 
@@ -106,7 +166,8 @@ struct WorldGridPass final {
         glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);
         glEnable(GL_DEPTH_TEST);
-        glDisable(GL_BLEND);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -117,9 +178,20 @@ struct WorldGridPass final {
         glUseProgram(program_);
         glUniformMatrix4fv(u_view_proj_, 1, GL_FALSE, ctx.camera.view_proj.data());
         glUniform3f(u_color_, settings.color.x, settings.color.y, settings.color.z);
+        const Mat4 inv_view = inverse_or_identity(ctx.camera.view);
+        const Vec3 camera_pos = transform_point_affine(inv_view, Vec3{0.0f, 0.0f, 0.0f});
+        glUniform3f(u_camera_pos_, camera_pos.x, camera_pos.y, camera_pos.z);
+        const Mat4 inv_view_proj = inverse_or_identity(ctx.camera.view_proj);
+        glUniformMatrix4fv(u_inv_view_proj_, 1, GL_FALSE, inv_view_proj.data());
+        glUniform1f(u_minor_cell_, settings.minor_cell);
+        glUniform1f(u_major_cell_, settings.major_cell);
+        glUniform1f(u_minor_width_px_, settings.minor_width_px);
+        glUniform1f(u_major_width_px_, settings.major_width_px);
+        glUniform1f(u_fade_start_, settings.fade_start);
+        glUniform1f(u_fade_end_, settings.fade_end);
 
         glBindVertexArray(vao_);
-        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertex_count_));
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertex_count_));
         glBindVertexArray(0);
         glUseProgram(0);
     }
@@ -148,46 +220,26 @@ struct WorldGridPass final {
         }
 
         u_view_proj_ = glGetUniformLocation(program_, "u_view_proj");
+        u_inv_view_proj_ = glGetUniformLocation(program_, "u_inv_view_proj");
         u_color_ = glGetUniformLocation(program_, "u_color");
+        u_camera_pos_ = glGetUniformLocation(program_, "u_camera_pos");
+        u_minor_cell_ = glGetUniformLocation(program_, "u_minor_cell");
+        u_major_cell_ = glGetUniformLocation(program_, "u_major_cell");
+        u_minor_width_px_ = glGetUniformLocation(program_, "u_minor_width_px");
+        u_major_width_px_ = glGetUniformLocation(program_, "u_major_width_px");
+        u_fade_start_ = glGetUniformLocation(program_, "u_fade_start");
+        u_fade_end_ = glGetUniformLocation(program_, "u_fade_end");
     }
 
     void create_grid_() {
-        if (vao_ != 0 || vbo_ != 0) {
+        if (vao_ != 0) {
             return;
         }
-
-        if (settings.step <= 0.0f || settings.half_extent <= 0.0f) {
-            return;
-        }
-
-        const i32 line_count = static_cast<i32>(settings.half_extent / settings.step);
-        const f32 extent = settings.step * static_cast<f32>(line_count);
-        const i32 line_vertices = (line_count * 2 + 1) * 4;
-
-        std::vector<Vec3> vertices;
-        vertices.reserve(static_cast<usize>(line_vertices));
-
-        for (i32 i = -line_count; i <= line_count; ++i) {
-            const f32 t = static_cast<f32>(i) * settings.step;
-            vertices.push_back(Vec3{-extent, 0.0f, t});
-            vertices.push_back(Vec3{extent, 0.0f, t});
-            vertices.push_back(Vec3{t, 0.0f, -extent});
-            vertices.push_back(Vec3{t, 0.0f, extent});
-        }
-
-        vertex_count_ = static_cast<i32>(vertices.size());
 
         glGenVertexArrays(1, &vao_);
-        glGenBuffers(1, &vbo_);
-
         glBindVertexArray(vao_);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(Vec3)), vertices.data(),
-                     GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vec3), nullptr);
         glBindVertexArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        vertex_count_ = 3;
     }
 
     void release_() {
@@ -195,26 +247,37 @@ struct WorldGridPass final {
             glDeleteProgram(program_);
             program_ = 0;
         }
-        if (vbo_ != 0) {
-            glDeleteBuffers(1, &vbo_);
-            vbo_ = 0;
-        }
         if (vao_ != 0) {
             glDeleteVertexArrays(1, &vao_);
             vao_ = 0;
         }
         vertex_count_ = 0;
         u_view_proj_ = -1;
+        u_inv_view_proj_ = -1;
         u_color_ = -1;
+        u_camera_pos_ = -1;
+        u_minor_cell_ = -1;
+        u_major_cell_ = -1;
+        u_minor_width_px_ = -1;
+        u_major_width_px_ = -1;
+        u_fade_start_ = -1;
+        u_fade_end_ = -1;
     }
 
   private:
     u32 program_{};
     u32 vao_{};
-    u32 vbo_{};
     i32 vertex_count_{};
     i32 u_view_proj_{-1};
+    i32 u_inv_view_proj_{-1};
     i32 u_color_{-1};
+    i32 u_camera_pos_{-1};
+    i32 u_minor_cell_{-1};
+    i32 u_major_cell_{-1};
+    i32 u_minor_width_px_{-1};
+    i32 u_major_width_px_{-1};
+    i32 u_fade_start_{-1};
+    i32 u_fade_end_{-1};
 };
 
 } // namespace javelin
