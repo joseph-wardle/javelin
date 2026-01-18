@@ -1,5 +1,7 @@
 module;
 
+#include <tracy/Tracy.hpp>
+
 #include <glad/gl.h>
 
 export module javelin.render.render_targets;
@@ -58,6 +60,7 @@ struct RenderTargets final {
 };
 
 void RenderTargets::init() {
+    ZoneScopedN("RenderTargets init");
     glGenFramebuffers(1, &scene_fbo);
     glGenTextures(1, &scene_color);
     glGenTextures(1, &scene_depth);
@@ -77,6 +80,7 @@ void RenderTargets::resize(const Extent2D new_extent) {
         return;
     }
 
+    ZoneScopedN("RenderTargets resize");
     extent = new_extent;
 
     detail::setup_color_target(scene_color, extent);
@@ -106,6 +110,7 @@ void RenderTargets::resize(const Extent2D new_extent) {
 }
 
 void RenderTargets::shutdown() {
+    ZoneScopedN("RenderTargets shutdown");
     if (scene_fbo != 0) {
         glDeleteFramebuffers(1, &scene_fbo);
         scene_fbo = 0;

@@ -42,6 +42,7 @@ struct RenderSystem final {
     }
 
     void init_gpu(const WindowHandle window) {
+        ZoneScopedN("Render init GPU");
         window_ = window;
 
         glfwMakeContextCurrent(window_.native);
@@ -83,6 +84,7 @@ struct RenderSystem final {
         glfwGetFramebufferSize(window_.native, &w, &h);
         const Extent2D new_extent{w, h};
         if (new_extent.width != extent_.width || new_extent.height != extent_.height) {
+            ZoneScopedN("Render resize");
             extent_ = new_extent;
             targets_.resize(extent_);
             pipeline_.resize(device_, extent_);
@@ -90,7 +92,7 @@ struct RenderSystem final {
 
         // --- ImGui frame ---
         {
-            ZoneScopedN("UI");
+            ZoneScopedN("ImGui build");
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
@@ -130,8 +132,11 @@ struct RenderSystem final {
 
         // --- Draw ---
         {
-            ZoneScopedN("GL present");
+            ZoneScopedN("Render passes");
             pipeline_.execute(ctx);
+        }
+        {
+            ZoneScopedN("Present");
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glViewport(0, 0, extent_.width, extent_.height);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
