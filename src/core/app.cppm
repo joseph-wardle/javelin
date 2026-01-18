@@ -23,7 +23,7 @@ struct App final {
         tracy::SetThreadName("Main");
         ZoneScoped;
 
-        log::info("[app] start scene={}", scene_path.string());
+        log::info(app, "Start scene={}", scene_path.string());
 
         platform.init();
         scene = Scene::load_scene_from_disk(scene_path);
@@ -60,7 +60,7 @@ struct App final {
         renderer.shutdown();
         platform.shutdown();
 
-        log::info("[app] shutdown");
+        log::info(app, "Shutting down app");
     }
 };
 

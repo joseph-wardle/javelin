@@ -11,14 +11,13 @@ export import javelin.platform.window;
 export namespace javelin {
 struct Platform final {
     void init() {
-        log::info("[platform] init");
-        glfwSetErrorCallback(
-            [](int code, const char *desc) {
-                log::error("[platform][glfw] error {}: {}", code, desc ? desc : "(null)");
-            });
+        log::info(platform, "Initialized");
+        glfwSetErrorCallback([](int code, const char *desc) {
+            log::error(platform, "GLFW error {}: {}", code, desc ? desc : "(null)");
+        });
 
         if (glfwInit() != GLFW_TRUE) {
-            log::critical("[platform] glfwInit failed");
+            log::critical(platform, "GLFW init failed");
         }
 
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -34,13 +33,12 @@ struct Platform final {
         window_.native = glfwCreateWindow(1280, 720, "javelin", nullptr, nullptr);
         if (!window_.native) {
             glfwTerminate();
-            log::critical("[platform] glfwCreateWindow failed");
+            log::critical(platform, "GLFW window creation failed");
         }
-        log::info("[platform] window created 1280x720");
+        log::info(platform, "Window created: 1280x720");
 
         glfwSetWindowUserPointer(window_.native, this);
-        glfwSetKeyCallback(window_.native, [](GLFWwindow *w, const int key, const int, const int action,
-                                              const int) {
+        glfwSetKeyCallback(window_.native, [](GLFWwindow *w, const int key, const int, const int action, const int) {
             if (auto *self = static_cast<Platform *>(glfwGetWindowUserPointer(w))) {
                 const bool down = action != GLFW_RELEASE;
                 switch (key) {
@@ -131,7 +129,7 @@ struct Platform final {
     }
 
     void shutdown() noexcept {
-        log::info("[platform] shutdown");
+        log::info(platform, "Shutting down platform");
         if (window_.native) {
             glfwDestroyWindow(window_.native);
             window_.native = nullptr;

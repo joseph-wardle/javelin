@@ -12,13 +12,13 @@ export namespace javelin {
 
 struct GeometryPass final {
     template <class Device> void init(Device &) {
-        log::info("[render][geom] init");
+        log::info(render, "Initializing geometry pass");
         // compile shaders, create VAOs/VBOs, etc.
     }
 
     template <class Device> void resize(Device &, Extent2D) {}
 
-    template <class Device> void shutdown(Device &) { log::info("[render][geom] shutdown"); }
+    template <class Device> void shutdown(Device &) { log::info(render, "Shutting down geometry pass"); }
 
     void execute(RenderContext &ctx) {
         ZoneScopedN("GeometryPass");

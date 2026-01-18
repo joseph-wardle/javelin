@@ -36,21 +36,21 @@ struct RenderSystem final {
         // - mesh/material registries
         // - draw lists (static)
 
-        log::info("[render] init cpu");
-        camera_.position = {0.0f, 2.0f, 5.0f};
+        log::info(render, "Initializing CPU resources for render system");
+        camera_.position = {0.0f, 5.0f, 5.0f};
         camera_.yaw_radians = 0.0f;
         camera_.pitch_radians = -0.35f;
     }
 
     void init_gpu(const WindowHandle window) {
         ZoneScopedN("Render init GPU");
-        log::info("[render] init gpu");
+        log::info(render, "Initializing GPU resources for render system");
         window_ = window;
 
         glfwMakeContextCurrent(window_.native);
 
         if (gladLoadGL(glfwGetProcAddress) == 0) {
-            log::critical("[render] OpenGL loader init failed");
+            log::critical(render, "OpenGL loader initialization failed");
         }
 
         TracyGpuContext;
@@ -59,9 +59,11 @@ struct RenderSystem final {
         const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
         const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
         if (vendor && renderer && version) {
-            log::info("[render] gl vendor={} renderer={} version={}", vendor, renderer, version);
+            log::info(render, "GL vendor={}", vendor);
+            log::info(render, "GL device={}", renderer);
+            log::info(render, "GL version={}", version);
         } else {
-            log::warn("[render] gl info unavailable");
+            log::warn(render, "GL info unavailable");
         }
 
         // 0 uncapped, 1 vsync
@@ -79,14 +81,13 @@ struct RenderSystem final {
         init_imgui_();
         gpu_ready_ = true;
 
-        log::info("[render] gpu initialized");
+        log::info(render, "GPU initialized");
     }
 
-    void render_frame(const double dt, InputState &input) noexcept {
+    void render_frame(const f64 dt, InputState &input) noexcept {
         ZoneScopedN("Render frame");
 
         if (dt > 0.0) {
-            TracyPlot("render_fps", 1.0 / dt);
             TracyPlot("render_dt_ms", dt * 1000.0);
         }
 
@@ -98,7 +99,6 @@ struct RenderSystem final {
         const Extent2D new_extent{w, h};
         if (new_extent.width != extent_.width || new_extent.height != extent_.height) {
             ZoneScopedN("Render resize");
-            log::info("[render] resize {}x{}", new_extent.width, new_extent.height);
             extent_ = new_extent;
             targets_.resize(extent_);
             pipeline_.resize(device_, extent_);
@@ -117,8 +117,6 @@ struct RenderSystem final {
             ImGui::Checkbox("Debug", &debug_.draw_debug);
             ImGui::Checkbox("Wireframe", &debug_.draw_wireframe);
             ImGui::End();
-
-            // ImGui::ShowDemoWindow();
 
             const ImGuiIO &io = ImGui::GetIO();
             input.end_frame(io.WantCaptureMouse, io.WantCaptureKeyboard);
@@ -159,13 +157,11 @@ struct RenderSystem final {
         }
 
         TracyGpuCollect;
-
-        // You can keep this as FrameMarkNamed("Frame") in App for a single canonical marker.
     }
 
     void shutdown() noexcept {
         ZoneScopedN("Render shutdown");
-        log::info("[render] shutdown");
+        log::info(render, "Shutting down render system");
 
         if (gpu_ready_) {
             pipeline_.shutdown(device_);

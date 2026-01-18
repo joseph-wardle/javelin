@@ -69,8 +69,8 @@ struct Scene final {
     }
 
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
-        log::info("[scene] load {}", scene_path.string());
-        log::warn("[scene] loader stub (returning empty scene)");
+        log::info(scene, "Loading scene from disk: {}", scene_path.string());
+        log::warn(scene, "Loader stub (returning empty scene)");
         return Scene();
     }
 

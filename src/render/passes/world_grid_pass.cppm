@@ -104,7 +104,7 @@ u32 compile_shader(const GLenum type, const std::string_view source) noexcept {
 
     std::array<char, 1024> info{};
     glGetShaderInfoLog(shader, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error("[render][grid] shader compile failed: {}", info.data());
+    log::error(render, "World grid shader compile failed: {}", info.data());
     glDeleteShader(shader);
     return 0;
 }
@@ -127,7 +127,7 @@ u32 link_program(const u32 vs, const u32 fs) noexcept {
 
     std::array<char, 1024> info{};
     glGetProgramInfoLog(program, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error("[render][grid] shader link failed: {}", info.data());
+    log::error(render, "World grid shader link failed: {}", info.data());
     glDeleteProgram(program);
     glDeleteShader(vs);
     glDeleteShader(fs);
@@ -151,7 +151,7 @@ struct WorldGridPass final {
     Settings settings{};
 
     template <class Device> void init(Device &) {
-        log::info("[render][grid] init");
+        log::info(render, "Initializing World grid pass");
         create_shader_();
         create_grid_();
     }
@@ -159,7 +159,7 @@ struct WorldGridPass final {
     template <class Device> void resize(Device &, Extent2D) {}
 
     template <class Device> void shutdown(Device &) {
-        log::info("[render][grid] shutdown");
+        log::info(render, "Shutting down World grid pass");
         release_();
     }
 

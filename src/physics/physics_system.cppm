@@ -17,11 +17,11 @@ struct PhysicsSystem final {
 
     void start() {
         if (thread_.joinable()) {
-            log::warn("[physics] start ignored (already running)");
+            log::warn(physics, "Start ignored (already running)");
             return;
         }
 
-        log::info("[physics] start");
+        log::info(physics, "Starting physics system");
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -47,10 +47,10 @@ struct PhysicsSystem final {
 
     void stop() noexcept {
         if (!thread_.joinable()) {
-            log::warn("[physics] stop ignored (not running)");
+            log::warn(physics, "Stop ignored (not running)");
             return;
         }
-        log::info("[physics] stop");
+        log::info(physics, "Stopping physics system");
         thread_.request_stop();
         thread_.join();
     }

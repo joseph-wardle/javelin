@@ -13,11 +13,11 @@ import javelin.render.types;
 export namespace javelin {
 
 struct PostPass final {
-    template <class Device> void init(Device &) { log::info("[render][post] init"); }
+    template <class Device> void init(Device &) { log::info(render, "Initializing post process pass"); }
 
     template <class Device> void resize(Device &, Extent2D) {}
 
-    template <class Device> void shutdown(Device &) { log::info("[render][post] shutdown"); }
+    template <class Device> void shutdown(Device &) { log::info(render, "Shutting down post process pass"); }
 
     void execute(RenderContext &ctx) {
         if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0) {
