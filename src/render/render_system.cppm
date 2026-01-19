@@ -19,6 +19,7 @@ import javelin.render.render_context;
 import javelin.render.render_device;
 import javelin.render.render_targets;
 import javelin.render.passes.display_pass;
+import javelin.render.passes.geometry_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
 import javelin.render.types;
@@ -197,7 +198,7 @@ struct RenderSystem final {
     }
 
   private:
-    using Pipeline = RenderPipeline<WorldGridPass, DisplayPass>;
+    using Pipeline = RenderPipeline<WorldGridPass, GeometryPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     WindowHandle window_{};

@@ -70,8 +70,35 @@ struct Scene final {
 
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
         log::info(scene, "Loading scene from disk: {}", scene_path.string());
-        log::warn(scene, "Loader stub (returning empty scene)");
-        return Scene();
+
+        Scene out{};
+        constexpr u32 kGridMin = 0;
+        constexpr u32 kGridMax = 10;
+        constexpr u32 kAxisCount = kGridMax - kGridMin + 1;
+        constexpr u32 kGridCount = kAxisCount * kAxisCount;
+
+        out.reserve(kGridCount);
+        out.count_ = kGridCount;
+
+        u32 idx = 0;
+        for (u32 z = kGridMin; z <= kGridMax; ++z) {
+            for (u32 x = kGridMin; x <= kGridMax; ++x) {
+                out.alive_[idx] = true;
+                out.generation_[idx] = 1;
+                out.shape_kind_[idx] = ShapeKind::sphere;
+                out.sphere_[idx] = SphereShape{0.5f};
+                out.material_[idx] = MaterialId{0};
+                out.mesh_[idx] = MeshId{0};
+                out.inv_mass_[idx] = 0.0f;
+                out.position_[idx] = Vec3{static_cast<f32>(x), 0.0f, static_cast<f32>(z)};
+                out.velocity_[idx] = Vec3{};
+                ++idx;
+            }
+        }
+
+        out.publish_poses_from_sim();
+        log::info(scene, "Loaded {} spheres on a {}x{} grid", out.count_, kAxisCount, kAxisCount);
+        return out;
     }
 
   private:

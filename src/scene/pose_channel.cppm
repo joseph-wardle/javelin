@@ -13,6 +13,9 @@ struct PoseSnapshot final {
 };
 
 struct PoseChannel final {
+    PoseChannel() = default;
+    PoseChannel(PoseChannel &&other) noexcept { *this = std::move(other); }
+
     PoseChannel &operator=(PoseChannel &&other) noexcept {
         if (this == &other)
             return *this;
