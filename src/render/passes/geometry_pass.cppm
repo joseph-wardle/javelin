@@ -407,8 +407,9 @@ struct GeometryPass final {
                 continue;
             }
 
+            const Vec3 position = lerp(ctx.poses.prev_positions[i], ctx.poses.curr_positions[i], ctx.pose_alpha);
             instance_data_.push_back(InstanceData{
-                .position = ctx.poses.curr_positions[i],
+                .position = position,
                 .radius = ctx.view.sphere[i].radius,
                 .material_id = ctx.view.material[i].value,
             });

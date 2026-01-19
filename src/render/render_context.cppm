@@ -1,5 +1,6 @@
 export module javelin.render.render_context;
 
+import javelin.core.types;
 import javelin.render.types;
 import javelin.render.render_targets;
 import javelin.math.mat4;
@@ -27,6 +28,7 @@ struct RenderContext final {
 
     RenderView view;
     PoseSnapshot poses;
+    f32 pose_alpha{1.0f};
 
     RenderTargets &targets;
     const DebugToggles &debug;
