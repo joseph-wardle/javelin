@@ -90,6 +90,10 @@ void main() {
 }
 )glsl";
 
+// Precomputed via inverse OCIO display transform to preserve the pre-ACES look.
+constexpr Vec3 kClearColor = Vec3{0.032089f, 0.031913f, 0.037314f};
+constexpr Vec3 kGridColor = Vec3{0.132375f, 0.139544f, 0.169055f};
+
 u32 compile_shader(const GLenum type, const std::string_view source) noexcept {
     const GLuint shader = glCreateShader(type);
     const char *src = source.data();
@@ -146,7 +150,8 @@ struct WorldGridPass final {
         f32 major_width_px{1.6f};
         f32 fade_start{20.0f};
         f32 fade_end{50.0f};
-        Vec3 color{0.28f, 0.30f, 0.34f};
+        // ACEScg value precomputed to match the old sRGB display look.
+        Vec3 color{detail::kGridColor};
     };
 
     Settings settings{};
@@ -176,7 +181,7 @@ struct WorldGridPass final {
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        const Vec3 clear_aces = linear_srgb_to_acescg(Vec3{0.08f, 0.08f, 0.10f});
+        const Vec3 clear_aces = detail::kClearColor;
         glClearColor(clear_aces.x, clear_aces.y, clear_aces.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -186,8 +191,7 @@ struct WorldGridPass final {
 
         glUseProgram(program_);
         glUniformMatrix4fv(u_view_proj_, 1, GL_FALSE, ctx.camera.view_proj.data());
-        const Vec3 grid_aces = linear_srgb_to_acescg(settings.color);
-        glUniform3f(u_color_, grid_aces.x, grid_aces.y, grid_aces.z);
+        glUniform3f(u_color_, settings.color.x, settings.color.y, settings.color.z);
         const Mat4 inv_view = inverse_or_identity(ctx.camera.view);
         const Vec3 camera_pos = transform_point_affine(inv_view, Vec3{0.0f, 0.0f, 0.0f});
         glUniform3f(u_camera_pos_, camera_pos.x, camera_pos.y, camera_pos.z);
