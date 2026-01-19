@@ -10,7 +10,6 @@ import std;
 import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.mat4;
-import javelin.render.color;
 import javelin.render.render_context;
 import javelin.render.render_targets;
 import javelin.render.types;
@@ -82,7 +81,7 @@ void main() {
     float major = grid_coverage(xz, u_major_cell, u_major_width_px) * fade;
 
     float coverage = max(minor * 0.35, major * 0.9);
-    if (coverage <= 1e-5) {
+    if (coverage <= 1e-9) {
         discard;
     }
     frag_color = vec4(u_color, coverage);
@@ -94,7 +93,6 @@ void main() {
 )glsl";
 
 // Precomputed via inverse OCIO display transform to preserve the pre-ACES look.
-constexpr Vec3 kClearColor = Vec3{0.032089f, 0.031913f, 0.037314f};
 constexpr Vec3 kGridColor = Vec3{0.132375f, 0.139544f, 0.169055f};
 
 u32 compile_shader(const GLenum type, const std::string_view source) noexcept {
@@ -181,16 +179,14 @@ struct WorldGridPass final {
         TracyGpuZone("WorldGridPass");
         glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        const Vec3 clear_aces = detail::kClearColor;
-        glClearColor(clear_aces.x, clear_aces.y, clear_aces.z, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
         if (!ctx.debug.draw_grid || program_ == 0 || vao_ == 0) {
             return;
         }
+
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         glUseProgram(program_);
         glUniformMatrix4fv(u_view_proj_, 1, GL_FALSE, ctx.camera.view_proj.data());
@@ -211,6 +207,7 @@ struct WorldGridPass final {
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertex_count_));
         glBindVertexArray(0);
         glUseProgram(0);
+        glDepthMask(GL_TRUE);
     }
 
   private:

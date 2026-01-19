@@ -18,6 +18,8 @@ import javelin.scene.shapes;
 
 namespace javelin::detail {
 constexpr i32 kMaterialCount = 4;
+// Precomputed via inverse OCIO display transform to preserve the pre-ACES look.
+constexpr Vec3 kClearColor = Vec3{0.032089f, 0.031913f, 0.037314f};
 
 constexpr std::string_view kGeometryVertexShader = R"glsl(
 #version 460 core
@@ -221,6 +223,14 @@ struct GeometryPass final {
         if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0) {
             return;
         }
+        glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
+        glViewport(0, 0, ctx.extent.width, ctx.extent.height);
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glClearColor(detail::kClearColor.x, detail::kClearColor.y, detail::kClearColor.z, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
         if (program_ == 0 || vao_ == 0 || instance_vbo_ == 0 || index_count_ <= 0) {
             return;
         }
@@ -228,12 +238,6 @@ struct GeometryPass final {
         if (instance_count_ <= 0) {
             return;
         }
-
-        glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
-        glViewport(0, 0, ctx.extent.width, ctx.extent.height);
-        glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
 
         glUseProgram(program_);
         glUniformMatrix4fv(u_view_proj_, 1, GL_FALSE, ctx.camera.view_proj.data());

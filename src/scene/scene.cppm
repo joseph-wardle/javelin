@@ -88,7 +88,7 @@ struct Scene final {
 
         Scene out{};
         constexpr u32 kGridMin = 0;
-        constexpr u32 kGridMax = 10;
+        constexpr u32 kGridMax = 256;
         constexpr u32 kAxisCount = kGridMax - kGridMin + 1;
         constexpr u32 kGridCount = kAxisCount * kAxisCount;
 

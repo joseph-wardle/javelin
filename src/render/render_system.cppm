@@ -217,7 +217,7 @@ struct RenderSystem final {
     }
 
   private:
-    using Pipeline = RenderPipeline<WorldGridPass, GeometryPass, DisplayPass>;
+    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     PhysicsSystem *physics_ = nullptr;
