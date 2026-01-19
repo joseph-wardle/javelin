@@ -19,6 +19,7 @@ struct DebugToggles final {
     bool draw_grid{true};
     bool draw_debug{true};
     bool draw_wireframe{false};
+    bool apply_color_transform{true};
     // later: show_aabbs, show_contacts, etc.
 };
 

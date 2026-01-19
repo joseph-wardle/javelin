@@ -26,6 +26,7 @@ target_sources(javelin
             platform/platform.cppm
             platform/window.cppm
             render/fly_camera.cppm
+            render/color.cppm
             render/pipeline.cppm
             render/render_context.cppm
             render/render_device.cppm
@@ -33,7 +34,7 @@ target_sources(javelin
             render/render_system.cppm
             render/types.cppm
             render/passes/geometry_pass.cppm
-            render/passes/post_pass.cppm
+            render/passes/display_pass.cppm
             render/passes/world_grid_pass.cppm
             scene/camera.cppm
             scene/entity.cppm

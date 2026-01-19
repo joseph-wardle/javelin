@@ -10,6 +10,7 @@ import std;
 import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.mat4;
+import javelin.render.color;
 import javelin.render.render_context;
 import javelin.render.render_targets;
 import javelin.render.types;
@@ -175,7 +176,8 @@ struct WorldGridPass final {
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
+        const Vec3 clear_aces = linear_srgb_to_acescg(Vec3{0.08f, 0.08f, 0.10f});
+        glClearColor(clear_aces.x, clear_aces.y, clear_aces.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (!ctx.debug.draw_grid || program_ == 0 || vao_ == 0) {
@@ -184,7 +186,8 @@ struct WorldGridPass final {
 
         glUseProgram(program_);
         glUniformMatrix4fv(u_view_proj_, 1, GL_FALSE, ctx.camera.view_proj.data());
-        glUniform3f(u_color_, settings.color.x, settings.color.y, settings.color.z);
+        const Vec3 grid_aces = linear_srgb_to_acescg(settings.color);
+        glUniform3f(u_color_, grid_aces.x, grid_aces.y, grid_aces.z);
         const Mat4 inv_view = inverse_or_identity(ctx.camera.view);
         const Vec3 camera_pos = transform_point_affine(inv_view, Vec3{0.0f, 0.0f, 0.0f});
         glUniform3f(u_camera_pos_, camera_pos.x, camera_pos.y, camera_pos.z);

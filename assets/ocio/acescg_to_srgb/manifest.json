@@ -1,0 +1,37 @@
+{
+  "display": "sRGB - Display",
+  "glsl_language": "GPU_LANGUAGE_GLSL_4_0",
+  "ocio_config": "ocio://cg-config-latest",
+  "ocio_version": "2.5.0",
+  "resource_prefix": "ocio_",
+  "shader_function": "OCIODisplay",
+  "src": "scene_linear",
+  "textures_2d": [
+    {
+      "channel": "TextureType.TEXTURE_RED_CHANNEL",
+      "dimensions": "TextureDimensions.TEXTURE_1D",
+      "height": 1,
+      "interpolation": "Interpolation.INTERP_NEAREST",
+      "npy_file": "tex2d_0_ocio_reach_m_table_0.npy",
+      "sampler_name": "ocio_reach_m_table_0Sampler",
+      "suggested_gl_target": "GL_TEXTURE_1D",
+      "texture_name": "ocio_reach_m_table_0",
+      "width": 362
+    },
+    {
+      "channel": "TextureType.TEXTURE_RGB_CHANNEL",
+      "dimensions": "TextureDimensions.TEXTURE_1D",
+      "height": 1,
+      "interpolation": "Interpolation.INTERP_NEAREST",
+      "npy_file": "tex2d_1_ocio_gamut_cusp_table_0.npy",
+      "sampler_name": "ocio_gamut_cusp_table_0Sampler",
+      "suggested_gl_target": "GL_TEXTURE_1D",
+      "texture_name": "ocio_gamut_cusp_table_0",
+      "width": 362
+    }
+  ],
+  "textures_3d": [],
+  "uniform_buffer_size": 0,
+  "uniforms": [],
+  "view": "ACES 2.0 - SDR 100 nits (Rec.709)"
+}

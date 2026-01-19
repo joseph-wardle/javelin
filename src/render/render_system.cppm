@@ -18,7 +18,7 @@ import javelin.render.pipeline;
 import javelin.render.render_context;
 import javelin.render.render_device;
 import javelin.render.render_targets;
-import javelin.render.passes.post_pass;
+import javelin.render.passes.display_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
 import javelin.render.types;
@@ -116,6 +116,7 @@ struct RenderSystem final {
             ImGui::Checkbox("Grid", &debug_.draw_grid);
             ImGui::Checkbox("Debug", &debug_.draw_debug);
             ImGui::Checkbox("Wireframe", &debug_.draw_wireframe);
+            ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             ImGui::End();
 
             const ImGuiIO &io = ImGui::GetIO();
@@ -196,7 +197,7 @@ struct RenderSystem final {
     }
 
   private:
-    using Pipeline = RenderPipeline<WorldGridPass, PostPass>;
+    using Pipeline = RenderPipeline<WorldGridPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     WindowHandle window_{};
