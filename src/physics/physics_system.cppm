@@ -16,6 +16,14 @@ export namespace javelin {
 struct PhysicsSystem final {
     void init(Scene &scene) noexcept { scene_ = &scene; }
 
+    void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
+    void set_reset_y(const f32 reset_y) noexcept { reset_y_.store(reset_y, std::memory_order_relaxed); }
+    void set_spawn_y(const f32 spawn_y) noexcept { spawn_y_.store(spawn_y, std::memory_order_relaxed); }
+
+    [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 reset_y() const noexcept { return reset_y_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 spawn_y() const noexcept { return spawn_y_.load(std::memory_order_relaxed); }
+
     void start() {
         if (thread_.joinable()) {
             log::warn(physics, "Start ignored (already running)");
@@ -40,16 +48,16 @@ struct PhysicsSystem final {
                     if (scene_ != nullptr) {
                         PhysicsView view = scene_->physics_view();
                         const f32 dt = 1.0f / 60.0f;
-                        constexpr f32 kGravity = -9.8f;
-                        constexpr f32 kResetY = -10.0f;
-                        constexpr f32 kSpawnY = 10.0f;
+                        const f32 gravity = gravity_.load(std::memory_order_relaxed);
+                        const f32 reset_y = reset_y_.load(std::memory_order_relaxed);
+                        const f32 spawn_y = spawn_y_.load(std::memory_order_relaxed);
 
                         for (u32 i = 0; i < view.count; ++i) {
-                            view.velocity[i].y += kGravity * dt;
+                            view.velocity[i].y += gravity * dt;
                             view.position[i].y += view.velocity[i].y * dt;
 
-                            if (view.position[i].y < kResetY) {
-                                view.position[i].y = kSpawnY;
+                            if (view.position[i].y < reset_y) {
+                                view.position[i].y = spawn_y;
                                 view.velocity[i].y = 0.0f;
                             }
                         }
@@ -80,6 +88,9 @@ struct PhysicsSystem final {
   private:
     Scene *scene_{nullptr};
     std::jthread thread_{};
+    std::atomic<f32> gravity_{-9.8f};
+    std::atomic<f32> reset_y_{-10.0f};
+    std::atomic<f32> spawn_y_{10.0f};
 };
 
 } // namespace javelin

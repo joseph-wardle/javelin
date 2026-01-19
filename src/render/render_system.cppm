@@ -23,6 +23,7 @@ import javelin.render.passes.geometry_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
 import javelin.render.types;
+import javelin.physics.physics_system;
 import javelin.scene;
 import javelin.scene.camera;
 import javelin.platform.input;
@@ -31,8 +32,9 @@ import javelin.platform.window;
 export namespace javelin {
 
 struct RenderSystem final {
-    void init_cpu(const Scene &scene) noexcept {
+    void init_cpu(const Scene &scene, PhysicsSystem &physics) noexcept {
         scene_ = &scene;
+        physics_ = &physics;
         // TODO: build CPU-side render runtime:
         // - mesh/material registries
         // - draw lists (static)
@@ -115,9 +117,26 @@ struct RenderSystem final {
             ImGui::Begin("Javelin");
             ImGui::Text("dt: %.3f ms", dt * 1000.0);
             ImGui::Checkbox("Grid", &debug_.draw_grid);
-            ImGui::Checkbox("Debug", &debug_.draw_debug);
-            ImGui::Checkbox("Wireframe", &debug_.draw_wireframe);
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
+            if (physics_ != nullptr) {
+                ImGui::Separator();
+                ImGui::TextUnformatted("Physics");
+
+                f32 gravity = physics_->gravity();
+                if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
+                    physics_->set_gravity(gravity);
+                }
+
+                f32 reset_y = physics_->reset_y();
+                if (ImGui::DragFloat("Reset Y", &reset_y, 0.1f, -50.0f, 50.0f)) {
+                    physics_->set_reset_y(reset_y);
+                }
+
+                f32 spawn_y = physics_->spawn_y();
+                if (ImGui::DragFloat("Spawn Y", &spawn_y, 0.1f, -50.0f, 50.0f)) {
+                    physics_->set_spawn_y(spawn_y);
+                }
+            }
             ImGui::End();
 
             const ImGuiIO &io = ImGui::GetIO();
@@ -201,6 +220,7 @@ struct RenderSystem final {
     using Pipeline = RenderPipeline<WorldGridPass, GeometryPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
+    PhysicsSystem *physics_ = nullptr;
     WindowHandle window_{};
 
     RenderDevice device_{};
