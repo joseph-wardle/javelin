@@ -86,6 +86,7 @@ struct Scene final {
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
         log::info(scene, "Loading scene from disk: {}", scene_path.string());
 
+        // TEMP: procedural sphere grid until real scene data/asset loading is in place.
         Scene out{};
         constexpr u32 kGridMin = 0;
         constexpr u32 kGridMax = 256;
@@ -98,6 +99,7 @@ struct Scene final {
         u32 idx = 0;
         for (u32 z = kGridMin; z <= kGridMax; ++z) {
             for (u32 x = kGridMin; x <= kGridMax; ++x) {
+                // TEMP: deterministic per-entity variations for the falling test.
                 const u32 seed = idx * 747796405u + 2891336453u;
                 const f32 rand01 = detail::hash_to_unit(seed);
                 const f32 radius = 0.3f + rand01 * 0.5f;
@@ -118,6 +120,7 @@ struct Scene final {
 
         out.publish_poses_from_sim();
         log::info(scene, "Loaded {} spheres on a {}x{} grid", out.count_, kAxisCount, kAxisCount);
+        log::info(scene, "Test scene params: radius=[0.3..0.8], height=[-10..10]");
         return out;
     }
 

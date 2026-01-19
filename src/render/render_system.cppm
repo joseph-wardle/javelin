@@ -124,6 +124,7 @@ struct RenderSystem final {
             ImGui::Checkbox("Grid", &debug_.draw_grid);
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
+                // TEMP: test-scene physics controls.
                 ImGui::Separator();
                 ImGui::TextUnformatted("Physics");
 

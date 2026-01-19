@@ -29,13 +29,17 @@ struct PhysicsSystem final {
             log::warn(physics, "Start ignored (already running)");
             return;
         }
+        if (scene_ == nullptr) {
+            log::warn(physics, "Starting without scene bound");
+        }
 
         log::info(physics, "Starting physics system");
+        log::info(physics, "Params gravity={} reset_y={} spawn_y={}", gravity(), reset_y(), spawn_y());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
             constexpr auto delta_time =
-                std::chrono::duration_cast<SteadyClock::duration>(std::chrono::duration<f64>(1.0 / 10.0));
+                std::chrono::duration_cast<SteadyClock::duration>(std::chrono::duration<f64>(1.0 / 60.0));
             FixedRateTicker ticker{delta_time};
 
             while (!stop_token.stop_requested()) {
@@ -47,11 +51,12 @@ struct PhysicsSystem final {
                     ZoneScopedN("Physics tick");
                     if (scene_ != nullptr) {
                         PhysicsView view = scene_->physics_view();
-                        const f32 dt = 1.0f / 10.0f;
+                        const f32 dt = 1.0f / 60.0f;
                         const f32 gravity = gravity_.load(std::memory_order_relaxed);
                         const f32 reset_y = reset_y_.load(std::memory_order_relaxed);
                         const f32 spawn_y = spawn_y_.load(std::memory_order_relaxed);
 
+                        // TEMP: simplified falling test for render/physics plumbing.
                         for (u32 i = 0; i < view.count; ++i) {
                             view.velocity[i].y += gravity * dt;
                             view.position[i].y += view.velocity[i].y * dt;

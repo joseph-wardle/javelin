@@ -2,6 +2,7 @@ module;
 
 #include <glad/gl.h>
 #include <tracy/Tracy.hpp>
+#include <tracy/TracyOpenGL.hpp>
 
 export module javelin.render.passes.geometry_pass;
 
@@ -79,8 +80,7 @@ struct IcosphereMesh final {
     return (static_cast<u64>(lo) << 32) | static_cast<u64>(hi);
 }
 
-u32 midpoint_index(const u32 a, const u32 b, std::vector<Vec3> &positions,
-                   std::unordered_map<u64, u32> &cache) {
+u32 midpoint_index(const u32 a, const u32 b, std::vector<Vec3> &positions, std::unordered_map<u64, u32> &cache) {
     const u64 key = edge_key(a, b);
     if (const auto it = cache.find(key); it != cache.end()) {
         return it->second;
@@ -97,15 +97,14 @@ u32 midpoint_index(const u32 a, const u32 b, std::vector<Vec3> &positions,
 [[nodiscard]] IcosphereMesh make_icosphere(const i32 subdivisions) {
     const f32 t = (1.0f + std::sqrt(5.0f)) * 0.5f;
     const std::array<Vec3, 12> base_positions = {
-        Vec3{-1.0f, t, 0.0f}, Vec3{1.0f, t, 0.0f},  Vec3{-1.0f, -t, 0.0f}, Vec3{1.0f, -t, 0.0f},
-        Vec3{0.0f, -1.0f, t}, Vec3{0.0f, 1.0f, t},  Vec3{0.0f, -1.0f, -t}, Vec3{0.0f, 1.0f, -t},
-        Vec3{t, 0.0f, -1.0f}, Vec3{t, 0.0f, 1.0f},  Vec3{-t, 0.0f, -1.0f}, Vec3{-t, 0.0f, 1.0f},
+        Vec3{-1.0f, t, 0.0f}, Vec3{1.0f, t, 0.0f}, Vec3{-1.0f, -t, 0.0f}, Vec3{1.0f, -t, 0.0f},
+        Vec3{0.0f, -1.0f, t}, Vec3{0.0f, 1.0f, t}, Vec3{0.0f, -1.0f, -t}, Vec3{0.0f, 1.0f, -t},
+        Vec3{t, 0.0f, -1.0f}, Vec3{t, 0.0f, 1.0f}, Vec3{-t, 0.0f, -1.0f}, Vec3{-t, 0.0f, 1.0f},
     };
 
     const std::array<u32, 60> base_indices = {
-        0, 11, 5,  0, 5,  1,  0, 1,  7,  0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4,
-        11, 10, 2, 10, 7, 6,  7, 1,  8,  3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8,
-        3, 8,  9, 4, 9, 5,  2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1,
+        0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4,  11, 10, 2,  10, 7, 6, 7, 1, 8,
+        3, 9,  4, 3, 4, 2, 3, 2, 6, 3, 6, 8,  3, 8,  9,  4, 9, 5, 2, 4,  11, 6,  2,  10, 8,  6, 7, 9, 8, 1,
     };
 
     IcosphereMesh mesh{};
@@ -220,6 +219,7 @@ struct GeometryPass final {
 
     void execute(RenderContext &ctx) {
         ZoneScopedN("GeometryPass");
+        TracyGpuZone("GeometryPass");
         if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0) {
             return;
         }
@@ -300,6 +300,8 @@ struct GeometryPass final {
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+        log::info(render, "Icosphere mesh ready (verts={}, indices={})", vertices.size(), mesh.indices.size());
     }
 
     void create_shader_() {
@@ -330,6 +332,7 @@ struct GeometryPass final {
         u_light_color_ = glGetUniformLocation(program_, "u_light_color");
         u_ambient_color_ = glGetUniformLocation(program_, "u_ambient_color");
 
+        // TEMP: hardcoded material palette for the test scene.
         constexpr std::array<Vec3, detail::kMaterialCount> kLinearSrgb = {
             Vec3{0.65f, 0.65f, 0.68f},
             Vec3{0.85f, 0.25f, 0.20f},
@@ -353,6 +356,7 @@ struct GeometryPass final {
         if (u_material_colors_ >= 0) {
             glUniform3fv(u_material_colors_, detail::kMaterialCount, packed.data());
         }
+        // TEMP: basic directional + ambient lighting for the test scene.
         if (u_light_dir_ >= 0) {
             const Vec3 dir = Vec3{0.6f, -1.0f, -0.4f}.normalized_or_zero();
             glUniform3f(u_light_dir_, dir.x, dir.y, dir.z);
