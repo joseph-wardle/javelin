@@ -350,7 +350,7 @@ struct GeometryPass final {
             glUniform3fv(u_material_colors_, detail::kMaterialCount, packed.data());
         }
         if (u_light_dir_ >= 0) {
-            const Vec3 dir = Vec3{-0.6f, 1.0f, 0.4f}.normalized_or_zero();
+            const Vec3 dir = Vec3{0.6f, -1.0f, -0.4f}.normalized_or_zero();
             glUniform3f(u_light_dir_, dir.x, dir.y, dir.z);
         }
         if (u_light_color_ >= 0) {

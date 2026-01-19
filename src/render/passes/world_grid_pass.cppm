@@ -82,6 +82,9 @@ void main() {
     float major = grid_coverage(xz, u_major_cell, u_major_width_px) * fade;
 
     float coverage = max(minor * 0.35, major * 0.9);
+    if (coverage <= 1e-5) {
+        discard;
+    }
     frag_color = vec4(u_color, coverage);
 
     vec4 clip = u_view_proj * vec4(world, 1.0);
