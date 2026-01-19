@@ -12,6 +12,21 @@ import javelin.scene.render_view;
 import javelin.scene.shapes;
 
 export namespace javelin {
+namespace detail {
+[[nodiscard]] constexpr u32 hash_u32(u32 x) noexcept {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+[[nodiscard]] constexpr f32 hash_to_unit(u32 x) noexcept {
+    const u32 h = hash_u32(x);
+    return static_cast<f32>(h & 0x00FFFFFFu) / static_cast<f32>(0x01000000u);
+}
+} // namespace detail
 
 struct Scene final {
     void reserve(u32 capacity) {
@@ -83,14 +98,19 @@ struct Scene final {
         u32 idx = 0;
         for (u32 z = kGridMin; z <= kGridMax; ++z) {
             for (u32 x = kGridMin; x <= kGridMax; ++x) {
+                const u32 seed = idx * 747796405u + 2891336453u;
+                const f32 rand01 = detail::hash_to_unit(seed);
+                const f32 radius = 0.3f + rand01 * 0.5f;
+                const f32 height = 10 - rand01 * 20.0f;
+
                 out.alive_[idx] = true;
                 out.generation_[idx] = 1;
                 out.shape_kind_[idx] = ShapeKind::sphere;
-                out.sphere_[idx] = SphereShape{0.5f};
+                out.sphere_[idx] = SphereShape{radius};
                 out.material_[idx] = MaterialId{0};
                 out.mesh_[idx] = MeshId{0};
                 out.inv_mass_[idx] = 0.0f;
-                out.position_[idx] = Vec3{static_cast<f32>(x), 0.0f, static_cast<f32>(z)};
+                out.position_[idx] = Vec3{static_cast<f32>(x), height, static_cast<f32>(z)};
                 out.velocity_[idx] = Vec3{};
                 ++idx;
             }
