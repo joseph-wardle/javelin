@@ -1,8 +1,7 @@
 module;
 
-#include <tracy/Tracy.hpp>
-
 #include <glad/gl.h>
+#include <tracy/Tracy.hpp>
 
 export module javelin.render.render_targets;
 

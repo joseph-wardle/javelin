@@ -28,7 +28,7 @@ struct App final {
         platform.init();
         scene = Scene::load_scene_from_disk(scene_path);
 
-        renderer.init_cpu(scene);
+        renderer.init_cpu(scene, physics);
         renderer.init_gpu(platform.window_handle());
 
         physics.init(scene);

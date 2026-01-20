@@ -10,10 +10,14 @@ module;
 
 #include <tracy/Tracy.hpp>
 #include <tracy/TracyOpenGL.hpp>
+
 export module javelin.render.render_system;
+
+import std;
 
 import javelin.core.types;
 import javelin.core.logging;
+import javelin.core.time;
 import javelin.render.pipeline;
 import javelin.render.render_context;
 import javelin.render.render_device;
@@ -23,16 +27,19 @@ import javelin.render.passes.geometry_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
 import javelin.render.types;
+import javelin.physics.physics_system;
 import javelin.scene;
 import javelin.scene.camera;
+import javelin.scene.pose_channel;
 import javelin.platform.input;
 import javelin.platform.window;
 
 export namespace javelin {
 
 struct RenderSystem final {
-    void init_cpu(const Scene &scene) noexcept {
+    void init_cpu(const Scene &scene, PhysicsSystem &physics) noexcept {
         scene_ = &scene;
+        physics_ = &physics;
         // TODO: build CPU-side render runtime:
         // - mesh/material registries
         // - draw lists (static)
@@ -115,9 +122,27 @@ struct RenderSystem final {
             ImGui::Begin("Javelin");
             ImGui::Text("dt: %.3f ms", dt * 1000.0);
             ImGui::Checkbox("Grid", &debug_.draw_grid);
-            ImGui::Checkbox("Debug", &debug_.draw_debug);
-            ImGui::Checkbox("Wireframe", &debug_.draw_wireframe);
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
+            if (physics_ != nullptr) {
+                // TEMP: test-scene physics controls.
+                ImGui::Separator();
+                ImGui::TextUnformatted("Physics");
+
+                f32 gravity = physics_->gravity();
+                if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
+                    physics_->set_gravity(gravity);
+                }
+
+                f32 reset_y = physics_->reset_y();
+                if (ImGui::DragFloat("Reset Y", &reset_y, 0.1f, -50.0f, 50.0f)) {
+                    physics_->set_reset_y(reset_y);
+                }
+
+                f32 spawn_y = physics_->spawn_y();
+                if (ImGui::DragFloat("Spawn Y", &spawn_y, 0.1f, -50.0f, 50.0f)) {
+                    physics_->set_spawn_y(spawn_y);
+                }
+            }
             ImGui::End();
 
             const ImGuiIO &io = ImGui::GetIO();
@@ -135,11 +160,15 @@ struct RenderSystem final {
         const auto proj = camera_proj(camera_.lens, aspect);
         const FrameCamera frame_camera{.view = view, .proj = proj, .view_proj = proj * view};
 
+        const PoseSnapshot poses = scene_->pose_snapshot();
+        const f32 pose_alpha = compute_pose_alpha_(poses);
+
         RenderContext ctx{
             .extent = extent_,
             .camera = frame_camera,
             .view = scene_->render_view(),
-            .poses = scene_->pose_snapshot(),
+            .poses = poses,
+            .pose_alpha = pose_alpha,
             .targets = targets_,
             .debug = debug_,
         };
@@ -198,9 +227,10 @@ struct RenderSystem final {
     }
 
   private:
-    using Pipeline = RenderPipeline<WorldGridPass, GeometryPass, DisplayPass>;
+    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
+    PhysicsSystem *physics_ = nullptr;
     WindowHandle window_{};
 
     RenderDevice device_{};
@@ -212,6 +242,32 @@ struct RenderSystem final {
     Extent2D extent_{};
 
     bool gpu_ready_ = false;
+
+    [[nodiscard]] static u64 now_ns_() noexcept {
+        const auto now = SteadyClock::now().time_since_epoch();
+        return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+    }
+
+    [[nodiscard]] static f32 compute_pose_alpha_(const PoseSnapshot &poses) noexcept {
+        if (poses.count == 0 || poses.prev_time_ns == 0 || poses.curr_time_ns == 0 ||
+            poses.curr_time_ns <= poses.prev_time_ns) {
+            return 1.0f;
+        }
+
+        const u64 span = poses.curr_time_ns - poses.prev_time_ns;
+        const u64 now = now_ns_();
+        const u64 render_time = (now > span) ? (now - span) : 0;
+
+        u64 sample_time = render_time;
+        if (sample_time < poses.prev_time_ns) {
+            sample_time = poses.prev_time_ns;
+        } else if (sample_time > poses.curr_time_ns) {
+            sample_time = poses.curr_time_ns;
+        }
+
+        const f64 alpha = static_cast<f64>(sample_time - poses.prev_time_ns) / static_cast<f64>(span);
+        return static_cast<f32>(alpha);
+    }
 };
 
 } // namespace javelin

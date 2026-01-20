@@ -2,14 +2,24 @@ export module javelin.scene.pose_channel;
 
 import std;
 
+import javelin.core.time;
 import javelin.core.types;
 import javelin.math.vec3;
 
 export namespace javelin {
+namespace detail {
+[[nodiscard]] inline u64 now_ns() noexcept {
+    const auto now = SteadyClock::now().time_since_epoch();
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+}
+} // namespace detail
+
 struct PoseSnapshot final {
     std::span<const Vec3> prev_positions;
     std::span<const Vec3> curr_positions;
     u32 count{};
+    u64 prev_time_ns{};
+    u64 curr_time_ns{};
 };
 
 struct PoseChannel final {
@@ -30,6 +40,9 @@ struct PoseChannel final {
         prev_published_.store(other.prev_published_.load(std::memory_order_relaxed), std::memory_order_relaxed);
         curr_published_.store(other.curr_published_.load(std::memory_order_relaxed), std::memory_order_relaxed);
         published_count_.store(other.published_count_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        for (usize i = 0; i < time_ns_.size(); ++i) {
+            time_ns_[i].store(other.time_ns_[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
 
         other.capacity_ = 0;
         other.count_ = 0;
@@ -39,6 +52,9 @@ struct PoseChannel final {
         other.prev_published_.store(0, std::memory_order_relaxed);
         other.curr_published_.store(1, std::memory_order_relaxed);
         other.published_count_.store(0, std::memory_order_relaxed);
+        for (usize i = 0; i < other.time_ns_.size(); ++i) {
+            other.time_ns_[i].store(0, std::memory_order_relaxed);
+        }
 
         return *this;
     }
@@ -63,6 +79,7 @@ struct PoseChannel final {
         write_idx_ = (write_idx_ + 1u) % 3u;
 
         // release: make writes visible before indices update
+        time_ns_[curr_idx_].store(detail::now_ns(), std::memory_order_relaxed);
         prev_published_.store(prev_idx_, std::memory_order_release);
         curr_published_.store(curr_idx_, std::memory_order_release);
         published_count_.store(count_, std::memory_order_release);
@@ -73,10 +90,14 @@ struct PoseChannel final {
         const u32 prev = prev_published_.load(std::memory_order_acquire);
         const u32 curr = curr_published_.load(std::memory_order_acquire);
         const u32 n = published_count_.load(std::memory_order_acquire);
+        const u64 prev_time = time_ns_[prev].load(std::memory_order_acquire);
+        const u64 curr_time = time_ns_[curr].load(std::memory_order_acquire);
 
         return PoseSnapshot{.prev_positions = std::span<const Vec3>{pos_[prev].data(), n},
                             .curr_positions = std::span<const Vec3>{pos_[curr].data(), n},
-                            .count = n};
+                            .count = n,
+                            .prev_time_ns = prev_time,
+                            .curr_time_ns = curr_time};
     }
 
   private:
@@ -91,5 +112,6 @@ struct PoseChannel final {
     std::atomic<u32> prev_published_{0};
     std::atomic<u32> curr_published_{1};
     std::atomic<u32> published_count_{0};
+    std::array<std::atomic<u64>, 3> time_ns_{};
 };
 } // namespace javelin

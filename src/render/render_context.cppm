@@ -1,5 +1,6 @@
 export module javelin.render.render_context;
 
+import javelin.core.types;
 import javelin.render.types;
 import javelin.render.render_targets;
 import javelin.math.mat4;
@@ -17,8 +18,6 @@ struct FrameCamera final {
 
 struct DebugToggles final {
     bool draw_grid{true};
-    bool draw_debug{true};
-    bool draw_wireframe{false};
     bool apply_color_transform{true};
     // later: show_aabbs, show_contacts, etc.
 };
@@ -29,6 +28,7 @@ struct RenderContext final {
 
     RenderView view;
     PoseSnapshot poses;
+    f32 pose_alpha{1.0f};
 
     RenderTargets &targets;
     const DebugToggles &debug;
