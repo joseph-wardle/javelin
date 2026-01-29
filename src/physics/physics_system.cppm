@@ -22,12 +22,10 @@ struct PhysicsSystem final {
     void init(Scene &scene) noexcept { scene_ = &scene; }
 
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
-    void set_reset_y(const f32 reset_y) noexcept { reset_y_.store(reset_y, std::memory_order_relaxed); }
-    void set_spawn_y(const f32 spawn_y) noexcept { spawn_y_.store(spawn_y, std::memory_order_relaxed); }
+    void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
 
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
-    [[nodiscard]] f32 reset_y() const noexcept { return reset_y_.load(std::memory_order_relaxed); }
-    [[nodiscard]] f32 spawn_y() const noexcept { return spawn_y_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
 
     void start() {
         if (thread_.joinable()) {
@@ -39,7 +37,7 @@ struct PhysicsSystem final {
         }
 
         log::info(physics, "Starting physics system");
-        log::info(physics, "Params gravity={} reset_y={} spawn_y={}", gravity(), reset_y(), spawn_y());
+        log::info(physics, "Params gravity={} restitution={}", gravity(), restitution());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -89,8 +87,6 @@ struct PhysicsSystem final {
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
-    std::atomic<f32> reset_y_{-10.0f};
-    std::atomic<f32> spawn_y_{10.0f};
     std::vector<BodyPair> candidate_pairs_{};
     std::vector<Contact> contacts_{};
 };

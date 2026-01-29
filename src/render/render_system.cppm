@@ -132,15 +132,9 @@ struct RenderSystem final {
                 if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
                     physics_->set_gravity(gravity);
                 }
-
-                f32 reset_y = physics_->reset_y();
-                if (ImGui::DragFloat("Reset Y", &reset_y, 0.1f, -50.0f, 50.0f)) {
-                    physics_->set_reset_y(reset_y);
-                }
-
-                f32 spawn_y = physics_->spawn_y();
-                if (ImGui::DragFloat("Spawn Y", &spawn_y, 0.1f, -50.0f, 50.0f)) {
-                    physics_->set_spawn_y(spawn_y);
+                f32 restitution = physics_->restitution();
+                if (ImGui::DragFloat("Restitution", &restitution, 0.01f, 0.0f, 1.0f)) {
+                    physics_->set_restitution(restitution);
                 }
             }
             ImGui::End();
