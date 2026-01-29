@@ -177,8 +177,8 @@ struct Scene final {
                   detail::kSpawnSettings.grid_dim);
         log::info(scene, "Test scene params: radius=[{}..{}], height=[{}..{}], spacing={}, jitter={}",
                   detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max,
-                  detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
-                  detail::kSpawnSettings.spacing, detail::kSpawnSettings.jitter);
+                  detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max, detail::kSpawnSettings.spacing,
+                  detail::kSpawnSettings.jitter);
         return out;
     }
 

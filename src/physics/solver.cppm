@@ -36,9 +36,8 @@ void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::spa
             continue;
         }
 
-        const f32 correction_mag =
-            std::max(contact.penetration - detail::kPositionSlop, 0.0f) * detail::kPositionCorrectionPercent /
-            inv_mass_sum;
+        const f32 correction_mag = std::max(contact.penetration - detail::kPositionSlop, 0.0f) *
+                                   detail::kPositionCorrectionPercent / inv_mass_sum;
         if (correction_mag > 0.0f) {
             const Vec3 correction = contact.normal * correction_mag;
             position[a] -= correction * inv_mass_a;
