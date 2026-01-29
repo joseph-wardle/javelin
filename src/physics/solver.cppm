@@ -12,7 +12,7 @@ import javelin.physics.types;
 namespace javelin::detail {
 inline constexpr f32 kPositionSlop = 0.01f;
 inline constexpr f32 kPositionCorrectionPercent = 0.8f;
-inline constexpr u32 kSolverIterations = 8;
+inline constexpr u32 kSolverIterations = 12;
 inline constexpr f32 kTangentEpsSq = 1e-8f;
 } // namespace javelin::detail
 

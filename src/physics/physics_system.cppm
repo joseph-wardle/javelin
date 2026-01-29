@@ -24,6 +24,7 @@ struct PhysicsSystem final {
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
     void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
     void set_friction(const f32 friction) noexcept { friction_.store(friction, std::memory_order_relaxed); }
+    void request_reset() noexcept { reset_requested_.store(true, std::memory_order_release); }
 
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
@@ -61,6 +62,10 @@ struct PhysicsSystem final {
                         const f32 restitution = restitution_.load(std::memory_order_relaxed);
                         const f32 friction = friction_.load(std::memory_order_relaxed);
 
+                        if (reset_requested_.exchange(false, std::memory_order_acq_rel)) {
+                            scene_->reset_simulation();
+                        }
+
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
                         broad_phase_sphere_pairs(view.count, candidate_pairs_);
@@ -90,7 +95,8 @@ struct PhysicsSystem final {
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
-    std::atomic<f32> friction_{0.4f};
+    std::atomic<f32> friction_{0.1f};
+    std::atomic<bool> reset_requested_{false};
     std::vector<BodyPair> candidate_pairs_{};
     std::vector<Contact> contacts_{};
 };

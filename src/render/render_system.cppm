@@ -141,6 +141,10 @@ struct RenderSystem final {
                 if (ImGui::DragFloat("Friction", &friction, 0.01f, 0.0f, 1.0f)) {
                     physics_->set_friction(friction);
                 }
+
+                if (ImGui::Button("Reset Scene")) {
+                    physics_->request_reset();
+                }
             }
             ImGui::End();
 

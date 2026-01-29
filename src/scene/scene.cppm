@@ -26,6 +26,62 @@ namespace detail {
     const u32 h = hash_u32(x);
     return static_cast<f32>(h & 0x00FFFFFFu) / static_cast<f32>(0x01000000u);
 }
+
+struct SpawnSettings final {
+    u32 grid_dim{};
+    f32 spacing{};
+    f32 jitter{};
+    f32 radius_min{};
+    f32 radius_max{};
+    f32 height_min{};
+    f32 height_max{};
+};
+
+inline constexpr SpawnSettings kSpawnSettings{
+    .grid_dim = 10,
+    .spacing = 1.0f,
+    .jitter = 0.35f,
+    .radius_min = 0.25f,
+    .radius_max = 0.6f,
+    .height_min = 6.0f,
+    .height_max = 14.0f,
+};
+
+[[nodiscard]] constexpr u32 spawn_count() noexcept { return kSpawnSettings.grid_dim * kSpawnSettings.grid_dim; }
+
+[[nodiscard]] inline f32 spawn_radius(const u32 idx) noexcept {
+    const u32 seed = idx * 747796405u + 2891336453u;
+    const f32 rand_radius = hash_to_unit(seed);
+    return kSpawnSettings.radius_min + rand_radius * (kSpawnSettings.radius_max - kSpawnSettings.radius_min);
+}
+
+[[nodiscard]] inline Vec3 spawn_position(const u32 idx) noexcept {
+    const u32 seed = idx * 747796405u + 2891336453u;
+    const f32 rand_height = hash_to_unit(seed ^ 0x9e3779b9u);
+    const f32 rand_x = hash_to_unit(seed ^ 0x85ebca6bu);
+    const f32 rand_z = hash_to_unit(seed ^ 0xc2b2ae35u);
+
+    const u32 grid_dim = kSpawnSettings.grid_dim;
+    const f32 spacing = kSpawnSettings.spacing;
+    const f32 half_span = 0.5f * static_cast<f32>(grid_dim - 1) * spacing;
+    const u32 x = idx % grid_dim;
+    const u32 z = idx / grid_dim;
+
+    const f32 height =
+        kSpawnSettings.height_min + rand_height * (kSpawnSettings.height_max - kSpawnSettings.height_min);
+    const f32 jitter_x = (rand_x * 2.0f - 1.0f) * kSpawnSettings.jitter;
+    const f32 jitter_z = (rand_z * 2.0f - 1.0f) * kSpawnSettings.jitter;
+
+    const f32 px = static_cast<f32>(x) * spacing - half_span + jitter_x;
+    const f32 pz = static_cast<f32>(z) * spacing - half_span + jitter_z;
+
+    return Vec3{px, height, pz};
+}
+
+[[nodiscard]] inline f32 spawn_inv_mass(const f32 radius) noexcept {
+    const f32 mass = radius * radius * radius;
+    return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
+}
 } // namespace detail
 
 struct Scene final {
@@ -83,62 +139,46 @@ struct Scene final {
         poses_.publish();
     }
 
+    void reset_simulation() noexcept {
+        for (u32 i = 0; i < count_; ++i) {
+            position_[i] = detail::spawn_position(i);
+            velocity_[i] = Vec3{};
+        }
+    }
+
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
         log::info(scene, "Loading scene from disk: {}", scene_path.string());
 
         // TEMP: procedural sphere cloud until real scene data/asset loading is in place.
         Scene out{};
-        constexpr u32 kGridDim = 10;
-        constexpr u32 kSphereCount = kGridDim * kGridDim;
-        constexpr f32 kSpacing = 1.0f;
-        constexpr f32 kJitter = 0.35f;
-        constexpr f32 kRadiusMin = 0.25f;
-        constexpr f32 kRadiusMax = 0.6f;
-        constexpr f32 kHeightMin = 6.0f;
-        constexpr f32 kHeightMax = 14.0f;
+        constexpr u32 kSphereCount = detail::spawn_count();
 
         out.reserve(kSphereCount);
         out.count_ = kSphereCount;
 
-        const f32 half_span = 0.5f * static_cast<f32>(kGridDim - 1) * kSpacing;
+        for (u32 idx = 0; idx < out.count_; ++idx) {
+            const f32 radius = detail::spawn_radius(idx);
+            const f32 inv_mass = detail::spawn_inv_mass(radius);
+            const Vec3 position = detail::spawn_position(idx);
 
-        u32 idx = 0;
-        for (u32 z = 0; z < kGridDim; ++z) {
-            for (u32 x = 0; x < kGridDim; ++x) {
-                const u32 seed = idx * 747796405u + 2891336453u;
-                const f32 rand_radius = detail::hash_to_unit(seed);
-                const f32 rand_height = detail::hash_to_unit(seed ^ 0x9e3779b9u);
-                const f32 rand_x = detail::hash_to_unit(seed ^ 0x85ebca6bu);
-                const f32 rand_z = detail::hash_to_unit(seed ^ 0xc2b2ae35u);
-
-                const f32 radius = kRadiusMin + rand_radius * (kRadiusMax - kRadiusMin);
-                const f32 height = kHeightMin + rand_height * (kHeightMax - kHeightMin);
-                const f32 jitter_x = (rand_x * 2.0f - 1.0f) * kJitter;
-                const f32 jitter_z = (rand_z * 2.0f - 1.0f) * kJitter;
-
-                const f32 px = static_cast<f32>(x) * kSpacing - half_span + jitter_x;
-                const f32 pz = static_cast<f32>(z) * kSpacing - half_span + jitter_z;
-
-                const f32 mass = radius * radius * radius;
-                const f32 inv_mass = (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
-
-                out.alive_[idx] = true;
-                out.generation_[idx] = 1;
-                out.shape_kind_[idx] = ShapeKind::sphere;
-                out.sphere_[idx] = SphereShape{radius};
-                out.material_[idx] = MaterialId{0};
-                out.mesh_[idx] = MeshId{0};
-                out.inv_mass_[idx] = inv_mass;
-                out.position_[idx] = Vec3{px, height, pz};
-                out.velocity_[idx] = Vec3{};
-                ++idx;
-            }
+            out.alive_[idx] = true;
+            out.generation_[idx] = 1;
+            out.shape_kind_[idx] = ShapeKind::sphere;
+            out.sphere_[idx] = SphereShape{radius};
+            out.material_[idx] = MaterialId{0};
+            out.mesh_[idx] = MeshId{0};
+            out.inv_mass_[idx] = inv_mass;
+            out.position_[idx] = position;
+            out.velocity_[idx] = Vec3{};
         }
 
         out.publish_poses_from_sim();
-        log::info(scene, "Loaded {} spheres ({}x{} jittered grid)", out.count_, kGridDim, kGridDim);
-        log::info(scene, "Test scene params: radius=[{}..{}], height=[{}..{}], spacing={}, jitter={}", kRadiusMin,
-                  kRadiusMax, kHeightMin, kHeightMax, kSpacing, kJitter);
+        log::info(scene, "Loaded {} spheres ({}x{} jittered grid)", out.count_, detail::kSpawnSettings.grid_dim,
+                  detail::kSpawnSettings.grid_dim);
+        log::info(scene, "Test scene params: radius=[{}..{}], height=[{}..{}], spacing={}, jitter={}",
+                  detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max,
+                  detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
+                  detail::kSpawnSettings.spacing, detail::kSpawnSettings.jitter);
         return out;
     }
 
