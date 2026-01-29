@@ -8,11 +8,16 @@ import std;
 import javelin.core.logging;
 import javelin.core.time;
 import javelin.core.types;
+import javelin.physics.broad_phase;
+import javelin.physics.integrate;
+import javelin.physics.narrow_phase;
+import javelin.physics.publish;
+import javelin.physics.solve;
+import javelin.physics.types;
 import javelin.scene;
 import javelin.scene.physics_view;
 
 export namespace javelin {
-
 struct PhysicsSystem final {
     void init(Scene &scene) noexcept { scene_ = &scene; }
 
@@ -53,25 +58,14 @@ struct PhysicsSystem final {
                         PhysicsView view = scene_->physics_view();
                         const f32 dt = 1.0f / 60.0f;
                         const f32 gravity = gravity_.load(std::memory_order_relaxed);
-                        const f32 reset_y = reset_y_.load(std::memory_order_relaxed);
-                        const f32 spawn_y = spawn_y_.load(std::memory_order_relaxed);
+                        const f32 restitution = restitution_.load(std::memory_order_relaxed);
 
-                        // TEMP: simplified falling test for render/physics plumbing.
-                        for (u32 i = 0; i < view.count; ++i) {
-                            view.velocity[i].y += gravity * dt;
-                            view.position[i].y += view.velocity[i].y * dt;
-
-                            if (view.position[i].y < reset_y) {
-                                view.position[i].y = spawn_y;
-                                view.velocity[i].y = 0.0f;
-                            }
-                        }
-
-                        auto out = view.poses.write_positions(view.count);
-                        for (u32 i = 0; i < view.count; ++i) {
-                            out[i] = view.position[i];
-                        }
-                        view.poses.publish();
+                        accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
+                        integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
+                        broad_phase_sphere_pairs(view.count, candidate_pairs_);
+                        narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
+                        solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution);
+                        publish_poses(view.poses, view.position, view.count);
                     }
                 }
 
@@ -94,8 +88,11 @@ struct PhysicsSystem final {
     Scene *scene_{nullptr};
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
+    std::atomic<f32> restitution_{0.3f};
     std::atomic<f32> reset_y_{-10.0f};
     std::atomic<f32> spawn_y_{10.0f};
+    std::vector<BodyPair> candidate_pairs_{};
+    std::vector<Contact> contacts_{};
 };
 
 } // namespace javelin

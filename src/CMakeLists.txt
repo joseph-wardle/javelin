@@ -21,7 +21,13 @@ target_sources(javelin
             math/vec2.cppm
             math/vec3.cppm
             math/vec4.cppm
+            physics/broad_phase.cppm
+            physics/integrate.cppm
+            physics/narrow_phase.cppm
+            physics/publish.cppm
+            physics/solver.cppm
             physics/physics_system.cppm
+            physics/types.cppm
             platform/input.cppm
             platform/platform.cppm
             platform/window.cppm
