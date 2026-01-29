@@ -136,6 +136,11 @@ struct RenderSystem final {
                 if (ImGui::DragFloat("Restitution", &restitution, 0.01f, 0.0f, 1.0f)) {
                     physics_->set_restitution(restitution);
                 }
+
+                f32 friction = physics_->friction();
+                if (ImGui::DragFloat("Friction", &friction, 0.01f, 0.0f, 1.0f)) {
+                    physics_->set_friction(friction);
+                }
             }
             ImGui::End();
 

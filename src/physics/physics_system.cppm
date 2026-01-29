@@ -23,9 +23,11 @@ struct PhysicsSystem final {
 
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
     void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
+    void set_friction(const f32 friction) noexcept { friction_.store(friction, std::memory_order_relaxed); }
 
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
 
     void start() {
         if (thread_.joinable()) {
@@ -37,7 +39,7 @@ struct PhysicsSystem final {
         }
 
         log::info(physics, "Starting physics system");
-        log::info(physics, "Params gravity={} restitution={}", gravity(), restitution());
+        log::info(physics, "Params gravity={} restitution={} friction={}", gravity(), restitution(), friction());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -57,12 +59,13 @@ struct PhysicsSystem final {
                         const f32 dt = 1.0f / 60.0f;
                         const f32 gravity = gravity_.load(std::memory_order_relaxed);
                         const f32 restitution = restitution_.load(std::memory_order_relaxed);
+                        const f32 friction = friction_.load(std::memory_order_relaxed);
 
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
                         broad_phase_sphere_pairs(view.count, candidate_pairs_);
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
-                        solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution);
+                        solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
                         publish_poses(view.poses, view.position, view.count);
                     }
                 }
@@ -87,6 +90,7 @@ struct PhysicsSystem final {
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
+    std::atomic<f32> friction_{0.4f};
     std::vector<BodyPair> candidate_pairs_{};
     std::vector<Contact> contacts_{};
 };
