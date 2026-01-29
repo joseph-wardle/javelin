@@ -38,7 +38,7 @@ struct SpawnSettings final {
 };
 
 inline constexpr SpawnSettings kSpawnSettings{
-    .grid_dim = 10,
+    .grid_dim = 64,
     .spacing = 1.0f,
     .jitter = 0.35f,
     .radius_min = 0.25f,

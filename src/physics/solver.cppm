@@ -12,7 +12,7 @@ import javelin.physics.types;
 namespace javelin::detail {
 inline constexpr f32 kPositionSlop = 0.01f;
 inline constexpr f32 kPositionCorrectionPercent = 0.8f;
-inline constexpr u32 kSolverIterations = 12;
+inline constexpr u32 kSolverIterations = 8;
 inline constexpr f32 kTangentEpsSq = 1e-8f;
 } // namespace javelin::detail
 
@@ -25,6 +25,29 @@ void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::spa
         return;
     }
 
+    for (const Contact contact : contacts) {
+        const u32 a = contact.a;
+        const u32 b = contact.b;
+        const bool has_b = (b != kInvalidBody);
+        const f32 inv_mass_a = inv_mass[a];
+        const f32 inv_mass_b = has_b ? inv_mass[b] : 0.0f;
+        const f32 inv_mass_sum = inv_mass_a + inv_mass_b;
+        if (inv_mass_sum <= 0.0f) {
+            continue;
+        }
+
+        const f32 correction_mag =
+            std::max(contact.penetration - detail::kPositionSlop, 0.0f) * detail::kPositionCorrectionPercent /
+            inv_mass_sum;
+        if (correction_mag > 0.0f) {
+            const Vec3 correction = contact.normal * correction_mag;
+            position[a] -= correction * inv_mass_a;
+            if (has_b) {
+                position[b] += correction * inv_mass_b;
+            }
+        }
+    }
+
     for (u32 iteration = 0; iteration < detail::kSolverIterations; ++iteration) {
         for (const Contact contact : contacts) {
             const u32 a = contact.a;
@@ -35,17 +58,6 @@ void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::spa
             const f32 inv_mass_sum = inv_mass_a + inv_mass_b;
             if (inv_mass_sum <= 0.0f) {
                 continue;
-            }
-
-            const f32 correction_mag =
-                std::max(contact.penetration - detail::kPositionSlop, 0.0f) *
-                detail::kPositionCorrectionPercent / inv_mass_sum;
-            if (correction_mag > 0.0f) {
-                const Vec3 correction = contact.normal * correction_mag;
-                position[a] -= correction * inv_mass_a;
-                if (has_b) {
-                    position[b] += correction * inv_mass_b;
-                }
             }
 
             const Vec3 velocity_b = has_b ? velocity[b] : Vec3{};
