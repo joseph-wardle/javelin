@@ -113,6 +113,7 @@ struct PhysicsSystem final {
         log::info(physics, "Stopping physics system");
         thread_.request_stop();
         thread_.join();
+        stop_broad_phase_workers_();
     }
 
   private:
@@ -124,6 +125,13 @@ struct PhysicsSystem final {
             scratch.reserve(count, query_stack_factor);
             pairs.reserve(static_cast<usize>(count) * pair_factor);
         }
+    };
+
+    struct BroadPhaseJob final {
+        std::span<const u32> dynamic_ids{};
+        u32 dynamic_count{};
+        u32 worker_count{};
+        u32 chunk_size{};
     };
 
     Scene *scene_{nullptr};
@@ -146,6 +154,13 @@ struct PhysicsSystem final {
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<std::thread> broad_phase_threads_{};
     std::vector<usize> broad_phase_pair_offsets_{};
+    std::mutex broad_phase_mutex_{};
+    std::condition_variable broad_phase_cv_{};
+    std::condition_variable broad_phase_done_cv_{};
+    BroadPhaseJob broad_phase_job_{};
+    u64 broad_phase_job_id_{0};
+    std::atomic<u32> broad_phase_jobs_remaining_{0};
+    bool broad_phase_stop_{false};
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
@@ -173,6 +188,7 @@ struct PhysicsSystem final {
             broad_phase_workers_.resize(broad_phase_worker_count_);
             broad_phase_threads_.reserve(broad_phase_worker_count_ - 1u);
             broad_phase_pair_offsets_.reserve(static_cast<usize>(broad_phase_worker_count_) + 1u);
+            start_broad_phase_workers_();
         }
         for (auto &worker : broad_phase_workers_) {
             worker.reserve(count, kQueryStackReserveFactor, kPairReserveFactor);
@@ -186,28 +202,34 @@ struct PhysicsSystem final {
             return;
         }
 
+        // Worker pool: fixed thread count, contiguous chunks, deterministic merge by chunk order.
         const u32 worker_count = std::min(broad_phase_worker_count_, dynamic_count);
         const u32 chunk_size = (dynamic_count + worker_count - 1u) / worker_count;
 
-        auto run_chunk = [&](const u32 worker_index) {
-            const u32 begin = worker_index * chunk_size;
-            if (begin >= dynamic_count) {
-                broad_phase_workers_[worker_index].pairs.clear();
-                return;
-            }
-            const u32 end = std::min(begin + chunk_size, dynamic_count);
-            const std::span<const u32> chunk{dynamic_ids.data() + begin, end - begin};
-            BroadPhaseWorker &worker = broad_phase_workers_[worker_index];
-            broad_phase_sphere_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.scratch);
+        const BroadPhaseJob job{
+            .dynamic_ids = dynamic_ids,
+            .dynamic_count = dynamic_count,
+            .worker_count = worker_count,
+            .chunk_size = chunk_size,
         };
 
-        broad_phase_threads_.clear();
-        for (u32 worker_index = 1; worker_index < worker_count; ++worker_index) {
-            broad_phase_threads_.emplace_back(run_chunk, worker_index);
+        if (worker_count > 1) {
+            {
+                std::lock_guard lock(broad_phase_mutex_);
+                broad_phase_job_ = job;
+                broad_phase_jobs_remaining_.store(worker_count - 1u, std::memory_order_release);
+                ++broad_phase_job_id_;
+            }
+            broad_phase_cv_.notify_all();
         }
-        run_chunk(0);
-        for (auto &thread : broad_phase_threads_) {
-            thread.join();
+
+        run_broad_phase_chunk_(job, 0);
+
+        if (worker_count > 1) {
+            std::unique_lock lock(broad_phase_mutex_);
+            broad_phase_done_cv_.wait(lock, [&] {
+                return broad_phase_jobs_remaining_.load(std::memory_order_acquire) == 0u;
+            });
         }
 
         broad_phase_pair_offsets_.resize(static_cast<usize>(worker_count) + 1u);
@@ -225,6 +247,73 @@ struct PhysicsSystem final {
             const usize offset = broad_phase_pair_offsets_[worker_index];
             std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
         }
+    }
+
+    void run_broad_phase_chunk_(const BroadPhaseJob &job, const u32 worker_index) {
+        if (worker_index >= job.worker_count) {
+            return;
+        }
+        const u32 begin = worker_index * job.chunk_size;
+        if (begin >= job.dynamic_count) {
+            broad_phase_workers_[worker_index].pairs.clear();
+            return;
+        }
+        const u32 end = std::min(begin + job.chunk_size, job.dynamic_count);
+        const std::span<const u32> chunk{job.dynamic_ids.data() + begin, end - begin};
+        BroadPhaseWorker &worker = broad_phase_workers_[worker_index];
+        broad_phase_sphere_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.scratch);
+    }
+
+    void broad_phase_worker_loop_(const u32 worker_index) {
+        u64 last_job = 0;
+        for (;;) {
+            BroadPhaseJob job{};
+            {
+                std::unique_lock lock(broad_phase_mutex_);
+                broad_phase_cv_.wait(lock, [&] { return broad_phase_stop_ || broad_phase_job_id_ != last_job; });
+                if (broad_phase_stop_) {
+                    return;
+                }
+                last_job = broad_phase_job_id_;
+                job = broad_phase_job_;
+            }
+
+            if (worker_index >= job.worker_count) {
+                continue;
+            }
+            run_broad_phase_chunk_(job, worker_index);
+            if (broad_phase_jobs_remaining_.fetch_sub(1u, std::memory_order_acq_rel) == 1u) {
+                std::lock_guard lock(broad_phase_mutex_);
+                broad_phase_done_cv_.notify_one();
+            }
+        }
+    }
+
+    void start_broad_phase_workers_() {
+        if (broad_phase_worker_count_ <= 1 || !broad_phase_threads_.empty()) {
+            return;
+        }
+        broad_phase_stop_ = false;
+        for (u32 worker_index = 1; worker_index < broad_phase_worker_count_; ++worker_index) {
+            broad_phase_threads_.emplace_back([this, worker_index] { broad_phase_worker_loop_(worker_index); });
+        }
+    }
+
+    void stop_broad_phase_workers_() {
+        if (broad_phase_threads_.empty()) {
+            return;
+        }
+        {
+            std::lock_guard lock(broad_phase_mutex_);
+            broad_phase_stop_ = true;
+            ++broad_phase_job_id_;
+        }
+        broad_phase_cv_.notify_all();
+        for (auto &thread : broad_phase_threads_) {
+            thread.join();
+        }
+        broad_phase_threads_.clear();
+        broad_phase_stop_ = false;
     }
 
     void rebuild_body_sets_(const PhysicsView &view) {
