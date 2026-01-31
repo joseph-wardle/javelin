@@ -196,11 +196,20 @@ struct PhysicsSystem final {
     }
 
     void run_broad_phase_queries_(std::span<const u32> dynamic_ids) {
+        ZoneScopedN("Physics broad phase parallel");
         candidate_pairs_.clear();
         const u32 dynamic_count = static_cast<u32>(dynamic_ids.size());
         if (dynamic_count == 0) {
             return;
         }
+
+        // dynamic_ids are built in ascending order; assert in debug for safety.
+#ifndef NDEBUG
+        if (!std::is_sorted(dynamic_ids.begin(), dynamic_ids.end())) {
+            log::error(physics, "Broad phase dynamic ids are not sorted");
+            std::terminate();
+        }
+#endif
 
         // Worker pool: fixed thread count, contiguous chunks, deterministic merge by chunk order.
         const u32 worker_count = std::min(broad_phase_worker_count_, dynamic_count);
@@ -216,6 +225,7 @@ struct PhysicsSystem final {
         if (worker_count > 1) {
             {
                 std::lock_guard lock(broad_phase_mutex_);
+                // BVHs are read-only for the duration of this job.
                 broad_phase_job_ = job;
                 broad_phase_jobs_remaining_.store(worker_count - 1u, std::memory_order_release);
                 ++broad_phase_job_id_;
@@ -232,21 +242,29 @@ struct PhysicsSystem final {
             });
         }
 
-        broad_phase_pair_offsets_.resize(static_cast<usize>(worker_count) + 1u);
-        broad_phase_pair_offsets_[0] = 0;
-        for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
-            const usize count = broad_phase_workers_[worker_index].pairs.size();
-            broad_phase_pair_offsets_[static_cast<usize>(worker_index) + 1u] =
-                broad_phase_pair_offsets_[worker_index] + count;
+        {
+            ZoneScopedN("Physics broad phase merge");
+            // Deterministic output: concatenate chunks in increasing worker index.
+            broad_phase_pair_offsets_.resize(static_cast<usize>(worker_count) + 1u);
+            broad_phase_pair_offsets_[0] = 0;
+            for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
+                const usize count = broad_phase_workers_[worker_index].pairs.size();
+                broad_phase_pair_offsets_[static_cast<usize>(worker_index) + 1u] =
+                    broad_phase_pair_offsets_[worker_index] + count;
+            }
+
+            const usize total_pairs = broad_phase_pair_offsets_[worker_count];
+            candidate_pairs_.resize(total_pairs);
+            for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
+                auto &src = broad_phase_workers_[worker_index].pairs;
+                const usize offset = broad_phase_pair_offsets_[worker_index];
+                std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
+            }
         }
 
-        const usize total_pairs = broad_phase_pair_offsets_[worker_count];
-        candidate_pairs_.resize(total_pairs);
-        for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
-            auto &src = broad_phase_workers_[worker_index].pairs;
-            const usize offset = broad_phase_pair_offsets_[worker_index];
-            std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
-        }
+#if defined(JAVELIN_BROAD_PHASE_VALIDATE)
+        validate_broad_phase_pairs_(dynamic_ids);
+#endif
     }
 
     void run_broad_phase_chunk_(const BroadPhaseJob &job, const u32 worker_index) {
@@ -265,6 +283,9 @@ struct PhysicsSystem final {
     }
 
     void broad_phase_worker_loop_(const u32 worker_index) {
+        thread_local std::string name;
+        name = "Physics BroadPhase " + std::to_string(worker_index);
+        tracy::SetThreadName(name.c_str());
         u64 last_job = 0;
         for (;;) {
             BroadPhaseJob job{};
@@ -281,7 +302,10 @@ struct PhysicsSystem final {
             if (worker_index >= job.worker_count) {
                 continue;
             }
-            run_broad_phase_chunk_(job, worker_index);
+            {
+                ZoneScopedN("Physics broad phase worker");
+                run_broad_phase_chunk_(job, worker_index);
+            }
             if (broad_phase_jobs_remaining_.fetch_sub(1u, std::memory_order_acq_rel) == 1u) {
                 std::lock_guard lock(broad_phase_mutex_);
                 broad_phase_done_cv_.notify_one();
@@ -297,6 +321,7 @@ struct PhysicsSystem final {
         for (u32 worker_index = 1; worker_index < broad_phase_worker_count_; ++worker_index) {
             broad_phase_threads_.emplace_back([this, worker_index] { broad_phase_worker_loop_(worker_index); });
         }
+        log::info(physics, "Broad phase workers={}", broad_phase_worker_count_);
     }
 
     void stop_broad_phase_workers_() {
@@ -314,7 +339,37 @@ struct PhysicsSystem final {
         }
         broad_phase_threads_.clear();
         broad_phase_stop_ = false;
+        log::info(physics, "Broad phase workers stopped");
     }
+
+#if defined(JAVELIN_BROAD_PHASE_VALIDATE)
+    void validate_broad_phase_pairs_(std::span<const u32> dynamic_ids) {
+        BroadPhaseWorker &worker = broad_phase_workers_[0];
+        std::vector<BodyPair> expected{};
+        expected.reserve(candidate_pairs_.size());
+        broad_phase_sphere_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, expected, worker.scratch);
+
+        auto normalize = [](std::vector<BodyPair> &pairs) {
+            std::sort(pairs.begin(), pairs.end(), [](const BodyPair &lhs, const BodyPair &rhs) {
+                if (lhs.a != rhs.a) {
+                    return lhs.a < rhs.a;
+                }
+                return lhs.b < rhs.b;
+            });
+            pairs.erase(std::unique(pairs.begin(), pairs.end(), [](const BodyPair &lhs, const BodyPair &rhs) {
+                            return lhs.a == rhs.a && lhs.b == rhs.b;
+                        }),
+                        pairs.end());
+        };
+
+        std::vector<BodyPair> actual = candidate_pairs_;
+        normalize(expected);
+        normalize(actual);
+        if (expected != actual) {
+            log::error(physics, "Broad phase validation failed expected={} actual={}", expected.size(), actual.size());
+        }
+    }
+#endif
 
     void rebuild_body_sets_(const PhysicsView &view) {
         if (view.count != last_count_) {
