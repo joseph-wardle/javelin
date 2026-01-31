@@ -117,13 +117,11 @@ struct PhysicsSystem final {
 
   private:
     struct BroadPhaseWorker final {
-        std::vector<u32> query_hits{};
-        std::vector<u32> query_stack{};
+        BroadPhaseScratch scratch{};
         std::vector<BodyPair> pairs{};
 
         void reserve(const u32 count, const u32 query_stack_factor, const u32 pair_factor) {
-            query_hits.reserve(count);
-            query_stack.reserve(static_cast<usize>(count) * query_stack_factor);
+            scratch.reserve(count, query_stack_factor);
             pairs.reserve(static_cast<usize>(count) * pair_factor);
         }
     };
@@ -200,8 +198,7 @@ struct PhysicsSystem final {
             const u32 end = std::min(begin + chunk_size, dynamic_count);
             const std::span<const u32> chunk{dynamic_ids.data() + begin, end - begin};
             BroadPhaseWorker &worker = broad_phase_workers_[worker_index];
-            broad_phase_query_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.query_hits,
-                                    worker.query_stack);
+            broad_phase_sphere_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.scratch);
         };
 
         broad_phase_threads_.clear();
