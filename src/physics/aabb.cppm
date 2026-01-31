@@ -14,6 +14,17 @@ struct Aabb final {
 
     constexpr Aabb() noexcept = default;
     constexpr Aabb(const Vec3 min_, const Vec3 max_) noexcept : min{min_}, max{max_} {}
+
+    [[nodiscard]] static constexpr Aabb from_sphere(const Vec3 position, const f32 radius) noexcept {
+        const Vec3 r{radius};
+        return Aabb{position - r, position + r};
+    }
+
+    [[nodiscard]] static constexpr Aabb sweep(const Aabb a, const Vec3 velocity, const f32 dt) noexcept {
+        const Vec3 delta = velocity * dt;
+        const Aabb moved{a.min + delta, a.max + delta};
+        return merge(a, moved);
+    }
 };
 
 [[nodiscard]] constexpr Vec3 center(const Aabb a) noexcept { return (a.min + a.max) * 0.5f; }
@@ -39,7 +50,7 @@ struct Aabb final {
            (b.min.z >= a.min.z && b.max.z <= a.max.z);
 }
 
-[[nodiscard]] constexpr Aabb expand(const Aabb a, const Vec3 padding) noexcept {
+[[nodiscard]] constexpr Aabb inflate(const Aabb a, const Vec3 padding) noexcept {
     return Aabb{a.min - padding, a.max + padding};
 }
 
