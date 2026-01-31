@@ -93,8 +93,11 @@ struct PhysicsSystem final {
                         // Mutating phase: update dynamic BVH before read-only queries.
                         broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
                         // Read-only phase: query broad phase pairs.
-                        broad_phase_query_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_,
-                                                candidate_pairs_, query_hits_, query_stack_);
+                        BroadPhaseWorker &worker = broad_phase_workers_[0];
+                        broad_phase_query_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs,
+                                                worker.query_hits, worker.query_stack);
+                        // Swap to keep worker buffers hot while exposing results to narrow phase.
+                        candidate_pairs_.swap(worker.pairs);
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
                         solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
                         publish_poses(view.poses, view.position, count);
@@ -117,6 +120,18 @@ struct PhysicsSystem final {
     }
 
   private:
+    struct BroadPhaseWorker final {
+        std::vector<u32> query_hits{};
+        std::vector<u32> query_stack{};
+        std::vector<BodyPair> pairs{};
+
+        void reserve(const u32 count, const u32 query_stack_factor, const u32 pair_factor) {
+            query_hits.reserve(count);
+            query_stack.reserve(static_cast<usize>(count) * query_stack_factor);
+            pairs.reserve(static_cast<usize>(count) * pair_factor);
+        }
+    };
+
     Scene *scene_{nullptr};
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
@@ -133,14 +148,15 @@ struct PhysicsSystem final {
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
     std::vector<Contact> contacts_{};
-    std::vector<u32> query_hits_{};
-    std::vector<u32> query_stack_{};
+    u32 broad_phase_worker_count_{0};
+    std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
 
     void ensure_capacity_(const u32 count) {
         if (count <= capacity_) {
+            ensure_broad_phase_workers_(count);
             return;
         }
         capacity_ = count;
@@ -149,10 +165,20 @@ struct PhysicsSystem final {
         bounds_cache_.reserve(count);
         static_ids_.reserve(count);
         dynamic_ids_.reserve(count);
-        query_hits_.reserve(count);
-        query_stack_.reserve(static_cast<usize>(count) * kQueryStackReserveFactor);
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
         contacts_.reserve(static_cast<usize>(count) * kContactReserveFactor);
+        ensure_broad_phase_workers_(count);
+    }
+
+    void ensure_broad_phase_workers_(const u32 count) {
+        if (broad_phase_worker_count_ == 0) {
+            const u32 hw_threads = std::thread::hardware_concurrency();
+            broad_phase_worker_count_ = (hw_threads > 0) ? hw_threads : 1u;
+            broad_phase_workers_.resize(broad_phase_worker_count_);
+        }
+        for (auto &worker : broad_phase_workers_) {
+            worker.reserve(count, kQueryStackReserveFactor, kPairReserveFactor);
+        }
     }
 
     void rebuild_body_sets_(const PhysicsView &view) {
