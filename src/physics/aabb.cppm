@@ -23,7 +23,7 @@ struct Aabb final {
     [[nodiscard]] static constexpr Aabb sweep(const Aabb a, const Vec3 velocity, const f32 dt) noexcept {
         const Vec3 delta = velocity * dt;
         const Aabb moved{a.min + delta, a.max + delta};
-        return merge(a, moved);
+        return Aabb{::javelin::min(a.min, moved.min), ::javelin::max(a.max, moved.max)};
     }
 };
 
@@ -32,7 +32,7 @@ struct Aabb final {
 [[nodiscard]] constexpr Vec3 extents(const Aabb a) noexcept { return size(a) * 0.5f; }
 
 [[nodiscard]] constexpr Aabb merge(const Aabb a, const Aabb b) noexcept {
-    return Aabb{min(a.min, b.min), max(a.max, b.max)};
+    return Aabb{::javelin::min(a.min, b.min), ::javelin::max(a.max, b.max)};
 }
 
 [[nodiscard]] constexpr bool overlaps(const Aabb a, const Aabb b) noexcept {
