@@ -147,6 +147,7 @@ struct PhysicsSystem final {
     u32 broad_phase_worker_count_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<std::thread> broad_phase_threads_{};
+    std::vector<usize> broad_phase_pair_offsets_{};
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
@@ -173,6 +174,7 @@ struct PhysicsSystem final {
             broad_phase_worker_count_ = (hw_threads > 0) ? hw_threads : 1u;
             broad_phase_workers_.resize(broad_phase_worker_count_);
             broad_phase_threads_.reserve(broad_phase_worker_count_ - 1u);
+            broad_phase_pair_offsets_.reserve(static_cast<usize>(broad_phase_worker_count_) + 1u);
         }
         for (auto &worker : broad_phase_workers_) {
             worker.reserve(count, kQueryStackReserveFactor, kPairReserveFactor);
@@ -211,16 +213,20 @@ struct PhysicsSystem final {
             thread.join();
         }
 
-        usize total_pairs = 0;
+        broad_phase_pair_offsets_.resize(static_cast<usize>(worker_count) + 1u);
+        broad_phase_pair_offsets_[0] = 0;
         for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
-            total_pairs += broad_phase_workers_[worker_index].pairs.size();
+            const usize count = broad_phase_workers_[worker_index].pairs.size();
+            broad_phase_pair_offsets_[static_cast<usize>(worker_index) + 1u] =
+                broad_phase_pair_offsets_[worker_index] + count;
         }
+
+        const usize total_pairs = broad_phase_pair_offsets_[worker_count];
         candidate_pairs_.resize(total_pairs);
-        usize offset = 0;
         for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
             auto &src = broad_phase_workers_[worker_index].pairs;
-            std::copy(src.begin(), src.end(), candidate_pairs_.begin() + static_cast<isize>(offset));
-            offset += src.size();
+            const usize offset = broad_phase_pair_offsets_[worker_index];
+            std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
         }
     }
 
