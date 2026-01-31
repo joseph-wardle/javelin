@@ -93,11 +93,7 @@ struct PhysicsSystem final {
                         // Mutating phase: update dynamic BVH before read-only queries.
                         broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
                         // Read-only phase: query broad phase pairs.
-                        BroadPhaseWorker &worker = broad_phase_workers_[0];
-                        broad_phase_query_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs,
-                                                worker.query_hits, worker.query_stack);
-                        // Swap to keep worker buffers hot while exposing results to narrow phase.
-                        candidate_pairs_.swap(worker.pairs);
+                        run_broad_phase_queries_(dynamic_ids);
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
                         solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
                         publish_poses(view.poses, view.position, count);
@@ -150,6 +146,7 @@ struct PhysicsSystem final {
     std::vector<Contact> contacts_{};
     u32 broad_phase_worker_count_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
+    std::vector<std::thread> broad_phase_threads_{};
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
@@ -175,9 +172,55 @@ struct PhysicsSystem final {
             const u32 hw_threads = std::thread::hardware_concurrency();
             broad_phase_worker_count_ = (hw_threads > 0) ? hw_threads : 1u;
             broad_phase_workers_.resize(broad_phase_worker_count_);
+            broad_phase_threads_.reserve(broad_phase_worker_count_ - 1u);
         }
         for (auto &worker : broad_phase_workers_) {
             worker.reserve(count, kQueryStackReserveFactor, kPairReserveFactor);
+        }
+    }
+
+    void run_broad_phase_queries_(std::span<const u32> dynamic_ids) {
+        candidate_pairs_.clear();
+        const u32 dynamic_count = static_cast<u32>(dynamic_ids.size());
+        if (dynamic_count == 0) {
+            return;
+        }
+
+        const u32 worker_count = std::min(broad_phase_worker_count_, dynamic_count);
+        const u32 chunk_size = (dynamic_count + worker_count - 1u) / worker_count;
+
+        auto run_chunk = [&](const u32 worker_index) {
+            const u32 begin = worker_index * chunk_size;
+            if (begin >= dynamic_count) {
+                broad_phase_workers_[worker_index].pairs.clear();
+                return;
+            }
+            const u32 end = std::min(begin + chunk_size, dynamic_count);
+            const std::span<const u32> chunk{dynamic_ids.data() + begin, end - begin};
+            BroadPhaseWorker &worker = broad_phase_workers_[worker_index];
+            broad_phase_query_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.query_hits,
+                                    worker.query_stack);
+        };
+
+        broad_phase_threads_.clear();
+        for (u32 worker_index = 1; worker_index < worker_count; ++worker_index) {
+            broad_phase_threads_.emplace_back(run_chunk, worker_index);
+        }
+        run_chunk(0);
+        for (auto &thread : broad_phase_threads_) {
+            thread.join();
+        }
+
+        usize total_pairs = 0;
+        for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
+            total_pairs += broad_phase_workers_[worker_index].pairs.size();
+        }
+        candidate_pairs_.resize(total_pairs);
+        usize offset = 0;
+        for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
+            auto &src = broad_phase_workers_[worker_index].pairs;
+            std::copy(src.begin(), src.end(), candidate_pairs_.begin() + static_cast<isize>(offset));
+            offset += src.size();
         }
     }
 
