@@ -120,7 +120,7 @@ struct PhysicsSystem final {
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
-    std::atomic<f32> friction_{0.4f};
+    std::atomic<f32> friction_{0.2f};
     std::atomic<bool> reset_requested_{false};
     bool static_dirty_{true};
     DynamicBvh dynamic_bvh_{};

@@ -4,6 +4,7 @@ import std;
 
 import javelin.core.logging;
 import javelin.core.types;
+import javelin.math.constants;
 import javelin.math.vec3;
 import javelin.scene.entity;
 import javelin.scene.physics_view;
@@ -28,9 +29,8 @@ namespace detail {
 }
 
 struct SpawnSettings final {
-    u32 grid_dim{};
-    f32 spacing{};
-    f32 jitter{};
+    u32 count{};
+    f32 pile_radius{};
     f32 radius_min{};
     f32 radius_max{};
     f32 height_min{};
@@ -38,16 +38,15 @@ struct SpawnSettings final {
 };
 
 inline constexpr SpawnSettings kSpawnSettings{
-    .grid_dim = 64,
-    .spacing = 1.0f,
-    .jitter = 0.35f,
+    .count = 2500,
+    .pile_radius = 2.5f,
     .radius_min = 0.25f,
     .radius_max = 0.6f,
     .height_min = 6.0f,
-    .height_max = 14.0f,
+    .height_max = 300.0f,
 };
 
-[[nodiscard]] constexpr u32 spawn_count() noexcept { return kSpawnSettings.grid_dim * kSpawnSettings.grid_dim; }
+[[nodiscard]] constexpr u32 spawn_count() noexcept { return kSpawnSettings.count; }
 
 [[nodiscard]] inline f32 spawn_radius(const u32 idx) noexcept {
     const u32 seed = idx * 747796405u + 2891336453u;
@@ -58,22 +57,15 @@ inline constexpr SpawnSettings kSpawnSettings{
 [[nodiscard]] inline Vec3 spawn_position(const u32 idx) noexcept {
     const u32 seed = idx * 747796405u + 2891336453u;
     const f32 rand_height = hash_to_unit(seed ^ 0x9e3779b9u);
-    const f32 rand_x = hash_to_unit(seed ^ 0x85ebca6bu);
-    const f32 rand_z = hash_to_unit(seed ^ 0xc2b2ae35u);
-
-    const u32 grid_dim = kSpawnSettings.grid_dim;
-    const f32 spacing = kSpawnSettings.spacing;
-    const f32 half_span = 0.5f * static_cast<f32>(grid_dim - 1) * spacing;
-    const u32 x = idx % grid_dim;
-    const u32 z = idx / grid_dim;
+    const f32 rand_r = hash_to_unit(seed ^ 0x85ebca6bu);
+    const f32 rand_angle = hash_to_unit(seed ^ 0xc2b2ae35u);
 
     const f32 height =
         kSpawnSettings.height_min + rand_height * (kSpawnSettings.height_max - kSpawnSettings.height_min);
-    const f32 jitter_x = (rand_x * 2.0f - 1.0f) * kSpawnSettings.jitter;
-    const f32 jitter_z = (rand_z * 2.0f - 1.0f) * kSpawnSettings.jitter;
-
-    const f32 px = static_cast<f32>(x) * spacing - half_span + jitter_x;
-    const f32 pz = static_cast<f32>(z) * spacing - half_span + jitter_z;
+    const f32 radius = std::sqrt(rand_r) * kSpawnSettings.pile_radius;
+    const f32 angle = rand_angle * TWO_PI;
+    const f32 px = std::cos(angle) * radius;
+    const f32 pz = std::sin(angle) * radius;
 
     return Vec3{px, height, pz};
 }
@@ -173,12 +165,11 @@ struct Scene final {
         }
 
         out.publish_poses_from_sim();
-        log::info(scene, "Loaded {} spheres ({}x{} jittered grid)", out.count_, detail::kSpawnSettings.grid_dim,
-                  detail::kSpawnSettings.grid_dim);
-        log::info(scene, "Test scene params: radius=[{}..{}], height=[{}..{}], spacing={}, jitter={}",
+        log::info(scene, "Loaded {} spheres (pile)", out.count_);
+        log::info(scene, "Test scene params: radius=[{}..{}], height=[{}..{}], pile_radius={}",
                   detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max,
-                  detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max, detail::kSpawnSettings.spacing,
-                  detail::kSpawnSettings.jitter);
+                  detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
+                  detail::kSpawnSettings.pile_radius);
         return out;
     }
 
