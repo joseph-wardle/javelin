@@ -17,7 +17,6 @@ struct StaticBvh final {
         u32 left{std::numeric_limits<u32>::max()};
         u32 right{std::numeric_limits<u32>::max()};
         u32 body_id{std::numeric_limits<u32>::max()};
-        bool is_leaf{};
     };
 
     void clear() noexcept {
@@ -44,41 +43,42 @@ struct StaticBvh final {
     [[nodiscard]] u32 root() const noexcept { return root_; }
     [[nodiscard]] std::span<const Node> nodes() const noexcept { return nodes_; }
 
-    // Appends overlapping body ids to out (caller-owned).
-    void query(const Aabb aabb, std::vector<u32> &out) const {
+    // Appends overlapping body ids to out (caller-owned). stack is scratch storage.
+    void query(const Aabb aabb, std::vector<u32> &out, std::vector<u32> &stack) const {
         ZoneScopedN("Physics query static BVH");
         if (root_ == kInvalidNode) {
             return;
         }
 
-        stack_.clear();
-        stack_.push_back(root_);
+        stack.clear();
+        stack.push_back(root_);
 
-        while (!stack_.empty()) {
-            const u32 node_index = stack_.back();
-            stack_.pop_back();
+        while (!stack.empty()) {
+            const u32 node_index = stack.back();
+            stack.pop_back();
 
             const Node &node = nodes_[node_index];
             if (!overlaps(node.bounds, aabb)) {
                 continue;
             }
 
-            if (node.is_leaf) {
+            if (is_leaf_(node)) {
                 out.push_back(node.body_id);
                 continue;
             }
 
             if (node.left != kInvalidNode) {
-                stack_.push_back(node.left);
+                stack.push_back(node.left);
             }
             if (node.right != kInvalidNode) {
-                stack_.push_back(node.right);
+                stack.push_back(node.right);
             }
         }
     }
 
   private:
     static constexpr u32 kInvalidNode = std::numeric_limits<u32>::max();
+    [[nodiscard]] static constexpr bool is_leaf_(const Node &node) noexcept { return node.left == kInvalidNode; }
 
     void build_from_ids_(std::span<const Aabb> bounds) {
         nodes_.clear();
@@ -87,7 +87,6 @@ struct StaticBvh final {
             return;
         }
         nodes_.reserve(build_ids_.size() * 2u);
-        stack_.reserve(build_ids_.size() * 2u);
         root_ = build_range_(std::span<u32>{build_ids_.data(), build_ids_.size()}, bounds);
     }
 
@@ -115,7 +114,6 @@ struct StaticBvh final {
                 .left = kInvalidNode,
                 .right = kInvalidNode,
                 .body_id = ids[0],
-                .is_leaf = true,
             });
             return node_index;
         }
@@ -136,7 +134,6 @@ struct StaticBvh final {
             .left = left,
             .right = right,
             .body_id = kInvalidNode,
-            .is_leaf = false,
         });
         return node_index;
     }
@@ -144,7 +141,6 @@ struct StaticBvh final {
     std::vector<Node> nodes_{};
     u32 root_{kInvalidNode};
     std::vector<u32> build_ids_{};
-    mutable std::vector<u32> stack_{};
 };
 
 } // namespace javelin

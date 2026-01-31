@@ -19,17 +19,8 @@ void add_sphere_sphere_contacts(std::span<const Vec3> position, std::span<const 
                                 std::span<const f32> inv_mass, std::span<const BodyPair> pairs,
                                 std::vector<Contact> &contacts) {
     for (const BodyPair pair : pairs) {
-        u32 a = pair.a;
-        u32 b = pair.b;
-        if (a == b) {
-            continue;
-        }
-        if (b < a) {
-            std::swap(a, b);
-        }
-        if (inv_mass[a] == 0.0f && inv_mass[b] == 0.0f) {
-            continue;
-        }
+        const u32 a = pair.a;
+        const u32 b = pair.b;
 
         const Vec3 delta = position[b] - position[a];
         const f32 radius_sum = sphere[a].radius + sphere[b].radius;
@@ -61,7 +52,7 @@ void add_sphere_ground_contacts(std::span<const Vec3> position, std::span<const 
         if (inv_mass[i] == 0.0f) {
             continue;
         }
-        const f32 signed_distance = dot(kGroundNormal, position[i]) - kGroundOffset;
+        const f32 signed_distance = position[i].y - kGroundOffset;
         if (signed_distance >= sphere[i].radius) {
             continue;
         }

@@ -38,7 +38,7 @@ struct SpawnSettings final {
 };
 
 inline constexpr SpawnSettings kSpawnSettings{
-    .count = 2500,
+    .count = 3200,
     .pile_radius = 2.5f,
     .radius_min = 0.25f,
     .radius_max = 0.6f,

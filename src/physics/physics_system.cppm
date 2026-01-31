@@ -60,6 +60,7 @@ struct PhysicsSystem final {
                     ZoneScopedN("Physics tick");
                     if (scene_ != nullptr) {
                         PhysicsView view = scene_->physics_view();
+                        const u32 count = view.count;
                         const f32 dt = 1.0f / 60.0f;
                         const f32 gravity = gravity_.load(std::memory_order_relaxed);
                         const f32 restitution = restitution_.load(std::memory_order_relaxed);
@@ -70,33 +71,30 @@ struct PhysicsSystem final {
                             static_dirty_ = true;
                         }
 
+                        if (count != last_count_) {
+                            static_dirty_ = true;
+                        }
+                        ensure_capacity_(count);
+
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
-                        bounds_cache_.resize(view.count);
-                        for (u32 i = 0; i < view.count; ++i) {
+                        bounds_cache_.resize(count);
+                        for (u32 i = 0; i < count; ++i) {
                             bounds_cache_[i] = Aabb::from_sphere(view.position[i], view.sphere[i].radius);
                         }
 
                         if (static_dirty_) {
-                            static_ids_.clear();
-                            for (u32 i = 0; i < view.count; ++i) {
-                                if (view.inv_mass[i] == 0.0f) {
-                                    static_ids_.push_back(i);
-                                }
-                            }
-                            if (!static_ids_.empty()) {
-                                static_bvh_.build(static_ids_, bounds_cache_);
-                            } else {
-                                static_bvh_.clear();
-                            }
+                            rebuild_body_sets_(view);
+                            last_count_ = count;
                             static_dirty_ = false;
                         }
 
-                        broad_phase_sphere_pairs(view.position, view.velocity, view.inv_mass, dt, dynamic_bvh_,
-                                                 static_bvh_, bounds_cache_, candidate_pairs_, query_hits_);
+                        const std::span<const u32> dynamic_ids{dynamic_ids_.data(), dynamic_ids_.size()};
+                        broad_phase_sphere_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_,
+                                                 candidate_pairs_, query_hits_, query_stack_);
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
                         solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
-                        publish_poses(view.poses, view.position, view.count);
+                        publish_poses(view.poses, view.position, count);
                     }
                 }
 
@@ -123,13 +121,58 @@ struct PhysicsSystem final {
     std::atomic<f32> friction_{0.2f};
     std::atomic<bool> reset_requested_{false};
     bool static_dirty_{true};
+    u32 last_count_{0};
+    u32 capacity_{0};
+    static constexpr u32 kQueryStackReserveFactor = 2;
+    static constexpr u32 kPairReserveFactor = 8;
+    static constexpr u32 kContactReserveFactor = 4;
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
     std::vector<Contact> contacts_{};
     std::vector<u32> query_hits_{};
+    std::vector<u32> query_stack_{};
     std::vector<u32> static_ids_{};
+    std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
+
+    void ensure_capacity_(const u32 count) {
+        if (count <= capacity_) {
+            return;
+        }
+        capacity_ = count;
+        dynamic_bvh_.reserve(count);
+        static_bvh_.reserve(count);
+        bounds_cache_.reserve(count);
+        static_ids_.reserve(count);
+        dynamic_ids_.reserve(count);
+        query_hits_.reserve(count);
+        query_stack_.reserve(static_cast<usize>(count) * kQueryStackReserveFactor);
+        candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
+        contacts_.reserve(static_cast<usize>(count) * kContactReserveFactor);
+    }
+
+    void rebuild_body_sets_(const PhysicsView &view) {
+        static_ids_.clear();
+        dynamic_ids_.clear();
+        for (u32 i = 0; i < view.count; ++i) {
+            if (view.inv_mass[i] == 0.0f) {
+                static_ids_.push_back(i);
+            } else {
+                dynamic_ids_.push_back(i);
+            }
+        }
+
+        for (const u32 id : static_ids_) {
+            dynamic_bvh_.remove(id);
+        }
+
+        if (!static_ids_.empty()) {
+            static_bvh_.build(static_ids_, bounds_cache_);
+        } else {
+            static_bvh_.clear();
+        }
+    }
 };
 
 } // namespace javelin

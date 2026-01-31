@@ -19,7 +19,6 @@ struct DynamicBvh final {
         u32 right{std::numeric_limits<u32>::max()};
         u32 body_id{std::numeric_limits<u32>::max()};
         u32 next{std::numeric_limits<u32>::max()};
-        bool is_leaf{};
     };
 
     void clear() noexcept {
@@ -32,7 +31,6 @@ struct DynamicBvh final {
     void reserve(const u32 body_capacity) {
         nodes_.reserve(static_cast<usize>(body_capacity) * 2u);
         body_to_node_.reserve(body_capacity);
-        stack_.reserve(static_cast<usize>(body_capacity) * 2u);
     }
 
     void insert(const u32 body_id, const Aabb bounds) {
@@ -48,7 +46,6 @@ struct DynamicBvh final {
         nodes_[leaf].left = kInvalidNode;
         nodes_[leaf].right = kInvalidNode;
         nodes_[leaf].parent = kInvalidNode;
-        nodes_[leaf].is_leaf = true;
 
         insert_leaf_(leaf);
         body_to_node_[body_id] = leaf;
@@ -90,35 +87,35 @@ struct DynamicBvh final {
         return true;
     }
 
-    // Appends overlapping body ids to out (caller-owned).
-    void query(const Aabb aabb, std::vector<u32> &out) const {
+    // Appends overlapping body ids to out (caller-owned). stack is scratch storage.
+    void query(const Aabb aabb, std::vector<u32> &out, std::vector<u32> &stack) const {
         ZoneScopedN("Physics query dynamic BVH");
         if (root_ == kInvalidNode) {
             return;
         }
 
-        stack_.clear();
-        stack_.push_back(root_);
+        stack.clear();
+        stack.push_back(root_);
 
-        while (!stack_.empty()) {
-            const u32 node_index = stack_.back();
-            stack_.pop_back();
+        while (!stack.empty()) {
+            const u32 node_index = stack.back();
+            stack.pop_back();
 
             const Node &node = nodes_[node_index];
             if (!overlaps(node.bounds, aabb)) {
                 continue;
             }
 
-            if (node.is_leaf) {
+            if (is_leaf_(node)) {
                 out.push_back(node.body_id);
                 continue;
             }
 
             if (node.left != kInvalidNode) {
-                stack_.push_back(node.left);
+                stack.push_back(node.left);
             }
             if (node.right != kInvalidNode) {
-                stack_.push_back(node.right);
+                stack.push_back(node.right);
             }
         }
     }
@@ -131,6 +128,7 @@ struct DynamicBvh final {
     static constexpr f32 kFatMargin = 0.1f;
 
     [[nodiscard]] static Aabb fatten_(const Aabb aabb) noexcept { return inflate(aabb, Vec3{kFatMargin}); }
+    [[nodiscard]] static constexpr bool is_leaf_(const Node &node) noexcept { return node.left == kInvalidNode; }
 
     void ensure_body_capacity_(const u32 body_id) {
         if (body_id < body_to_node_.size()) {
@@ -158,13 +156,12 @@ struct DynamicBvh final {
         nodes_[node].left = kInvalidNode;
         nodes_[node].right = kInvalidNode;
         nodes_[node].body_id = kInvalidNode;
-        nodes_[node].is_leaf = false;
         free_list_ = node;
     }
 
     u32 find_best_sibling_(const Aabb leaf_bounds) const {
         u32 index = root_;
-        while (!nodes_[index].is_leaf) {
+        while (!is_leaf_(nodes_[index])) {
             const u32 left = nodes_[index].left;
             const u32 right = nodes_[index].right;
             const f32 cost_left = surface_area(merge(nodes_[left].bounds, leaf_bounds));
@@ -190,7 +187,6 @@ struct DynamicBvh final {
         nodes_[parent].left = sibling;
         nodes_[parent].right = leaf;
         nodes_[parent].body_id = kInvalidNode;
-        nodes_[parent].is_leaf = false;
         nodes_[parent].bounds = merge(nodes_[sibling].bounds, leaf_bounds);
 
         nodes_[sibling].parent = parent;
@@ -250,7 +246,6 @@ struct DynamicBvh final {
     std::vector<u32> body_to_node_{};
     u32 free_list_{kInvalidNode};
     u32 root_{kInvalidNode};
-    mutable std::vector<u32> stack_{};
 };
 
 } // namespace javelin
