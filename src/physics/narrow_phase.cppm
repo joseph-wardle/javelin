@@ -19,15 +19,25 @@ void add_sphere_sphere_contacts(std::span<const Vec3> position, std::span<const 
                                 std::span<const f32> inv_mass, std::span<const BodyPair> pairs,
                                 std::vector<Contact> &contacts) {
     for (const BodyPair pair : pairs) {
-        const u32 a = pair.a;
-        const u32 b = pair.b;
+        u32 a = pair.a;
+        u32 b = pair.b;
+        if (a == b) {
+            continue;
+        }
+        if (b < a) {
+            std::swap(a, b);
+        }
         if (inv_mass[a] == 0.0f && inv_mass[b] == 0.0f) {
             continue;
         }
 
         const Vec3 delta = position[b] - position[a];
-        const f32 dist2 = delta.length_sq();
         const f32 radius_sum = sphere[a].radius + sphere[b].radius;
+        if (std::fabs(delta.x) > radius_sum || std::fabs(delta.y) > radius_sum || std::fabs(delta.z) > radius_sum) {
+            continue;
+        }
+
+        const f32 dist2 = delta.length_sq();
         const f32 radius_sum2 = radius_sum * radius_sum;
         if (dist2 >= radius_sum2) {
             continue;

@@ -8,6 +8,9 @@ import std;
 import javelin.core.logging;
 import javelin.core.time;
 import javelin.core.types;
+import javelin.physics.aabb;
+import javelin.physics.bvh_dynamic;
+import javelin.physics.bvh_static;
 import javelin.physics.broad_phase;
 import javelin.physics.integrate;
 import javelin.physics.narrow_phase;
@@ -64,11 +67,33 @@ struct PhysicsSystem final {
 
                         if (reset_requested_.exchange(false, std::memory_order_acq_rel)) {
                             scene_->reset_simulation();
+                            static_dirty_ = true;
                         }
 
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
-                        broad_phase_sphere_pairs(view.count, candidate_pairs_);
+                        bounds_cache_.resize(view.count);
+                        for (u32 i = 0; i < view.count; ++i) {
+                            bounds_cache_[i] = Aabb::from_sphere(view.position[i], view.sphere[i].radius);
+                        }
+
+                        if (static_dirty_) {
+                            static_ids_.clear();
+                            for (u32 i = 0; i < view.count; ++i) {
+                                if (view.inv_mass[i] == 0.0f) {
+                                    static_ids_.push_back(i);
+                                }
+                            }
+                            if (!static_ids_.empty()) {
+                                static_bvh_.build(static_ids_, bounds_cache_);
+                            } else {
+                                static_bvh_.clear();
+                            }
+                            static_dirty_ = false;
+                        }
+
+                        broad_phase_sphere_pairs(view.position, view.velocity, view.inv_mass, dt, dynamic_bvh_,
+                                                 static_bvh_, bounds_cache_, candidate_pairs_, query_hits_);
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
                         solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
                         publish_poses(view.poses, view.position, view.count);
@@ -95,10 +120,16 @@ struct PhysicsSystem final {
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
-    std::atomic<f32> friction_{0.1f};
+    std::atomic<f32> friction_{0.4f};
     std::atomic<bool> reset_requested_{false};
+    bool static_dirty_{true};
+    DynamicBvh dynamic_bvh_{};
+    StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
     std::vector<Contact> contacts_{};
+    std::vector<u32> query_hits_{};
+    std::vector<u32> static_ids_{};
+    std::vector<Aabb> bounds_cache_{};
 };
 
 } // namespace javelin
