@@ -13,21 +13,29 @@ import javelin.physics.types;
 
 export namespace javelin {
 
-void broad_phase_sphere_pairs(std::span<const u32> dynamic_ids, DynamicBvh &dynamic_bvh, const StaticBvh &static_bvh,
-                              std::span<const Aabb> bounds_cache, std::vector<BodyPair> &pairs,
-                              std::vector<u32> &query_hits, std::vector<u32> &query_stack) {
-    ZoneScopedN("Physics broad phase");
+void broad_phase_update_dynamic_bvh(std::span<const u32> dynamic_ids, DynamicBvh &dynamic_bvh,
+                                    std::span<const Aabb> bounds_cache) {
+    ZoneScopedN("Physics broad phase update");
+    if (dynamic_ids.empty()) {
+        return;
+    }
+    for (const u32 id : dynamic_ids) {
+        dynamic_bvh.update(id, bounds_cache[id]);
+    }
+}
+
+void broad_phase_query_pairs(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh,
+                             const StaticBvh &static_bvh, std::span<const Aabb> bounds_cache,
+                             std::vector<BodyPair> &pairs, std::vector<u32> &query_hits,
+                             std::vector<u32> &query_stack) {
+    ZoneScopedN("Physics broad phase query");
     pairs.clear();
     if (dynamic_ids.empty()) {
         return;
     }
 
-    // dynamic_ids are built in ascending order so j <= id filters duplicates/self.
-    for (const u32 id : dynamic_ids) {
-        dynamic_bvh.update(id, bounds_cache[id]);
-    }
-
     const bool has_static = !static_bvh.empty();
+    // dynamic_ids are built in ascending order so j <= id filters duplicates/self.
     for (const u32 id : dynamic_ids) {
         const Aabb query_bounds = bounds_cache[id];
 

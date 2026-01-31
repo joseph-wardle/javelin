@@ -90,8 +90,11 @@ struct PhysicsSystem final {
                         }
 
                         const std::span<const u32> dynamic_ids{dynamic_ids_.data(), dynamic_ids_.size()};
-                        broad_phase_sphere_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_,
-                                                 candidate_pairs_, query_hits_, query_stack_);
+                        // Mutating phase: update dynamic BVH before read-only queries.
+                        broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
+                        // Read-only phase: query broad phase pairs.
+                        broad_phase_query_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_,
+                                                candidate_pairs_, query_hits_, query_stack_);
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
                         solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
                         publish_poses(view.poses, view.position, count);
@@ -153,6 +156,10 @@ struct PhysicsSystem final {
     }
 
     void rebuild_body_sets_(const PhysicsView &view) {
+        if (view.count != last_count_) {
+            // Count changed: clear to avoid stale nodes for removed ids.
+            dynamic_bvh_.clear();
+        }
         static_ids_.clear();
         dynamic_ids_.clear();
         for (u32 i = 0; i < view.count; ++i) {
