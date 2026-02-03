@@ -98,7 +98,8 @@ struct PhysicsSystem final {
                         // Read-only phase: query broad phase pairs.
                         run_broad_phase_queries_(dynamic_ids);
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
-                        solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
+                        solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
+                                       view.inv_inertia, contacts_, restitution, friction);
                         publish_poses(view.poses, view.position, view.orientation, count);
                     }
                 }
