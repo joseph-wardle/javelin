@@ -4,6 +4,7 @@ import std;
 
 import javelin.core.time;
 import javelin.core.types;
+import javelin.math.quat;
 import javelin.math.vec3;
 
 export namespace javelin {
@@ -17,10 +18,29 @@ namespace detail {
 struct PoseSnapshot final {
     std::span<const Vec3> prev_positions;
     std::span<const Vec3> curr_positions;
+    std::span<const Quat> prev_orientations;
+    std::span<const Quat> curr_orientations;
     u32 count{};
     u64 prev_time_ns{};
     u64 curr_time_ns{};
 };
+
+struct PoseWrite final {
+    std::span<Vec3> positions;
+    std::span<Quat> orientations;
+};
+
+struct PoseSample final {
+    Vec3 position;
+    Quat orientation;
+};
+
+[[nodiscard]] inline PoseSample sample_pose(const PoseSnapshot &poses, const u32 index, const f32 alpha) noexcept {
+    return PoseSample{
+        .position = lerp(poses.prev_positions[index], poses.curr_positions[index], alpha),
+        .orientation = nlerp(poses.prev_orientations[index], poses.curr_orientations[index], alpha),
+    };
+}
 
 struct PoseChannel final {
     PoseChannel() = default;
@@ -31,6 +51,7 @@ struct PoseChannel final {
             return *this;
 
         pos_ = std::move(other.pos_);
+        rot_ = std::move(other.rot_);
         capacity_ = other.capacity_;
         count_ = other.count_;
         write_idx_ = other.write_idx_;
@@ -60,15 +81,22 @@ struct PoseChannel final {
     }
 
     void reserve(u32 capacity) {
-        for (auto &b : pos_)
+        for (auto &b : pos_) {
             b.resize(capacity);
+        }
+        for (auto &b : rot_) {
+            b.resize(capacity);
+        }
         capacity_ = capacity;
     }
 
     // Physics thread writes the back buffer.
-    [[nodiscard]] std::span<Vec3> write_positions(u32 count) noexcept {
+    [[nodiscard]] PoseWrite write_pose(u32 count) noexcept {
         count_ = count;
-        return std::span<Vec3>{pos_[write_idx_].data(), count};
+        return PoseWrite{
+            .positions = std::span<Vec3>{pos_[write_idx_].data(), count},
+            .orientations = std::span<Quat>{rot_[write_idx_].data(), count},
+        };
     }
 
     // Physics thread: publish what it just wrote.
@@ -93,15 +121,20 @@ struct PoseChannel final {
         const u64 prev_time = time_ns_[prev].load(std::memory_order_acquire);
         const u64 curr_time = time_ns_[curr].load(std::memory_order_acquire);
 
-        return PoseSnapshot{.prev_positions = std::span<const Vec3>{pos_[prev].data(), n},
-                            .curr_positions = std::span<const Vec3>{pos_[curr].data(), n},
-                            .count = n,
-                            .prev_time_ns = prev_time,
-                            .curr_time_ns = curr_time};
+        return PoseSnapshot{
+            .prev_positions = std::span<const Vec3>{pos_[prev].data(), n},
+            .curr_positions = std::span<const Vec3>{pos_[curr].data(), n},
+            .prev_orientations = std::span<const Quat>{rot_[prev].data(), n},
+            .curr_orientations = std::span<const Quat>{rot_[curr].data(), n},
+            .count = n,
+            .prev_time_ns = prev_time,
+            .curr_time_ns = curr_time,
+        };
     }
 
   private:
     std::array<std::vector<Vec3>, 3> pos_{};
+    std::array<std::vector<Quat>, 3> rot_{};
     u32 capacity_{0};
     u32 count_{0};
 
