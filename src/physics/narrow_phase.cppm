@@ -41,7 +41,16 @@ void add_sphere_sphere_contacts(std::span<const Vec3> position, std::span<const 
             normal = delta / dist;
         }
         const f32 penetration = radius_sum - dist;
-        contacts.push_back(Contact{.a = a, .b = b, .normal = normal, .penetration = penetration});
+        const Vec3 r_a = normal * sphere[a].radius;
+        const Vec3 r_b = -normal * sphere[b].radius;
+        contacts.push_back(Contact{
+            .a = a,
+            .b = b,
+            .normal = normal,
+            .penetration = penetration,
+            .r_a = r_a,
+            .r_b = r_b,
+        });
     }
 }
 
@@ -57,7 +66,16 @@ void add_sphere_ground_contacts(std::span<const Vec3> position, std::span<const 
             continue;
         }
         const f32 penetration = sphere[i].radius - signed_distance;
-        contacts.push_back(Contact{.a = i, .b = kInvalidBody, .normal = -kGroundNormal, .penetration = penetration});
+        const Vec3 normal = -kGroundNormal;
+        const Vec3 r_a = normal * sphere[i].radius;
+        contacts.push_back(Contact{
+            .a = i,
+            .b = kInvalidBody,
+            .normal = normal,
+            .penetration = penetration,
+            .r_a = r_a,
+            .r_b = Vec3{},
+        });
     }
 }
 } // namespace javelin::detail

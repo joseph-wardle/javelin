@@ -80,6 +80,7 @@ struct PhysicsSystem final {
 
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
+                        integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
                         bounds_cache_.resize(count);
                         for (u32 i = 0; i < count; ++i) {
                             bounds_cache_[i] = Aabb::from_sphere(view.position[i], view.sphere[i].radius);
