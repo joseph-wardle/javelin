@@ -10,6 +10,10 @@ using SteadyClock = std::chrono::steady_clock;
     return static_cast<double>(ns.count()) / 1000.0;
 }
 
+[[nodiscard]] inline double to_ms(const std::chrono::nanoseconds ns) noexcept {
+    return static_cast<double>(ns.count()) / 1'000'000.0;
+}
+
 struct FixedRateTicker final {
     using clock = SteadyClock;
     using duration = clock::duration;
@@ -19,6 +23,7 @@ struct FixedRateTicker final {
         : dt_{dt}, next_{clock::now() + dt_}, prev_wake_{clock::now()} {}
 
     struct TickTiming {
+        double interval_ms{}; // actual interval in milliseconds
         double interval_error_us{}; // (actual_interval - dt) in microseconds
     };
 
@@ -34,7 +39,12 @@ struct FixedRateTicker final {
         prev_wake_ = wake;
         next_ += dt_; // phase-locked
 
-        return TickTiming{.interval_error_us = to_us(std::chrono::duration_cast<std::chrono::nanoseconds>(error))};
+        const auto actual_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(actual);
+        const auto error_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(error);
+        return TickTiming{
+            .interval_ms = to_ms(actual_ns),
+            .interval_error_us = to_us(error_ns),
+        };
     }
 
   private:

@@ -147,11 +147,10 @@ struct WorldGridPass final {
     struct Settings final {
         f32 minor_cell{1.0f};
         f32 major_cell{5.0f};
-        f32 minor_width_px{1.0f};
-        f32 major_width_px{1.6f};
-        f32 fade_start{20.0f};
-        f32 fade_end{50.0f};
-        // ACEScg value precomputed to match the old sRGB display look.
+        f32 minor_width_px{0.25f};
+        f32 major_width_px{0.5f};
+        f32 fade_start{100.0f};
+        f32 fade_end{250.0f};
         Vec3 color{detail::kGridColor};
     };
 

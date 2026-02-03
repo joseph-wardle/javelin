@@ -32,6 +32,7 @@ struct PhysicsSystem final {
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
 
     void start() {
         if (thread_.joinable()) {
@@ -53,8 +54,9 @@ struct PhysicsSystem final {
 
             while (!stop_token.stop_requested()) {
                 const auto t = ticker.wait_next(stop_token);
-
-                TracyPlot("physics_tick_interval_error_us", t.interval_error_us);
+                const double dt_ms = t.interval_ms;
+                last_tick_dt_ms_.store(static_cast<f32>(dt_ms), std::memory_order_relaxed);
+                TracyPlot("physics_dt_ms", dt_ms);
 
                 {
                     ZoneScopedN("Physics tick");
@@ -139,6 +141,7 @@ struct PhysicsSystem final {
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
     std::atomic<f32> friction_{0.2f};
+    std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
     bool static_dirty_{true};
     u32 last_count_{0};
