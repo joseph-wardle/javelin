@@ -23,7 +23,7 @@ struct FixedRateTicker final {
         : dt_{dt}, next_{clock::now() + dt_}, prev_wake_{clock::now()} {}
 
     struct TickTiming {
-        double interval_ms{}; // actual interval in milliseconds
+        double interval_ms{};       // actual interval in milliseconds
         double interval_error_us{}; // (actual_interval - dt) in microseconds
     };
 

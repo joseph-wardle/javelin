@@ -36,8 +36,7 @@ void broad_phase_update_dynamic_bvh(std::span<const u32> dynamic_ids, DynamicBvh
 
 // Chunked query helper: operates on a contiguous span with per-thread scratch/output.
 void broad_phase_chunk(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh, const StaticBvh &static_bvh,
-                       std::span<const Aabb> bounds_cache, std::vector<BodyPair> &pairs,
-                       BroadPhaseScratch &scratch) {
+                       std::span<const Aabb> bounds_cache, std::vector<BodyPair> &pairs, BroadPhaseScratch &scratch) {
     ZoneScopedN("Physics broad phase query");
     pairs.clear();
     if (dynamic_ids.empty()) {

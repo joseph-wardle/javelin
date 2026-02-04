@@ -19,8 +19,8 @@ inline constexpr f32 kTangentEpsSq = 1e-8f;
 export namespace javelin {
 
 void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
-                    std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia,
-                    std::span<const Contact> contacts, const f32 restitution, const f32 friction) {
+                    std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia, std::span<const Contact> contacts,
+                    const f32 restitution, const f32 friction) {
     ZoneScopedN("Physics solve");
     if (contacts.empty()) {
         return;

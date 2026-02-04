@@ -257,9 +257,8 @@ struct PhysicsSystem final {
 
         if (worker_count > 1) {
             std::unique_lock lock(broad_phase_mutex_);
-            broad_phase_done_cv_.wait(lock, [&] {
-                return broad_phase_jobs_remaining_.load(std::memory_order_acquire) == 0u;
-            });
+            broad_phase_done_cv_.wait(
+                lock, [&] { return broad_phase_jobs_remaining_.load(std::memory_order_acquire) == 0u; });
         }
 
         {
@@ -376,10 +375,10 @@ struct PhysicsSystem final {
                 }
                 return lhs.b < rhs.b;
             });
-            pairs.erase(std::unique(pairs.begin(), pairs.end(), [](const BodyPair &lhs, const BodyPair &rhs) {
-                            return lhs.a == rhs.a && lhs.b == rhs.b;
-                        }),
-                        pairs.end());
+            pairs.erase(
+                std::unique(pairs.begin(), pairs.end(),
+                            [](const BodyPair &lhs, const BodyPair &rhs) { return lhs.a == rhs.a && lhs.b == rhs.b; }),
+                pairs.end());
         };
 
         std::vector<BodyPair> actual = candidate_pairs_;

@@ -449,9 +449,8 @@ struct GeometryPass final {
     }
 
     void update_instances_(const RenderContext &ctx) {
-        const usize count =
-            std::min({ctx.view.shape_kind.size(), ctx.view.sphere.size(), ctx.view.material.size(),
-                      ctx.poses.curr_positions.size(), ctx.poses.curr_orientations.size()});
+        const usize count = std::min({ctx.view.shape_kind.size(), ctx.view.sphere.size(), ctx.view.material.size(),
+                                      ctx.poses.curr_positions.size(), ctx.poses.curr_orientations.size()});
         instance_data_.clear();
         instance_data_.reserve(count);
 
