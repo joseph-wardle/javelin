@@ -34,6 +34,8 @@ struct SpawnSettings final {
     f32 pile_radius{};
     f32 radius_min{};
     f32 radius_max{};
+    f32 box_half_min{};
+    f32 box_half_max{};
     f32 height_min{};
     f32 height_max{};
 };
@@ -43,6 +45,8 @@ inline constexpr SpawnSettings kSpawnSettings{
     .pile_radius = 2.5f,
     .radius_min = 0.25f,
     .radius_max = 0.6f,
+    .box_half_min = 0.2f,
+    .box_half_max = 0.6f,
     .height_min = 6.0f,
     .height_max = 300.0f,
 };
@@ -53,6 +57,20 @@ inline constexpr SpawnSettings kSpawnSettings{
     const u32 seed = idx * 747796405u + 2891336453u;
     const f32 rand_radius = hash_to_unit(seed);
     return kSpawnSettings.radius_min + rand_radius * (kSpawnSettings.radius_max - kSpawnSettings.radius_min);
+}
+
+[[nodiscard]] inline Vec3 spawn_cube_half_extents(const u32 idx) noexcept {
+    const u32 seed = idx * 747796405u + 2891336453u;
+    const f32 r = hash_to_unit(seed ^ 0x1f123bb5u);
+    const f32 span = kSpawnSettings.box_half_max - kSpawnSettings.box_half_min;
+    const f32 half = kSpawnSettings.box_half_min + r * span;
+    return Vec3{half};
+}
+
+[[nodiscard]] inline ShapeKind spawn_shape_kind(const u32 idx) noexcept {
+    const u32 seed = idx * 747796405u + 2891336453u;
+    const f32 pick = hash_to_unit(seed ^ 0xc2b2ae35u);
+    return (pick < 0.5f) ? ShapeKind::sphere : ShapeKind::box;
 }
 
 [[nodiscard]] inline Vec3 spawn_position(const u32 idx) noexcept {
@@ -73,6 +91,11 @@ inline constexpr SpawnSettings kSpawnSettings{
 
 [[nodiscard]] inline f32 spawn_inv_mass(const f32 radius) noexcept {
     const f32 mass = radius * radius * radius;
+    return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
+}
+
+[[nodiscard]] inline f32 spawn_inv_mass_box(const Vec3 half_extents) noexcept {
+    const f32 mass = 8.0f * half_extents.x * half_extents.y * half_extents.z;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
@@ -211,7 +234,7 @@ struct Scene final {
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
         log::info(scene, "Loading scene from disk: {}", scene_path.string());
 
-        // TEMP: procedural sphere cloud until real scene data/asset loading is in place.
+        // TEMP: procedural body cloud until real scene data/asset loading is in place.
         Scene out{};
         constexpr u32 kSphereCount = detail::spawn_count();
 
@@ -219,17 +242,32 @@ struct Scene final {
         out.count_ = kSphereCount;
         out.shapes_.clear();
         out.shapes_.reserve(out.count_);
+        u32 sphere_count = 0;
+        u32 box_count = 0;
 
         for (u32 idx = 0; idx < out.count_; ++idx) {
-            const f32 radius = detail::spawn_radius(idx);
-            const f32 inv_mass = detail::spawn_inv_mass(radius);
+            const ShapeKind kind = detail::spawn_shape_kind(idx);
             const Vec3 position = detail::spawn_position(idx);
 
             out.alive_[idx] = 1u;
             out.generation_[idx] = 1;
-            out.shape_kind_[idx] = ShapeKind::sphere;
+            out.shape_kind_[idx] = kind;
             out.shape_index_[idx] = static_cast<u32>(out.shapes_.size());
-            out.shapes_.push_back(ShapeData::make_sphere(SphereShape{radius}));
+            f32 inv_mass = 0.0f;
+            switch (kind) {
+            case ShapeKind::sphere: {
+                const f32 radius = detail::spawn_radius(idx);
+                out.shapes_.push_back(ShapeData::make_sphere(SphereShape{radius}));
+                inv_mass = detail::spawn_inv_mass(radius);
+                ++sphere_count;
+            } break;
+            case ShapeKind::box: {
+                const Vec3 half_extents = detail::spawn_cube_half_extents(idx);
+                out.shapes_.push_back(ShapeData::make_box(BoxShape{half_extents}));
+                inv_mass = detail::spawn_inv_mass_box(half_extents);
+                ++box_count;
+            } break;
+            }
             out.material_[idx] = MaterialId{0};
             out.mesh_[idx] = MeshId{0};
             out.inv_mass_[idx] = inv_mass;
@@ -242,9 +280,10 @@ struct Scene final {
         }
 
         out.publish_poses_from_sim();
-        log::info(scene, "Loaded {} spheres (pile)", out.count_);
-        log::info(scene, "Test scene params: radius=[{}..{}], height=[{}..{}], pile_radius={}",
+        log::info(scene, "Loaded {} bodies (spheres={}, boxes={})", out.count_, sphere_count, box_count);
+        log::info(scene, "Test scene params: sphere_radius=[{}..{}], cube_half=[{}..{}], height=[{}..{}], pile_radius={}",
                   detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max,
+                  detail::kSpawnSettings.box_half_min, detail::kSpawnSettings.box_half_max,
                   detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
                   detail::kSpawnSettings.pile_radius);
         return out;
