@@ -18,8 +18,8 @@ struct RenderView final {
 
     // authored/static (read)
     std::span<const ShapeKind> shape_kind;
-    std::span<const u32> shape_index;      // per-body index into shape pool
-    std::span<const ShapeData> shapes;     // shape pool
+    std::span<const u32> shape_index;  // per-body index into shape pool
+    std::span<const ShapeData> shapes; // shape pool
     std::span<const MaterialId> material;
     std::span<const MeshId> mesh;
     std::span<const f32> inv_mass;

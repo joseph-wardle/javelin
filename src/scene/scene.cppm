@@ -104,8 +104,7 @@ inline constexpr SpawnSettings kSpawnSettings{
     return Vec3{inv_ix, inv_iy, inv_iz};
 }
 
-[[nodiscard]] inline Vec3 shape_inv_inertia(const ShapeKind kind, const ShapeData &shape,
-                                            const f32 inv_mass) noexcept {
+[[nodiscard]] inline Vec3 shape_inv_inertia(const ShapeKind kind, const ShapeData &shape, const f32 inv_mass) noexcept {
 #ifndef NDEBUG
     if (kind != shape.kind) {
         log::error(scene, "Shape kind mismatch during inertia compute");
@@ -234,8 +233,8 @@ struct Scene final {
             out.material_[idx] = MaterialId{0};
             out.mesh_[idx] = MeshId{0};
             out.inv_mass_[idx] = inv_mass;
-            out.inv_inertia_[idx] = detail::shape_inv_inertia(out.shape_kind_[idx],
-                                                              out.shapes_[out.shape_index_[idx]], inv_mass);
+            out.inv_inertia_[idx] =
+                detail::shape_inv_inertia(out.shape_kind_[idx], out.shapes_[out.shape_index_[idx]], inv_mass);
             out.position_[idx] = position;
             out.velocity_[idx] = Vec3{};
             out.orientation_[idx] = Quat::identity();

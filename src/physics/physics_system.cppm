@@ -130,8 +130,8 @@ struct PhysicsSystem final {
                                 const Vec3 abs0{std::fabs(c0.x), std::fabs(c0.y), std::fabs(c0.z)};
                                 const Vec3 abs1{std::fabs(c1.x), std::fabs(c1.y), std::fabs(c1.z)};
                                 const Vec3 abs2{std::fabs(c2.x), std::fabs(c2.y), std::fabs(c2.z)};
-                                const Vec3 extents = abs0 * box.half_extents.x + abs1 * box.half_extents.y +
-                                                     abs2 * box.half_extents.z;
+                                const Vec3 extents =
+                                    abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
                                 const Vec3 center = view.position[i];
                                 bounds_cache_[i] = Aabb{center - extents, center + extents};
                             } break;
@@ -150,8 +150,8 @@ struct PhysicsSystem final {
                         // Read-only phase: query broad phase pairs.
                         run_broad_phase_queries_(dynamic_ids);
                         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
-                        narrow_phase_contacts(view.position, view.shape_kind, view.shapes, view.shape_index,
-                                             view.inv_mass, candidate_pairs_, contacts_);
+                        narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes,
+                                              view.shape_index, view.inv_mass, candidate_pairs_, contacts_);
                         TracyPlot("physics_contacts", static_cast<i64>(contacts_.size()));
                         solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
                                        view.inv_inertia, contacts_, restitution, friction);
