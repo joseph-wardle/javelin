@@ -87,6 +87,39 @@ inline constexpr SpawnSettings kSpawnSettings{
     const f32 inv_inertia = 2.5f * inv_mass / r2;
     return Vec3{inv_inertia};
 }
+
+[[nodiscard]] inline Vec3 box_inv_inertia(const Vec3 half_extents, const f32 inv_mass) noexcept {
+    if (inv_mass <= 0.0f) {
+        return Vec3{};
+    }
+    const f32 hx2 = half_extents.x * half_extents.x;
+    const f32 hy2 = half_extents.y * half_extents.y;
+    const f32 hz2 = half_extents.z * half_extents.z;
+    const f32 denom_x = hy2 + hz2;
+    const f32 denom_y = hx2 + hz2;
+    const f32 denom_z = hx2 + hy2;
+    const f32 inv_ix = (denom_x > 1e-6f) ? (3.0f * inv_mass / denom_x) : 0.0f;
+    const f32 inv_iy = (denom_y > 1e-6f) ? (3.0f * inv_mass / denom_y) : 0.0f;
+    const f32 inv_iz = (denom_z > 1e-6f) ? (3.0f * inv_mass / denom_z) : 0.0f;
+    return Vec3{inv_ix, inv_iy, inv_iz};
+}
+
+[[nodiscard]] inline Vec3 shape_inv_inertia(const ShapeKind kind, const ShapeData &shape,
+                                            const f32 inv_mass) noexcept {
+#ifndef NDEBUG
+    if (kind != shape.kind) {
+        log::error(scene, "Shape kind mismatch during inertia compute");
+        std::terminate();
+    }
+#endif
+    switch (kind) {
+    case ShapeKind::sphere:
+        return sphere_inv_inertia(shape_sphere(shape).radius, inv_mass);
+    case ShapeKind::box:
+        return box_inv_inertia(shape_box(shape).half_extents, inv_mass);
+    }
+    return Vec3{};
+}
 } // namespace detail
 
 struct Scene final {
@@ -201,7 +234,8 @@ struct Scene final {
             out.material_[idx] = MaterialId{0};
             out.mesh_[idx] = MeshId{0};
             out.inv_mass_[idx] = inv_mass;
-            out.inv_inertia_[idx] = detail::sphere_inv_inertia(radius, inv_mass);
+            out.inv_inertia_[idx] = detail::shape_inv_inertia(out.shape_kind_[idx],
+                                                              out.shapes_[out.shape_index_[idx]], inv_mass);
             out.position_[idx] = position;
             out.velocity_[idx] = Vec3{};
             out.orientation_[idx] = Quat::identity();
