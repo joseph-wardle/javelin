@@ -154,7 +154,7 @@ struct PhysicsSystem final {
                                               view.shape_index, view.inv_mass, candidate_pairs_, contacts_);
                         TracyPlot("physics_contacts", static_cast<i64>(contacts_.size()));
                         solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
-                                       view.inv_inertia, contacts_, restitution, friction);
+                                       view.inv_inertia, view.orientation, contacts_, restitution, friction);
                         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
                         publish_poses(view.poses, view.position, view.orientation, count);
                     }
