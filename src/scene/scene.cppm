@@ -34,6 +34,8 @@ struct SpawnSettings final {
     f32 pile_radius{};
     f32 radius_min{};
     f32 radius_max{};
+    f32 box_half_min{};
+    f32 box_half_max{};
     f32 height_min{};
     f32 height_max{};
 };
@@ -43,6 +45,8 @@ inline constexpr SpawnSettings kSpawnSettings{
     .pile_radius = 2.5f,
     .radius_min = 0.25f,
     .radius_max = 0.6f,
+    .box_half_min = 0.2f,
+    .box_half_max = 0.6f,
     .height_min = 6.0f,
     .height_max = 300.0f,
 };
@@ -53,6 +57,20 @@ inline constexpr SpawnSettings kSpawnSettings{
     const u32 seed = idx * 747796405u + 2891336453u;
     const f32 rand_radius = hash_to_unit(seed);
     return kSpawnSettings.radius_min + rand_radius * (kSpawnSettings.radius_max - kSpawnSettings.radius_min);
+}
+
+[[nodiscard]] inline Vec3 spawn_cube_half_extents(const u32 idx) noexcept {
+    const u32 seed = idx * 747796405u + 2891336453u;
+    const f32 r = hash_to_unit(seed ^ 0x1f123bb5u);
+    const f32 span = kSpawnSettings.box_half_max - kSpawnSettings.box_half_min;
+    const f32 half = kSpawnSettings.box_half_min + r * span;
+    return Vec3{half};
+}
+
+[[nodiscard]] inline ShapeKind spawn_shape_kind(const u32 idx) noexcept {
+    const u32 seed = idx * 747796405u + 2891336453u;
+    const f32 pick = hash_to_unit(seed ^ 0xc2b2ae35u);
+    return (pick < 0.5f) ? ShapeKind::sphere : ShapeKind::box;
 }
 
 [[nodiscard]] inline Vec3 spawn_position(const u32 idx) noexcept {
@@ -76,6 +94,11 @@ inline constexpr SpawnSettings kSpawnSettings{
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
+[[nodiscard]] inline f32 spawn_inv_mass_box(const Vec3 half_extents) noexcept {
+    const f32 mass = 8.0f * half_extents.x * half_extents.y * half_extents.z;
+    return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
+}
+
 [[nodiscard]] inline Vec3 sphere_inv_inertia(const f32 radius, const f32 inv_mass) noexcept {
     if (inv_mass <= 0.0f) {
         return Vec3{};
@@ -87,6 +110,38 @@ inline constexpr SpawnSettings kSpawnSettings{
     const f32 inv_inertia = 2.5f * inv_mass / r2;
     return Vec3{inv_inertia};
 }
+
+[[nodiscard]] inline Vec3 box_inv_inertia(const Vec3 half_extents, const f32 inv_mass) noexcept {
+    if (inv_mass <= 0.0f) {
+        return Vec3{};
+    }
+    const f32 hx2 = half_extents.x * half_extents.x;
+    const f32 hy2 = half_extents.y * half_extents.y;
+    const f32 hz2 = half_extents.z * half_extents.z;
+    const f32 denom_x = hy2 + hz2;
+    const f32 denom_y = hx2 + hz2;
+    const f32 denom_z = hx2 + hy2;
+    const f32 inv_ix = (denom_x > 1e-6f) ? (3.0f * inv_mass / denom_x) : 0.0f;
+    const f32 inv_iy = (denom_y > 1e-6f) ? (3.0f * inv_mass / denom_y) : 0.0f;
+    const f32 inv_iz = (denom_z > 1e-6f) ? (3.0f * inv_mass / denom_z) : 0.0f;
+    return Vec3{inv_ix, inv_iy, inv_iz};
+}
+
+[[nodiscard]] inline Vec3 shape_inv_inertia(const ShapeKind kind, const ShapeData &shape, const f32 inv_mass) noexcept {
+#ifndef NDEBUG
+    if (kind != shape.kind) {
+        log::error(scene, "Shape kind mismatch during inertia compute");
+        std::terminate();
+    }
+#endif
+    switch (kind) {
+    case ShapeKind::sphere:
+        return sphere_inv_inertia(shape_sphere(shape).radius, inv_mass);
+    case ShapeKind::box:
+        return box_inv_inertia(shape_box(shape).half_extents, inv_mass);
+    }
+    return Vec3{};
+}
 } // namespace detail
 
 struct Scene final {
@@ -95,11 +150,12 @@ struct Scene final {
 
         // identity
         generation_.resize(capacity_);
-        alive_.resize(capacity_, false);
+        alive_.resize(capacity_, 0u);
 
         // authored/static
         shape_kind_.resize(capacity_, ShapeKind::sphere);
-        sphere_.resize(capacity_);
+        shape_index_.resize(capacity_);
+        shapes_.reserve(capacity_);
         material_.resize(capacity_);
         mesh_.resize(capacity_);
         inv_mass_.resize(capacity_, 1.0f);
@@ -117,7 +173,13 @@ struct Scene final {
     [[nodiscard]] PhysicsView physics_view() noexcept {
         return PhysicsView{
             .count = count_,
-            .sphere = std::span<const SphereShape>{sphere_.data(), count_},
+            .generation = std::span<const u32>{generation_.data(), count_},
+            .alive = std::span<const u8>{alive_.data(), count_},
+            .shape_kind = std::span<const ShapeKind>{shape_kind_.data(), count_},
+            .shape_index = std::span<const u32>{shape_index_.data(), count_},
+            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
+            .material = std::span<const MaterialId>{material_.data(), count_},
+            .mesh = std::span<const MeshId>{mesh_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
             .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
             .position = std::span<Vec3>{position_.data(), count_},
@@ -130,10 +192,19 @@ struct Scene final {
 
     [[nodiscard]] RenderView render_view() const noexcept {
         return RenderView{
+            .generation = std::span<const u32>{generation_.data(), count_},
+            .alive = std::span<const u8>{alive_.data(), count_},
             .shape_kind = std::span<const ShapeKind>{shape_kind_.data(), count_},
-            .sphere = std::span<const SphereShape>{sphere_.data(), count_},
+            .shape_index = std::span<const u32>{shape_index_.data(), count_},
+            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
             .material = std::span<const MaterialId>{material_.data(), count_},
             .mesh = std::span<const MeshId>{mesh_.data(), count_},
+            .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
+            .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
+            .position = std::span<const Vec3>{position_.data(), count_},
+            .velocity = std::span<const Vec3>{velocity_.data(), count_},
+            .orientation = std::span<const Quat>{orientation_.data(), count_},
+            .angular_velocity = std::span<const Vec3>{angular_velocity_.data(), count_},
             .poses = poses_,
         };
     }
@@ -163,26 +234,45 @@ struct Scene final {
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
         log::info(scene, "Loading scene from disk: {}", scene_path.string());
 
-        // TEMP: procedural sphere cloud until real scene data/asset loading is in place.
+        // TEMP: procedural body cloud until real scene data/asset loading is in place.
         Scene out{};
         constexpr u32 kSphereCount = detail::spawn_count();
 
         out.reserve(kSphereCount);
         out.count_ = kSphereCount;
+        out.shapes_.clear();
+        out.shapes_.reserve(out.count_);
+        u32 sphere_count = 0;
+        u32 box_count = 0;
 
         for (u32 idx = 0; idx < out.count_; ++idx) {
-            const f32 radius = detail::spawn_radius(idx);
-            const f32 inv_mass = detail::spawn_inv_mass(radius);
+            const ShapeKind kind = detail::spawn_shape_kind(idx);
             const Vec3 position = detail::spawn_position(idx);
 
-            out.alive_[idx] = true;
+            out.alive_[idx] = 1u;
             out.generation_[idx] = 1;
-            out.shape_kind_[idx] = ShapeKind::sphere;
-            out.sphere_[idx] = SphereShape{radius};
+            out.shape_kind_[idx] = kind;
+            out.shape_index_[idx] = static_cast<u32>(out.shapes_.size());
+            f32 inv_mass = 0.0f;
+            switch (kind) {
+            case ShapeKind::sphere: {
+                const f32 radius = detail::spawn_radius(idx);
+                out.shapes_.push_back(ShapeData::make_sphere(SphereShape{radius}));
+                inv_mass = detail::spawn_inv_mass(radius);
+                ++sphere_count;
+            } break;
+            case ShapeKind::box: {
+                const Vec3 half_extents = detail::spawn_cube_half_extents(idx);
+                out.shapes_.push_back(ShapeData::make_box(BoxShape{half_extents}));
+                inv_mass = detail::spawn_inv_mass_box(half_extents);
+                ++box_count;
+            } break;
+            }
             out.material_[idx] = MaterialId{0};
             out.mesh_[idx] = MeshId{0};
             out.inv_mass_[idx] = inv_mass;
-            out.inv_inertia_[idx] = detail::sphere_inv_inertia(radius, inv_mass);
+            out.inv_inertia_[idx] =
+                detail::shape_inv_inertia(out.shape_kind_[idx], out.shapes_[out.shape_index_[idx]], inv_mass);
             out.position_[idx] = position;
             out.velocity_[idx] = Vec3{};
             out.orientation_[idx] = Quat::identity();
@@ -190,9 +280,10 @@ struct Scene final {
         }
 
         out.publish_poses_from_sim();
-        log::info(scene, "Loaded {} spheres (pile)", out.count_);
-        log::info(scene, "Test scene params: radius=[{}..{}], height=[{}..{}], pile_radius={}",
+        log::info(scene, "Loaded {} bodies (spheres={}, boxes={})", out.count_, sphere_count, box_count);
+        log::info(scene, "Test scene params: sphere_radius=[{}..{}], cube_half=[{}..{}], height=[{}..{}], pile_radius={}",
                   detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max,
+                  detail::kSpawnSettings.box_half_min, detail::kSpawnSettings.box_half_max,
                   detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
                   detail::kSpawnSettings.pile_radius);
         return out;
@@ -204,11 +295,12 @@ struct Scene final {
 
     // identity (kept for future spawn/despawn; can be minimal in v1)
     std::vector<u32> generation_{};
-    std::vector<bool> alive_{};
+    std::vector<u8> alive_{};
 
     // authored/static
     std::vector<ShapeKind> shape_kind_{};
-    std::vector<SphereShape> sphere_{};
+    std::vector<u32> shape_index_{};
+    std::vector<ShapeData> shapes_{};
     std::vector<MaterialId> material_{};
     std::vector<MeshId> mesh_{};
     std::vector<f32> inv_mass_{};
