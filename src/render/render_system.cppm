@@ -145,6 +145,11 @@ struct RenderSystem final {
                     physics_->set_friction(friction);
                 }
 
+                f32 angular_damping = physics_->angular_damping();
+                if (ImGui::DragFloat("Angular Damping", &angular_damping, 0.01f, 0.0f, 5.0f)) {
+                    physics_->set_angular_damping(angular_damping);
+                }
+
                 if (ImGui::Button("Reset Scene")) {
                     physics_->request_reset();
                 }

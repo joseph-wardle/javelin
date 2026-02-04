@@ -58,4 +58,20 @@ void integrate_predicted_orientations(std::span<Quat> orientation, std::span<con
     }
 }
 
+void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32> inv_mass, const f32 damping,
+                           const f32 dt) noexcept {
+    ZoneScopedN("Physics angular damping");
+    if (damping <= 0.0f) {
+        return;
+    }
+    const f32 scale = std::clamp(1.0f - damping * dt, 0.0f, 1.0f);
+    const u32 count = static_cast<u32>(angular_velocity.size());
+    for (u32 i = 0; i < count; ++i) {
+        if (inv_mass[i] == 0.0f) {
+            continue;
+        }
+        angular_velocity[i] *= scale;
+    }
+}
+
 } // namespace javelin
