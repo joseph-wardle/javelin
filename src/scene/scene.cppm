@@ -95,7 +95,7 @@ struct Scene final {
 
         // identity
         generation_.resize(capacity_);
-        alive_.resize(capacity_, false);
+        alive_.resize(capacity_, 0u);
 
         // authored/static
         shape_kind_.resize(capacity_, ShapeKind::sphere);
@@ -118,9 +118,13 @@ struct Scene final {
     [[nodiscard]] PhysicsView physics_view() noexcept {
         return PhysicsView{
             .count = count_,
+            .generation = std::span<const u32>{generation_.data(), count_},
+            .alive = std::span<const u8>{alive_.data(), count_},
             .shape_kind = std::span<const ShapeKind>{shape_kind_.data(), count_},
-            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
             .shape_index = std::span<const u32>{shape_index_.data(), count_},
+            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
+            .material = std::span<const MaterialId>{material_.data(), count_},
+            .mesh = std::span<const MeshId>{mesh_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
             .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
             .position = std::span<Vec3>{position_.data(), count_},
@@ -133,11 +137,19 @@ struct Scene final {
 
     [[nodiscard]] RenderView render_view() const noexcept {
         return RenderView{
+            .generation = std::span<const u32>{generation_.data(), count_},
+            .alive = std::span<const u8>{alive_.data(), count_},
             .shape_kind = std::span<const ShapeKind>{shape_kind_.data(), count_},
-            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
             .shape_index = std::span<const u32>{shape_index_.data(), count_},
+            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
             .material = std::span<const MaterialId>{material_.data(), count_},
             .mesh = std::span<const MeshId>{mesh_.data(), count_},
+            .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
+            .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
+            .position = std::span<const Vec3>{position_.data(), count_},
+            .velocity = std::span<const Vec3>{velocity_.data(), count_},
+            .orientation = std::span<const Quat>{orientation_.data(), count_},
+            .angular_velocity = std::span<const Vec3>{angular_velocity_.data(), count_},
             .poses = poses_,
         };
     }
@@ -181,7 +193,7 @@ struct Scene final {
             const f32 inv_mass = detail::spawn_inv_mass(radius);
             const Vec3 position = detail::spawn_position(idx);
 
-            out.alive_[idx] = true;
+            out.alive_[idx] = 1u;
             out.generation_[idx] = 1;
             out.shape_kind_[idx] = ShapeKind::sphere;
             out.shape_index_[idx] = static_cast<u32>(out.shapes_.size());
@@ -211,7 +223,7 @@ struct Scene final {
 
     // identity (kept for future spawn/despawn; can be minimal in v1)
     std::vector<u32> generation_{};
-    std::vector<bool> alive_{};
+    std::vector<u8> alive_{};
 
     // authored/static
     std::vector<ShapeKind> shape_kind_{};
