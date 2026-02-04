@@ -68,6 +68,7 @@ uniform vec3 u_axis_colors[3];
 uniform vec3 u_light_dir;
 uniform vec3 u_light_color;
 uniform vec3 u_ambient_color;
+uniform int u_axis_mode;
 
 void main() {
     int idx = int(v_material_id);
@@ -80,6 +81,11 @@ void main() {
     vec3 base = u_material_colors[idx];
     vec3 lighting = u_ambient_color + u_light_color * ndotl;
     vec3 lit = base * lighting;
+
+    if (u_axis_mode != 0) {
+        frag_color = vec4(lit, 1.0);
+        return;
+    }
 
     float band_width = 0.18;
     float band_feather = 0.04;
@@ -272,12 +278,18 @@ struct GeometryPass final {
 
         if (sphere_instance_count_ > 0 && sphere_vao_ != 0 && sphere_index_count_ > 0 &&
             sphere_instance_vbo_ != 0) {
+            if (u_axis_mode_ >= 0) {
+                glUniform1i(u_axis_mode_, 0);
+            }
             glBindVertexArray(sphere_vao_);
             glDrawElementsInstanced(GL_TRIANGLES, sphere_index_count_, GL_UNSIGNED_INT, nullptr,
                                     sphere_instance_count_);
             glBindVertexArray(0);
         }
         if (cube_instance_count_ > 0 && cube_vao_ != 0 && cube_index_count_ > 0 && cube_instance_vbo_ != 0) {
+            if (u_axis_mode_ >= 0) {
+                glUniform1i(u_axis_mode_, 1);
+            }
             glBindVertexArray(cube_vao_);
             glDrawElementsInstanced(GL_TRIANGLES, cube_index_count_, GL_UNSIGNED_INT, nullptr,
                                     cube_instance_count_);
@@ -443,6 +455,7 @@ struct GeometryPass final {
         u_light_dir_ = glGetUniformLocation(program_, "u_light_dir");
         u_light_color_ = glGetUniformLocation(program_, "u_light_color");
         u_ambient_color_ = glGetUniformLocation(program_, "u_ambient_color");
+        u_axis_mode_ = glGetUniformLocation(program_, "u_axis_mode");
 
         // TEMP: hardcoded material palette for the test scene.
         constexpr std::array<Vec3, detail::kMaterialCount> kLinearSrgb = {
@@ -483,6 +496,9 @@ struct GeometryPass final {
         }
         if (u_axis_colors_ >= 0) {
             glUniform3fv(u_axis_colors_, 3, axis_packed.data());
+        }
+        if (u_axis_mode_ >= 0) {
+            glUniform1i(u_axis_mode_, 0);
         }
         // TEMP: basic directional + ambient lighting for the test scene.
         if (u_light_dir_ >= 0) {
@@ -666,6 +682,7 @@ struct GeometryPass final {
         u_light_dir_ = -1;
         u_light_color_ = -1;
         u_ambient_color_ = -1;
+        u_axis_mode_ = -1;
     }
 
   private:
@@ -692,6 +709,7 @@ struct GeometryPass final {
     i32 u_light_dir_{-1};
     i32 u_light_color_{-1};
     i32 u_ambient_color_{-1};
+    i32 u_axis_mode_{-1};
 };
 
 } // namespace javelin
