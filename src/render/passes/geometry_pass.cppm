@@ -276,8 +276,7 @@ struct GeometryPass final {
         glUseProgram(program_);
         glUniformMatrix4fv(u_view_proj_, 1, GL_FALSE, ctx.camera.view_proj.data());
 
-        if (sphere_instance_count_ > 0 && sphere_vao_ != 0 && sphere_index_count_ > 0 &&
-            sphere_instance_vbo_ != 0) {
+        if (sphere_instance_count_ > 0 && sphere_vao_ != 0 && sphere_index_count_ > 0 && sphere_instance_vbo_ != 0) {
             if (u_axis_mode_ >= 0) {
                 glUniform1i(u_axis_mode_, 0);
             }
@@ -291,8 +290,7 @@ struct GeometryPass final {
                 glUniform1i(u_axis_mode_, 1);
             }
             glBindVertexArray(cube_vao_);
-            glDrawElementsInstanced(GL_TRIANGLES, cube_index_count_, GL_UNSIGNED_INT, nullptr,
-                                    cube_instance_count_);
+            glDrawElementsInstanced(GL_TRIANGLES, cube_index_count_, GL_UNSIGNED_INT, nullptr, cube_instance_count_);
             glBindVertexArray(0);
         }
 
@@ -394,7 +392,7 @@ struct GeometryPass final {
         };
 
         std::array<u32, 36> indices = {
-            0, 1, 2, 0, 2, 3,       4, 5, 6, 4, 6, 7,       8, 9, 10, 8, 10, 11,
+            0,  1,  2,  0,  2,  3,  4,  5,  6,  4,  6,  7,  8,  9,  10, 8,  10, 11,
             12, 13, 14, 12, 14, 15, 16, 17, 18, 16, 18, 19, 20, 21, 22, 20, 22, 23,
         };
 
@@ -605,8 +603,8 @@ struct GeometryPass final {
         upload_instances_(cube_instance_vbo_, cube_instances_, cube_instance_capacity_, cube_instance_count_);
     }
 
-    static void upload_instances_(const u32 instance_vbo, const std::vector<InstanceData> &instances,
-                                  usize &capacity, i32 &count) {
+    static void upload_instances_(const u32 instance_vbo, const std::vector<InstanceData> &instances, usize &capacity,
+                                  i32 &count) {
         count = static_cast<i32>(instances.size());
         if (count <= 0) {
             return;
@@ -626,8 +624,7 @@ struct GeometryPass final {
             glBindBuffer(GL_ARRAY_BUFFER, instance_vbo);
         }
 
-        glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(needed * sizeof(InstanceData)),
-                        instances.data());
+        glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(needed * sizeof(InstanceData)), instances.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 

@@ -88,13 +88,13 @@ struct DynamicBvh final {
     }
 
     // Appends overlapping body ids to out (caller-owned). stack is scratch storage.
-    void query(const Aabb aabb, std::vector<u32>& out, std::vector<u32>& stack) const {
+    void query(const Aabb aabb, std::vector<u32> &out, std::vector<u32> &stack) const {
         ZoneScopedN("Physics query dynamic BVH");
         if (root_ == kInvalidNode) {
             return;
         }
 
-        const Node* nodes = nodes_.data();
+        const Node *nodes = nodes_.data();
 
         stack.clear();
         stack.push_back(root_);
@@ -103,7 +103,7 @@ struct DynamicBvh final {
             const u32 idx = stack.back();
             stack.pop_back();
 
-            const Node& n = nodes[idx];
+            const Node &n = nodes[idx];
             if (!overlaps(n.bounds, aabb)) {
                 continue;
             }

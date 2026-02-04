@@ -16,9 +16,7 @@ inline constexpr f32 kPositionCorrectionPercent = 0.8f;
 inline constexpr u32 kSolverIterations = 8;
 inline constexpr f32 kTangentEpsSq = 1e-8f;
 
-[[nodiscard]] inline Vec3 to_body_space(const Quat q, const Vec3 v) noexcept {
-    return rotate(inverse_unit(q), v);
-}
+[[nodiscard]] inline Vec3 to_body_space(const Quat q, const Vec3 v) noexcept { return rotate(inverse_unit(q), v); }
 
 [[nodiscard]] inline Vec3 to_world_space(const Quat q, const Vec3 v) noexcept { return rotate(q, v); }
 
@@ -98,8 +96,7 @@ void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::spa
             const Vec3 ra_cross_n = cross(r_a, contact.normal);
             const Vec3 rb_cross_n = cross(r_b, contact.normal);
             const f32 ang_term_a = detail::inv_inertia_term(inv_inertia_a, orient_a, ra_cross_n);
-            const f32 ang_term_b =
-                has_b ? detail::inv_inertia_term(inv_inertia_b, orient_b, rb_cross_n) : 0.0f;
+            const f32 ang_term_b = has_b ? detail::inv_inertia_term(inv_inertia_b, orient_b, rb_cross_n) : 0.0f;
             const f32 impulse_denom = inv_mass_sum + ang_term_a + ang_term_b;
             if (impulse_denom <= 0.0f) {
                 continue;
