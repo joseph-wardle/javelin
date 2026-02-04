@@ -449,7 +449,7 @@ struct GeometryPass final {
     }
 
     void update_instances_(const RenderContext &ctx) {
-        const usize count = std::min({ctx.view.shape_kind.size(), ctx.view.sphere.size(), ctx.view.material.size(),
+        const usize count = std::min({ctx.view.shape_kind.size(), ctx.view.shape_index.size(), ctx.view.material.size(),
                                       ctx.poses.curr_positions.size(), ctx.poses.curr_orientations.size()});
         instance_data_.clear();
         instance_data_.reserve(count);
@@ -459,10 +459,25 @@ struct GeometryPass final {
                 continue;
             }
 
+            const u32 shape_id = ctx.view.shape_index[i];
+#ifndef NDEBUG
+            if (shape_id >= ctx.view.shapes.size()) {
+                log::error(render, "Render shape index out of range (id={} shape_id={})", i, shape_id);
+                std::terminate();
+            }
+#endif
+            const ShapeData &shape = ctx.view.shapes[shape_id];
+#ifndef NDEBUG
+            if (shape.kind != ShapeKind::sphere) {
+                log::error(render, "Render expects sphere shape (id={})", i);
+                std::terminate();
+            }
+#endif
+            const SphereShape &sphere = shape_sphere(shape);
             const PoseSample pose = sample_pose(ctx.poses, static_cast<u32>(i), ctx.pose_alpha);
             instance_data_.push_back(InstanceData{
                 .position = pose.position,
-                .radius = ctx.view.sphere[i].radius,
+                .radius = sphere.radius,
                 .orientation = pose.orientation,
                 .material_id = ctx.view.material[i].value,
             });

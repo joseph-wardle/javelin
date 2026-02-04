@@ -19,6 +19,7 @@ import javelin.physics.solve;
 import javelin.physics.types;
 import javelin.scene;
 import javelin.scene.physics_view;
+import javelin.scene.shapes;
 
 export namespace javelin {
 struct PhysicsSystem final {
@@ -94,7 +95,31 @@ struct PhysicsSystem final {
                         TracyPlot("physics_max_angular_speed", std::sqrt(max_angular_speed_sq));
                         bounds_cache_.resize(count);
                         for (u32 i = 0; i < count; ++i) {
-                            bounds_cache_[i] = Aabb::from_sphere(view.position[i], view.sphere[i].radius);
+                            if (view.shape_kind[i] != ShapeKind::sphere) {
+#ifndef NDEBUG
+                                log::error(physics, "Unsupported shape kind in physics (id={})", i);
+                                std::terminate();
+#else
+                                bounds_cache_[i] = Aabb{};
+                                continue;
+#endif
+                            }
+#ifndef NDEBUG
+                            if (view.shape_index[i] >= view.shapes.size()) {
+                                log::error(physics, "Shape index out of range (id={} shape_id={})", i,
+                                           view.shape_index[i]);
+                                std::terminate();
+                            }
+#endif
+                            const ShapeData &shape = view.shapes[view.shape_index[i]];
+#ifndef NDEBUG
+                            if (shape.kind != ShapeKind::sphere) {
+                                log::error(physics, "Shape kind mismatch (id={})", i);
+                                std::terminate();
+                            }
+#endif
+                            const SphereShape &sphere = shape_sphere(shape);
+                            bounds_cache_[i] = Aabb::from_sphere(view.position[i], sphere.radius);
                         }
 
                         if (static_dirty_) {
@@ -109,7 +134,8 @@ struct PhysicsSystem final {
                         // Read-only phase: query broad phase pairs.
                         run_broad_phase_queries_(dynamic_ids);
                         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
-                        narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
+                        narrow_phase_contacts(view.position, view.shape_kind, view.shapes, view.shape_index,
+                                             view.inv_mass, candidate_pairs_, contacts_);
                         TracyPlot("physics_contacts", static_cast<i64>(contacts_.size()));
                         solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
                                        view.inv_inertia, contacts_, restitution, friction);

@@ -99,7 +99,8 @@ struct Scene final {
 
         // authored/static
         shape_kind_.resize(capacity_, ShapeKind::sphere);
-        sphere_.resize(capacity_);
+        shape_index_.resize(capacity_);
+        shapes_.reserve(capacity_);
         material_.resize(capacity_);
         mesh_.resize(capacity_);
         inv_mass_.resize(capacity_, 1.0f);
@@ -117,7 +118,9 @@ struct Scene final {
     [[nodiscard]] PhysicsView physics_view() noexcept {
         return PhysicsView{
             .count = count_,
-            .sphere = std::span<const SphereShape>{sphere_.data(), count_},
+            .shape_kind = std::span<const ShapeKind>{shape_kind_.data(), count_},
+            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
+            .shape_index = std::span<const u32>{shape_index_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
             .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
             .position = std::span<Vec3>{position_.data(), count_},
@@ -131,7 +134,8 @@ struct Scene final {
     [[nodiscard]] RenderView render_view() const noexcept {
         return RenderView{
             .shape_kind = std::span<const ShapeKind>{shape_kind_.data(), count_},
-            .sphere = std::span<const SphereShape>{sphere_.data(), count_},
+            .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
+            .shape_index = std::span<const u32>{shape_index_.data(), count_},
             .material = std::span<const MaterialId>{material_.data(), count_},
             .mesh = std::span<const MeshId>{mesh_.data(), count_},
             .poses = poses_,
@@ -169,6 +173,8 @@ struct Scene final {
 
         out.reserve(kSphereCount);
         out.count_ = kSphereCount;
+        out.shapes_.clear();
+        out.shapes_.reserve(out.count_);
 
         for (u32 idx = 0; idx < out.count_; ++idx) {
             const f32 radius = detail::spawn_radius(idx);
@@ -178,7 +184,8 @@ struct Scene final {
             out.alive_[idx] = true;
             out.generation_[idx] = 1;
             out.shape_kind_[idx] = ShapeKind::sphere;
-            out.sphere_[idx] = SphereShape{radius};
+            out.shape_index_[idx] = static_cast<u32>(out.shapes_.size());
+            out.shapes_.push_back(ShapeData::make_sphere(SphereShape{radius}));
             out.material_[idx] = MaterialId{0};
             out.mesh_[idx] = MeshId{0};
             out.inv_mass_[idx] = inv_mass;
@@ -208,7 +215,8 @@ struct Scene final {
 
     // authored/static
     std::vector<ShapeKind> shape_kind_{};
-    std::vector<SphereShape> sphere_{};
+    std::vector<u32> shape_index_{};
+    std::vector<ShapeData> shapes_{};
     std::vector<MaterialId> material_{};
     std::vector<MeshId> mesh_{};
     std::vector<f32> inv_mass_{};

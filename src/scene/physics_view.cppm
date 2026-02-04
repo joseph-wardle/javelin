@@ -14,7 +14,9 @@ struct PhysicsView final {
     u32 &count;
 
     // authored/static (read)
-    std::span<const SphereShape> sphere;
+    std::span<const ShapeKind> shape_kind;
+    std::span<const ShapeData> shapes;     // shape pool
+    std::span<const u32> shape_index;      // per-body index into shape pool
     std::span<const f32> inv_mass;
     std::span<const Vec3> inv_inertia;
 
