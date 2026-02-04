@@ -5,6 +5,7 @@ import std;
 import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.constants;
+import javelin.math.quat;
 import javelin.math.vec3;
 import javelin.scene.entity;
 import javelin.scene.physics_view;
@@ -38,7 +39,7 @@ struct SpawnSettings final {
 };
 
 inline constexpr SpawnSettings kSpawnSettings{
-    .count = 3200,
+    .count = 512,
     .pile_radius = 2.5f,
     .radius_min = 0.25f,
     .radius_max = 0.6f,
@@ -74,6 +75,18 @@ inline constexpr SpawnSettings kSpawnSettings{
     const f32 mass = radius * radius * radius;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
+
+[[nodiscard]] inline Vec3 sphere_inv_inertia(const f32 radius, const f32 inv_mass) noexcept {
+    if (inv_mass <= 0.0f) {
+        return Vec3{};
+    }
+    const f32 r2 = radius * radius;
+    if (r2 <= 1e-6f) {
+        return Vec3{};
+    }
+    const f32 inv_inertia = 2.5f * inv_mass / r2;
+    return Vec3{inv_inertia};
+}
 } // namespace detail
 
 struct Scene final {
@@ -90,10 +103,13 @@ struct Scene final {
         material_.resize(capacity_);
         mesh_.resize(capacity_);
         inv_mass_.resize(capacity_, 1.0f);
+        inv_inertia_.resize(capacity_);
 
         // simulation
         position_.resize(capacity_);
         velocity_.resize(capacity_);
+        orientation_.resize(capacity_);
+        angular_velocity_.resize(capacity_);
 
         poses_.reserve(capacity_);
     }
@@ -103,8 +119,11 @@ struct Scene final {
             .count = count_,
             .sphere = std::span<const SphereShape>{sphere_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
+            .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
             .position = std::span<Vec3>{position_.data(), count_},
             .velocity = std::span<Vec3>{velocity_.data(), count_},
+            .orientation = std::span<Quat>{orientation_.data(), count_},
+            .angular_velocity = std::span<Vec3>{angular_velocity_.data(), count_},
             .poses = poses_,
         };
     }
@@ -124,9 +143,10 @@ struct Scene final {
 
     // Physics calls this after stepping to publish.
     void publish_poses_from_sim() noexcept {
-        auto out = poses_.write_positions(count_);
+        auto out = poses_.write_pose(count_);
         for (u32 i = 0; i < count_; ++i) {
-            out[i] = position_[i];
+            out.positions[i] = position_[i];
+            out.orientations[i] = orientation_[i];
         }
         poses_.publish();
     }
@@ -135,6 +155,8 @@ struct Scene final {
         for (u32 i = 0; i < count_; ++i) {
             position_[i] = detail::spawn_position(i);
             velocity_[i] = Vec3{};
+            orientation_[i] = Quat::identity();
+            angular_velocity_[i] = Vec3{};
         }
     }
 
@@ -160,8 +182,11 @@ struct Scene final {
             out.material_[idx] = MaterialId{0};
             out.mesh_[idx] = MeshId{0};
             out.inv_mass_[idx] = inv_mass;
+            out.inv_inertia_[idx] = detail::sphere_inv_inertia(radius, inv_mass);
             out.position_[idx] = position;
             out.velocity_[idx] = Vec3{};
+            out.orientation_[idx] = Quat::identity();
+            out.angular_velocity_[idx] = Vec3{};
         }
 
         out.publish_poses_from_sim();
@@ -187,10 +212,13 @@ struct Scene final {
     std::vector<MaterialId> material_{};
     std::vector<MeshId> mesh_{};
     std::vector<f32> inv_mass_{};
+    std::vector<Vec3> inv_inertia_{};
 
     // simulation state (physics-owned)
     std::vector<Vec3> position_{};
     std::vector<Vec3> velocity_{};
+    std::vector<Quat> orientation_{};
+    std::vector<Vec3> angular_velocity_{};
 
     // presentation channel (physics publishes, render reads)
     PoseChannel poses_{};

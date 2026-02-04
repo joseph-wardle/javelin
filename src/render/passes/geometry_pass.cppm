@@ -10,11 +10,13 @@ import std;
 
 import javelin.core.types;
 import javelin.core.logging;
+import javelin.math.quat;
 import javelin.math.vec3;
 import javelin.render.color;
 import javelin.render.render_context;
 import javelin.render.types;
 import javelin.scene.entity;
+import javelin.scene.pose_channel;
 import javelin.scene.shapes;
 
 namespace javelin::detail {
@@ -29,16 +31,25 @@ layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec3 a_instance_pos;
 layout(location = 3) in float a_instance_radius;
 layout(location = 4) in uint a_instance_material;
+layout(location = 5) in vec4 a_instance_rot;
 
 uniform mat4 u_view_proj;
 
 flat out uint v_material_id;
-out vec3 v_normal;
+out vec3 v_world_normal;
+out vec3 v_local_normal;
+
+vec3 quat_rotate(vec4 q, vec3 v) {
+    vec3 t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
+}
 
 void main() {
-    vec3 world = a_instance_pos + a_position * a_instance_radius;
+    vec3 local_pos = a_position * a_instance_radius;
+    vec3 world = a_instance_pos + quat_rotate(a_instance_rot, local_pos);
     v_material_id = a_instance_material;
-    v_normal = a_normal;
+    v_world_normal = normalize(quat_rotate(a_instance_rot, a_normal));
+    v_local_normal = a_normal;
     gl_Position = u_view_proj * vec4(world, 1.0);
 }
 )glsl";
@@ -46,12 +57,14 @@ void main() {
 constexpr std::string_view kGeometryFragmentShader = R"glsl(
 #version 460 core
 flat in uint v_material_id;
-in vec3 v_normal;
+in vec3 v_world_normal;
+in vec3 v_local_normal;
 
 layout(location = 0) out vec4 frag_color;
 
 const int kMaterialCount = 4;
 uniform vec3 u_material_colors[kMaterialCount];
+uniform vec3 u_axis_colors[3];
 uniform vec3 u_light_dir;
 uniform vec3 u_light_color;
 uniform vec3 u_ambient_color;
@@ -59,13 +72,25 @@ uniform vec3 u_ambient_color;
 void main() {
     int idx = int(v_material_id);
     idx = clamp(idx, 0, kMaterialCount - 1);
-    vec3 n = normalize(v_normal);
+    vec3 n = normalize(v_world_normal);
+    vec3 local_n = normalize(v_local_normal);
     vec3 l = normalize(-u_light_dir);
     float ndotl = max(dot(n, l), 0.0);
 
     vec3 base = u_material_colors[idx];
-    vec3 lit = base * (u_ambient_color + u_light_color * ndotl);
-    frag_color = vec4(lit, 1.0);
+    vec3 lighting = u_ambient_color + u_light_color * ndotl;
+    vec3 lit = base * lighting;
+
+    float band_width = 0.18;
+    float band_feather = 0.04;
+    float bx = 1.0 - smoothstep(band_width, band_width + band_feather, abs(local_n.x));
+    float by = 1.0 - smoothstep(band_width, band_width + band_feather, abs(local_n.y));
+    float bz = 1.0 - smoothstep(band_width, band_width + band_feather, abs(local_n.z));
+    float band_mask = clamp(bx + by + bz, 0.0, 1.0);
+    vec3 band_color = bx * u_axis_colors[0] + by * u_axis_colors[1] + bz * u_axis_colors[2];
+    vec3 shaded = mix(lit, band_color * lighting, band_mask);
+
+    frag_color = vec4(shaded, 1.0);
 }
 )glsl";
 
@@ -258,6 +283,7 @@ struct GeometryPass final {
     struct InstanceData final {
         Vec3 position{};
         f32 radius{};
+        Quat orientation{};
         u32 material_id{};
     };
 
@@ -328,6 +354,7 @@ struct GeometryPass final {
 
         u_view_proj_ = glGetUniformLocation(program_, "u_view_proj");
         u_material_colors_ = glGetUniformLocation(program_, "u_material_colors");
+        u_axis_colors_ = glGetUniformLocation(program_, "u_axis_colors");
         u_light_dir_ = glGetUniformLocation(program_, "u_light_dir");
         u_light_color_ = glGetUniformLocation(program_, "u_light_color");
         u_ambient_color_ = glGetUniformLocation(program_, "u_ambient_color");
@@ -352,9 +379,25 @@ struct GeometryPass final {
             packed[i * 3 + 2] = acescg[i].z;
         }
 
+        constexpr std::array<Vec3, 3> kAxisLinearSrgb = {
+            Vec3{1.0f, 0.15f, 0.10f},
+            Vec3{0.10f, 1.0f, 0.20f},
+            Vec3{0.10f, 0.45f, 1.0f},
+        };
+        std::array<f32, 3 * 3> axis_packed{};
+        for (usize i = 0; i < kAxisLinearSrgb.size(); ++i) {
+            const Vec3 aces = linear_srgb_to_acescg(kAxisLinearSrgb[i]);
+            axis_packed[i * 3 + 0] = aces.x;
+            axis_packed[i * 3 + 1] = aces.y;
+            axis_packed[i * 3 + 2] = aces.z;
+        }
+
         glUseProgram(program_);
         if (u_material_colors_ >= 0) {
             glUniform3fv(u_material_colors_, detail::kMaterialCount, packed.data());
+        }
+        if (u_axis_colors_ >= 0) {
+            glUniform3fv(u_axis_colors_, 3, axis_packed.data());
         }
         // TEMP: basic directional + ambient lighting for the test scene.
         if (u_light_dir_ >= 0) {
@@ -396,13 +439,18 @@ struct GeometryPass final {
                                reinterpret_cast<void *>(offsetof(InstanceData, material_id)));
         glVertexAttribDivisor(4, 1);
 
+        glEnableVertexAttribArray(5);
+        glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceData),
+                              reinterpret_cast<void *>(offsetof(InstanceData, orientation)));
+        glVertexAttribDivisor(5, 1);
+
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
     void update_instances_(const RenderContext &ctx) {
         const usize count = std::min({ctx.view.shape_kind.size(), ctx.view.sphere.size(), ctx.view.material.size(),
-                                      ctx.poses.curr_positions.size()});
+                                      ctx.poses.curr_positions.size(), ctx.poses.curr_orientations.size()});
         instance_data_.clear();
         instance_data_.reserve(count);
 
@@ -411,10 +459,11 @@ struct GeometryPass final {
                 continue;
             }
 
-            const Vec3 position = lerp(ctx.poses.prev_positions[i], ctx.poses.curr_positions[i], ctx.pose_alpha);
+            const PoseSample pose = sample_pose(ctx.poses, static_cast<u32>(i), ctx.pose_alpha);
             instance_data_.push_back(InstanceData{
-                .position = position,
+                .position = pose.position,
                 .radius = ctx.view.sphere[i].radius,
+                .orientation = pose.orientation,
                 .material_id = ctx.view.material[i].value,
             });
         }
@@ -466,6 +515,7 @@ struct GeometryPass final {
         instance_data_.clear();
         u_view_proj_ = -1;
         u_material_colors_ = -1;
+        u_axis_colors_ = -1;
         u_light_dir_ = -1;
         u_light_color_ = -1;
         u_ambient_color_ = -1;
@@ -483,6 +533,7 @@ struct GeometryPass final {
     std::vector<InstanceData> instance_data_{};
     i32 u_view_proj_{-1};
     i32 u_material_colors_{-1};
+    i32 u_axis_colors_{-1};
     i32 u_light_dir_{-1};
     i32 u_light_color_{-1};
     i32 u_ambient_color_{-1};

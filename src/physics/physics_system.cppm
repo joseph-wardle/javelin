@@ -27,11 +27,15 @@ struct PhysicsSystem final {
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
     void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
     void set_friction(const f32 friction) noexcept { friction_.store(friction, std::memory_order_relaxed); }
+    void set_angular_damping(const f32 damping) noexcept {
+        angular_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
+    }
     void request_reset() noexcept { reset_requested_.store(true, std::memory_order_release); }
 
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 angular_damping() const noexcept { return angular_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
 
     void start() {
@@ -44,7 +48,8 @@ struct PhysicsSystem final {
         }
 
         log::info(physics, "Starting physics system");
-        log::info(physics, "Params gravity={} restitution={} friction={}", gravity(), restitution(), friction());
+        log::info(physics, "Params gravity={} restitution={} friction={} angular_damping={}", gravity(), restitution(),
+                  friction(), angular_damping());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -67,6 +72,7 @@ struct PhysicsSystem final {
                         const f32 gravity = gravity_.load(std::memory_order_relaxed);
                         const f32 restitution = restitution_.load(std::memory_order_relaxed);
                         const f32 friction = friction_.load(std::memory_order_relaxed);
+                        const f32 angular_damping = angular_damping_.load(std::memory_order_relaxed);
 
                         if (reset_requested_.exchange(false, std::memory_order_acq_rel)) {
                             scene_->reset_simulation();
@@ -80,6 +86,12 @@ struct PhysicsSystem final {
 
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
+                        integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
+                        f32 max_angular_speed_sq = 0.0f;
+                        for (u32 i = 0; i < count; ++i) {
+                            max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
+                        }
+                        TracyPlot("physics_max_angular_speed", std::sqrt(max_angular_speed_sq));
                         bounds_cache_.resize(count);
                         for (u32 i = 0; i < count; ++i) {
                             bounds_cache_[i] = Aabb::from_sphere(view.position[i], view.sphere[i].radius);
@@ -96,9 +108,13 @@ struct PhysicsSystem final {
                         broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
                         // Read-only phase: query broad phase pairs.
                         run_broad_phase_queries_(dynamic_ids);
+                        TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
-                        solve_contacts(view.position, view.velocity, view.inv_mass, contacts_, restitution, friction);
-                        publish_poses(view.poses, view.position, count);
+                        TracyPlot("physics_contacts", static_cast<i64>(contacts_.size()));
+                        solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
+                                       view.inv_inertia, contacts_, restitution, friction);
+                        apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
+                        publish_poses(view.poses, view.position, view.orientation, count);
                     }
                 }
 
@@ -141,6 +157,7 @@ struct PhysicsSystem final {
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
     std::atomic<f32> friction_{0.2f};
+    std::atomic<f32> angular_damping_{0.4f};
     std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
     bool static_dirty_{true};
@@ -240,9 +257,8 @@ struct PhysicsSystem final {
 
         if (worker_count > 1) {
             std::unique_lock lock(broad_phase_mutex_);
-            broad_phase_done_cv_.wait(lock, [&] {
-                return broad_phase_jobs_remaining_.load(std::memory_order_acquire) == 0u;
-            });
+            broad_phase_done_cv_.wait(
+                lock, [&] { return broad_phase_jobs_remaining_.load(std::memory_order_acquire) == 0u; });
         }
 
         {
@@ -359,10 +375,10 @@ struct PhysicsSystem final {
                 }
                 return lhs.b < rhs.b;
             });
-            pairs.erase(std::unique(pairs.begin(), pairs.end(), [](const BodyPair &lhs, const BodyPair &rhs) {
-                            return lhs.a == rhs.a && lhs.b == rhs.b;
-                        }),
-                        pairs.end());
+            pairs.erase(
+                std::unique(pairs.begin(), pairs.end(),
+                            [](const BodyPair &lhs, const BodyPair &rhs) { return lhs.a == rhs.a && lhs.b == rhs.b; }),
+                pairs.end());
         };
 
         std::vector<BodyPair> actual = candidate_pairs_;

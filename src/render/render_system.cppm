@@ -145,6 +145,11 @@ struct RenderSystem final {
                     physics_->set_friction(friction);
                 }
 
+                f32 angular_damping = physics_->angular_damping();
+                if (ImGui::DragFloat("Angular Damping", &angular_damping, 0.01f, 0.0f, 5.0f)) {
+                    physics_->set_angular_damping(angular_damping);
+                }
+
                 if (ImGui::Button("Reset Scene")) {
                     physics_->request_reset();
                 }
@@ -187,9 +192,8 @@ struct RenderSystem final {
                     push_physics_dt_sample_(physics_dt_ms);
                 }
                 ImGui::Text("Physics dt: %.3f ms", physics_dt_ms);
-                const int history_count = physics_dt_history_full_
-                                              ? static_cast<int>(kPhysicsDtHistory)
-                                              : static_cast<int>(physics_dt_cursor_);
+                const int history_count = physics_dt_history_full_ ? static_cast<int>(kPhysicsDtHistory)
+                                                                   : static_cast<int>(physics_dt_cursor_);
                 if (history_count > 0) {
                     const int offset = physics_dt_history_full_ ? static_cast<int>(physics_dt_cursor_) : 0;
                     f32 min_v = 0.0f;
