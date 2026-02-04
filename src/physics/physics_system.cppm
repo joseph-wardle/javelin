@@ -81,6 +81,11 @@ struct PhysicsSystem final {
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
                         integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
+                        f32 max_angular_speed_sq = 0.0f;
+                        for (u32 i = 0; i < count; ++i) {
+                            max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
+                        }
+                        TracyPlot("physics_max_angular_speed", std::sqrt(max_angular_speed_sq));
                         bounds_cache_.resize(count);
                         for (u32 i = 0; i < count; ++i) {
                             bounds_cache_[i] = Aabb::from_sphere(view.position[i], view.sphere[i].radius);
@@ -97,7 +102,9 @@ struct PhysicsSystem final {
                         broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
                         // Read-only phase: query broad phase pairs.
                         run_broad_phase_queries_(dynamic_ids);
+                        TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
                         narrow_phase_contacts(view.position, view.sphere, view.inv_mass, candidate_pairs_, contacts_);
+                        TracyPlot("physics_contacts", static_cast<i64>(contacts_.size()));
                         solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
                                        view.inv_inertia, contacts_, restitution, friction);
                         publish_poses(view.poses, view.position, view.orientation, count);
