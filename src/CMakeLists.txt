@@ -51,6 +51,7 @@ target_sources(javelin
             scene/pose_channel.cppm
             scene/render_view.cppm
             scene/scene.cppm
+            scene/scene_file.cppm
             scene/shapes.cppm
 )
 
