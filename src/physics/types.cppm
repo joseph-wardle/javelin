@@ -29,7 +29,8 @@ struct ContactPoint final {
     f32 separation{};
     // Warm-start impulse cache for sequential impulse solve.
     f32 normal_impulse{};
-    f32 tangent_impulse{};
+    f32 tangent_impulse_u{};
+    f32 tangent_impulse_v{};
     // Stable identifier used to match points across frames.
     u32 feature_id{kInvalidContactFeature};
 };
@@ -44,7 +45,9 @@ struct ContactManifold final {
     std::array<ContactPoint, kMaxManifoldPoints> points{};
 };
 
-struct Contact final {
+// Transitional single-point contact representation used by the legacy solver path.
+// Kept separate from ContactManifold to avoid type ambiguity during migration.
+struct LegacyContact final {
     u32 a{};
     u32 b{};
     // Normal points from A to B.

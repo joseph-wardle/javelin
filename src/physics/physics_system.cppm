@@ -211,7 +211,7 @@ struct PhysicsSystem final {
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
-    std::vector<Contact> contacts_{};
+    std::vector<LegacyContact> contacts_{};
     u32 broad_phase_worker_count_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<std::thread> broad_phase_threads_{};

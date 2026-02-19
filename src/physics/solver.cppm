@@ -36,14 +36,14 @@ export namespace javelin {
 
 void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
                     std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
-                    std::span<const Quat> orientation, std::span<const Contact> contacts, const f32 restitution,
+                    std::span<const Quat> orientation, std::span<const LegacyContact> contacts, const f32 restitution,
                     const f32 friction) {
     ZoneScopedN("Physics solve");
     if (contacts.empty()) {
         return;
     }
 
-    for (const Contact contact : contacts) {
+    for (const LegacyContact contact : contacts) {
         const u32 a = contact.a;
         const u32 b = contact.b;
         const bool has_b = (b != kInvalidBody);
@@ -66,7 +66,7 @@ void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::spa
     }
 
     for (u32 iteration = 0; iteration < detail::kSolverIterations; ++iteration) {
-        for (const Contact contact : contacts) {
+        for (const LegacyContact contact : contacts) {
             const u32 a = contact.a;
             const u32 b = contact.b;
             const bool has_b = (b != kInvalidBody);

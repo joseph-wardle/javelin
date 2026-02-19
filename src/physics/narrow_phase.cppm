@@ -68,7 +68,7 @@ inline constexpr f32 kAxisAbsEps = 1e-6f;
 
 void add_sphere_sphere_contact(std::span<const Vec3> position, std::span<const ShapeKind> shape_kind,
                                std::span<const ShapeData> shapes, std::span<const u32> shape_index, const u32 a,
-                               const u32 b, std::vector<Contact> &contacts) {
+                               const u32 b, std::vector<LegacyContact> &contacts) {
     const SphereShape &sphere_a = sphere_shape(shape_kind, shapes, shape_index, a);
     const SphereShape &sphere_b = sphere_shape(shape_kind, shapes, shape_index, b);
 
@@ -93,7 +93,7 @@ void add_sphere_sphere_contact(std::span<const Vec3> position, std::span<const S
     const f32 penetration = radius_sum - dist;
     const Vec3 r_a = normal * sphere_a.radius;
     const Vec3 r_b = -normal * sphere_b.radius;
-    contacts.push_back(Contact{
+    contacts.push_back(LegacyContact{
         .a = a,
         .b = b,
         .normal = normal,
@@ -106,7 +106,7 @@ void add_sphere_sphere_contact(std::span<const Vec3> position, std::span<const S
 void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                             std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                             std::span<const u32> shape_index, const u32 sphere_id, const u32 box_id,
-                            const bool sphere_is_a, std::vector<Contact> &contacts) {
+                            const bool sphere_is_a, std::vector<LegacyContact> &contacts) {
     const SphereShape &sphere = sphere_shape(shape_kind, shapes, shape_index, sphere_id);
     const BoxShape &box = box_shape(shape_kind, shapes, shape_index, box_id);
 
@@ -178,7 +178,7 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
         r_b = -normal * sphere.radius;
     }
 
-    contacts.push_back(Contact{
+    contacts.push_back(LegacyContact{
         .a = sphere_is_a ? sphere_id : box_id,
         .b = sphere_is_a ? box_id : sphere_id,
         .normal = normal,
@@ -190,7 +190,7 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
 
 void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                          std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
-                         std::span<const u32> shape_index, const u32 a, const u32 b, std::vector<Contact> &contacts) {
+                         std::span<const u32> shape_index, const u32 a, const u32 b, std::vector<LegacyContact> &contacts) {
     const BoxShape &box_a = box_shape(shape_kind, shapes, shape_index, a);
     const BoxShape &box_b = box_shape(shape_kind, shapes, shape_index, b);
 
@@ -302,7 +302,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
     const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
 
-    contacts.push_back(Contact{
+    contacts.push_back(LegacyContact{
         .a = a,
         .b = b,
         .normal = normal,
@@ -314,7 +314,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
 
 void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const ShapeKind> shape_kind,
                                std::span<const ShapeData> shapes, std::span<const u32> shape_index,
-                               std::span<const f32> inv_mass, const u32 id, std::vector<Contact> &contacts) {
+                               std::span<const f32> inv_mass, const u32 id, std::vector<LegacyContact> &contacts) {
     if (inv_mass[id] == 0.0f) {
         return;
     }
@@ -326,7 +326,7 @@ void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const S
     const f32 penetration = sphere.radius - signed_distance;
     const Vec3 normal = -kGroundNormal;
     const Vec3 r_a = normal * sphere.radius;
-    contacts.push_back(Contact{
+    contacts.push_back(LegacyContact{
         .a = id,
         .b = kInvalidBody,
         .normal = normal,
@@ -339,7 +339,7 @@ void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const S
 void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                             std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                             std::span<const u32> shape_index, std::span<const f32> inv_mass, const u32 id,
-                            std::vector<Contact> &contacts) {
+                            std::vector<LegacyContact> &contacts) {
     if (inv_mass[id] == 0.0f) {
         return;
     }
@@ -359,7 +359,7 @@ void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat
     const f32 penetration = radius - signed_distance;
     const Vec3 normal = -kGroundNormal;
     const Vec3 contact = box_support_point(center, a0, a1, a2, box.half_extents, normal);
-    contacts.push_back(Contact{
+    contacts.push_back(LegacyContact{
         .a = id,
         .b = kInvalidBody,
         .normal = normal,
@@ -375,7 +375,7 @@ export namespace javelin {
 void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat> orientation,
                            std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                            std::span<const u32> shape_index, std::span<const f32> inv_mass,
-                           std::span<const BodyPair> pairs, std::vector<Contact> &contacts) {
+                           std::span<const BodyPair> pairs, std::vector<LegacyContact> &contacts) {
     ZoneScopedN("Physics narrow phase");
     contacts.clear();
     contacts.reserve(pairs.size() + position.size());
