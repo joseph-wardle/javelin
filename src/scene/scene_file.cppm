@@ -22,10 +22,15 @@ Scene file text schema (v1, .jvscene):
   - shape id=<id> kind=box hx=<f32> hy=<f32> hz=<f32>
   - body id=<id> shape=<shape_id> motion=<dynamic|static> material=<u32> mesh=<u32>
          px=<f32> py=<f32> pz=<f32>
-         ox=<f32> oy=<f32> oz=<f32> ow=<f32>
-         vx=<f32> vy=<f32> vz=<f32>
-         wx=<f32> wy=<f32> wz=<f32>
-- The text format is intentionally grep-friendly and can be streamed line-by-line.
+         [ox=<f32> oy=<f32> oz=<f32> ow=<f32>]
+         [vx=<f32> vy=<f32> vz=<f32>]
+         [wx=<f32> wy=<f32> wz=<f32>]
+- Defaults:
+  - body.motion=dynamic, body.material=0, body.mesh=0
+  - body.orientation=identity
+  - body.velocity=(0,0,0), body.angular_velocity=(0,0,0)
+  - body position (px/py/pz) is required.
+- The format is intentionally grep-friendly and parses line-by-line with no external dependencies.
 */
 
 enum struct SceneFileBodyMotion : u8 {
@@ -115,6 +120,626 @@ struct SceneFileLoadOptions final {
 struct SceneFileSaveOptions final {
     bool validate_before_write{true};
 };
+
+namespace detail {
+inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
+
+[[nodiscard]] constexpr bool ascii_space(const char c) noexcept {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+[[nodiscard]] constexpr std::string_view trim_left(std::string_view text) noexcept {
+    while (!text.empty() && ascii_space(text.front())) {
+        text.remove_prefix(1);
+    }
+    return text;
+}
+
+[[nodiscard]] constexpr std::string_view trim_right(std::string_view text) noexcept {
+    while (!text.empty() && ascii_space(text.back())) {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+[[nodiscard]] constexpr std::string_view trim(std::string_view text) noexcept {
+    return trim_right(trim_left(text));
+}
+
+[[nodiscard]] constexpr std::string_view strip_comment(std::string_view text) noexcept {
+    const usize comment_pos = text.find('#');
+    if (comment_pos == std::string_view::npos) {
+        return text;
+    }
+    return text.substr(0u, comment_pos);
+}
+
+struct TokenCursor final {
+    std::string_view rest{};
+
+    [[nodiscard]] constexpr std::optional<std::string_view> next() noexcept {
+        rest = trim_left(rest);
+        if (rest.empty()) {
+            return std::nullopt;
+        }
+
+        usize end = 0u;
+        while (end < rest.size() && !ascii_space(rest[end])) {
+            ++end;
+        }
+
+        const std::string_view token = rest.substr(0u, end);
+        rest = (end < rest.size()) ? rest.substr(end) : std::string_view{};
+        return token;
+    }
+};
+
+struct KeyValueToken final {
+    std::string_view key{};
+    std::string_view value{};
+};
+
+[[nodiscard]] constexpr std::optional<KeyValueToken> split_key_value_token(const std::string_view token) noexcept {
+    const usize eq = token.find('=');
+    if (eq == std::string_view::npos || eq == 0u || eq + 1u >= token.size()) {
+        return std::nullopt;
+    }
+    return KeyValueToken{
+        .key = token.substr(0u, eq),
+        .value = token.substr(eq + 1u),
+    };
+}
+
+template <class Number> [[nodiscard]] std::optional<Number> parse_number(const std::string_view token) noexcept {
+    Number out{};
+    const char *const begin = token.data();
+    const char *const end = begin + token.size();
+    const auto [ptr, ec] = std::from_chars(begin, end, out);
+    if (ec != std::errc{} || ptr != end) {
+        return std::nullopt;
+    }
+    return out;
+}
+
+template <class Number>
+[[nodiscard]] std::expected<Number, std::string> parse_numeric_field(const std::string_view key,
+                                                                     const std::string_view value) {
+    if (const auto parsed = parse_number<Number>(value)) {
+        return *parsed;
+    }
+    return std::unexpected(std::format("Invalid {} value '{}'", key, value));
+}
+
+[[nodiscard]] constexpr bool is_identifier_char(const char c) noexcept {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' ||
+           c == '.' || c == '/' || c == ':';
+}
+
+[[nodiscard]] constexpr bool is_valid_identifier(const std::string_view id) noexcept {
+    if (id.empty()) {
+        return false;
+    }
+    for (const char c : id) {
+        if (!is_identifier_char(c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+struct ParsedSceneHeader final {
+    u32 version{};
+    std::string units{};
+};
+
+[[nodiscard]] inline std::expected<ParsedSceneHeader, std::string> parse_scene_header_record(
+    const std::string_view payload) {
+    ParsedSceneHeader out{};
+    bool has_version = false;
+    bool has_units = false;
+
+    TokenCursor cursor{payload};
+    while (const auto token_opt = cursor.next()) {
+        const std::string_view token = *token_opt;
+        const auto kv = split_key_value_token(token);
+        if (!kv) {
+            return std::unexpected(std::format("Expected key=value token, got '{}'", token));
+        }
+
+        if (kv->key == "version") {
+            if (has_version) {
+                return std::unexpected("Duplicate key 'version'");
+            }
+            has_version = true;
+            auto parsed = parse_numeric_field<u32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            out.version = *parsed;
+            continue;
+        }
+        if (kv->key == "units") {
+            if (has_units) {
+                return std::unexpected("Duplicate key 'units'");
+            }
+            has_units = true;
+            if (!is_valid_identifier(kv->value)) {
+                return std::unexpected(std::format("Invalid units value '{}'", kv->value));
+            }
+            out.units = std::string{kv->value};
+            continue;
+        }
+
+        return std::unexpected(std::format("Unknown scene key '{}'", kv->key));
+    }
+
+    if (!has_version) {
+        return std::unexpected("Missing required key 'version'");
+    }
+    if (!has_units) {
+        return std::unexpected("Missing required key 'units'");
+    }
+
+    return out;
+}
+
+[[nodiscard]] inline std::expected<SceneFileShape, std::string> parse_shape_record(const std::string_view payload) {
+    SceneFileShape out{};
+
+    bool has_id = false;
+    bool has_kind = false;
+    bool has_r = false;
+    bool has_hx = false;
+    bool has_hy = false;
+    bool has_hz = false;
+
+    ShapeKind kind = ShapeKind::sphere;
+    f32 r = 0.0f;
+    f32 hx = 0.0f;
+    f32 hy = 0.0f;
+    f32 hz = 0.0f;
+
+    TokenCursor cursor{payload};
+    while (const auto token_opt = cursor.next()) {
+        const std::string_view token = *token_opt;
+        const auto kv = split_key_value_token(token);
+        if (!kv) {
+            return std::unexpected(std::format("Expected key=value token, got '{}'", token));
+        }
+
+        if (kv->key == "id") {
+            if (has_id) {
+                return std::unexpected("Duplicate key 'id'");
+            }
+            has_id = true;
+            if (!is_valid_identifier(kv->value)) {
+                return std::unexpected(std::format("Invalid shape id '{}'", kv->value));
+            }
+            out.id = std::string{kv->value};
+            continue;
+        }
+        if (kv->key == "kind") {
+            if (has_kind) {
+                return std::unexpected("Duplicate key 'kind'");
+            }
+            has_kind = true;
+            const auto parsed = parse_shape_kind(kv->value);
+            if (!parsed) {
+                return std::unexpected(
+                    std::format("Invalid shape kind '{}' (expected sphere|box)", kv->value));
+            }
+            kind = *parsed;
+            continue;
+        }
+        if (kv->key == "r") {
+            if (has_r) {
+                return std::unexpected("Duplicate key 'r'");
+            }
+            has_r = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            r = *parsed;
+            continue;
+        }
+        if (kv->key == "hx") {
+            if (has_hx) {
+                return std::unexpected("Duplicate key 'hx'");
+            }
+            has_hx = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            hx = *parsed;
+            continue;
+        }
+        if (kv->key == "hy") {
+            if (has_hy) {
+                return std::unexpected("Duplicate key 'hy'");
+            }
+            has_hy = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            hy = *parsed;
+            continue;
+        }
+        if (kv->key == "hz") {
+            if (has_hz) {
+                return std::unexpected("Duplicate key 'hz'");
+            }
+            has_hz = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            hz = *parsed;
+            continue;
+        }
+
+        return std::unexpected(std::format("Unknown shape key '{}'", kv->key));
+    }
+
+    if (!has_id) {
+        return std::unexpected("Missing required key 'id'");
+    }
+    if (!has_kind) {
+        return std::unexpected("Missing required key 'kind'");
+    }
+
+    switch (kind) {
+    case ShapeKind::sphere: {
+        if (!has_r) {
+            return std::unexpected("Sphere shape missing required key 'r'");
+        }
+        if (has_hx || has_hy || has_hz) {
+            return std::unexpected("Sphere shape does not allow hx/hy/hz");
+        }
+        if (!std::isfinite(r) || r <= 0.0f) {
+            return std::unexpected(std::format("Invalid sphere radius {}", r));
+        }
+        out.shape = ShapeData::make_sphere(SphereShape{r});
+    } break;
+    case ShapeKind::box: {
+        if (!has_hx || !has_hy || !has_hz) {
+            return std::unexpected("Box shape missing required key(s) hx/hy/hz");
+        }
+        if (has_r) {
+            return std::unexpected("Box shape does not allow key 'r'");
+        }
+        if (!std::isfinite(hx) || !std::isfinite(hy) || !std::isfinite(hz) || hx <= 0.0f || hy <= 0.0f ||
+            hz <= 0.0f) {
+            return std::unexpected(std::format("Invalid box half extents [{}, {}, {}]", hx, hy, hz));
+        }
+        out.shape = ShapeData::make_box(BoxShape{Vec3{hx, hy, hz}});
+    } break;
+    }
+
+    return out;
+}
+
+[[nodiscard]] inline std::expected<SceneFileBody, std::string> parse_body_record(const std::string_view payload) {
+    SceneFileBody out{};
+
+    bool has_id = false;
+    bool has_shape = false;
+    bool has_motion = false;
+    bool has_material = false;
+    bool has_mesh = false;
+    bool has_px = false;
+    bool has_py = false;
+    bool has_pz = false;
+    bool has_ox = false;
+    bool has_oy = false;
+    bool has_oz = false;
+    bool has_ow = false;
+    bool has_vx = false;
+    bool has_vy = false;
+    bool has_vz = false;
+    bool has_wx = false;
+    bool has_wy = false;
+    bool has_wz = false;
+
+    f32 px = 0.0f;
+    f32 py = 0.0f;
+    f32 pz = 0.0f;
+    f32 ox = 0.0f;
+    f32 oy = 0.0f;
+    f32 oz = 0.0f;
+    f32 ow = 1.0f;
+    f32 vx = 0.0f;
+    f32 vy = 0.0f;
+    f32 vz = 0.0f;
+    f32 wx = 0.0f;
+    f32 wy = 0.0f;
+    f32 wz = 0.0f;
+
+    TokenCursor cursor{payload};
+    while (const auto token_opt = cursor.next()) {
+        const std::string_view token = *token_opt;
+        const auto kv = split_key_value_token(token);
+        if (!kv) {
+            return std::unexpected(std::format("Expected key=value token, got '{}'", token));
+        }
+
+        if (kv->key == "id") {
+            if (has_id) {
+                return std::unexpected("Duplicate key 'id'");
+            }
+            has_id = true;
+            if (!is_valid_identifier(kv->value)) {
+                return std::unexpected(std::format("Invalid body id '{}'", kv->value));
+            }
+            out.id = std::string{kv->value};
+            continue;
+        }
+        if (kv->key == "shape") {
+            if (has_shape) {
+                return std::unexpected("Duplicate key 'shape'");
+            }
+            has_shape = true;
+            if (!is_valid_identifier(kv->value)) {
+                return std::unexpected(std::format("Invalid body shape id '{}'", kv->value));
+            }
+            out.shape_id = std::string{kv->value};
+            continue;
+        }
+        if (kv->key == "motion") {
+            if (has_motion) {
+                return std::unexpected("Duplicate key 'motion'");
+            }
+            has_motion = true;
+            const auto parsed = parse_scene_file_body_motion(kv->value);
+            if (!parsed) {
+                return std::unexpected(std::format("Invalid body motion '{}' (expected dynamic|static)", kv->value));
+            }
+            out.motion = *parsed;
+            continue;
+        }
+        if (kv->key == "material") {
+            if (has_material) {
+                return std::unexpected("Duplicate key 'material'");
+            }
+            has_material = true;
+            auto parsed = parse_numeric_field<u32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            out.material = MaterialId{*parsed};
+            continue;
+        }
+        if (kv->key == "mesh") {
+            if (has_mesh) {
+                return std::unexpected("Duplicate key 'mesh'");
+            }
+            has_mesh = true;
+            auto parsed = parse_numeric_field<u32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            out.mesh = MeshId{*parsed};
+            continue;
+        }
+        if (kv->key == "px") {
+            if (has_px) {
+                return std::unexpected("Duplicate key 'px'");
+            }
+            has_px = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            px = *parsed;
+            continue;
+        }
+        if (kv->key == "py") {
+            if (has_py) {
+                return std::unexpected("Duplicate key 'py'");
+            }
+            has_py = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            py = *parsed;
+            continue;
+        }
+        if (kv->key == "pz") {
+            if (has_pz) {
+                return std::unexpected("Duplicate key 'pz'");
+            }
+            has_pz = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            pz = *parsed;
+            continue;
+        }
+        if (kv->key == "ox") {
+            if (has_ox) {
+                return std::unexpected("Duplicate key 'ox'");
+            }
+            has_ox = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            ox = *parsed;
+            continue;
+        }
+        if (kv->key == "oy") {
+            if (has_oy) {
+                return std::unexpected("Duplicate key 'oy'");
+            }
+            has_oy = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            oy = *parsed;
+            continue;
+        }
+        if (kv->key == "oz") {
+            if (has_oz) {
+                return std::unexpected("Duplicate key 'oz'");
+            }
+            has_oz = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            oz = *parsed;
+            continue;
+        }
+        if (kv->key == "ow") {
+            if (has_ow) {
+                return std::unexpected("Duplicate key 'ow'");
+            }
+            has_ow = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            ow = *parsed;
+            continue;
+        }
+        if (kv->key == "vx") {
+            if (has_vx) {
+                return std::unexpected("Duplicate key 'vx'");
+            }
+            has_vx = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            vx = *parsed;
+            continue;
+        }
+        if (kv->key == "vy") {
+            if (has_vy) {
+                return std::unexpected("Duplicate key 'vy'");
+            }
+            has_vy = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            vy = *parsed;
+            continue;
+        }
+        if (kv->key == "vz") {
+            if (has_vz) {
+                return std::unexpected("Duplicate key 'vz'");
+            }
+            has_vz = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            vz = *parsed;
+            continue;
+        }
+        if (kv->key == "wx") {
+            if (has_wx) {
+                return std::unexpected("Duplicate key 'wx'");
+            }
+            has_wx = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            wx = *parsed;
+            continue;
+        }
+        if (kv->key == "wy") {
+            if (has_wy) {
+                return std::unexpected("Duplicate key 'wy'");
+            }
+            has_wy = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            wy = *parsed;
+            continue;
+        }
+        if (kv->key == "wz") {
+            if (has_wz) {
+                return std::unexpected("Duplicate key 'wz'");
+            }
+            has_wz = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            wz = *parsed;
+            continue;
+        }
+
+        return std::unexpected(std::format("Unknown body key '{}'", kv->key));
+    }
+
+    if (!has_id) {
+        return std::unexpected("Missing required key 'id'");
+    }
+    if (!has_shape) {
+        return std::unexpected("Missing required key 'shape'");
+    }
+    if (!has_px || !has_py || !has_pz) {
+        return std::unexpected("Body missing required key(s) px/py/pz");
+    }
+    out.position = Vec3{px, py, pz};
+
+    const bool any_orientation = has_ox || has_oy || has_oz || has_ow;
+    const bool full_orientation = has_ox && has_oy && has_oz && has_ow;
+    if (any_orientation && !full_orientation) {
+        return std::unexpected("Body orientation must specify all of ox/oy/oz/ow when present");
+    }
+    if (full_orientation) {
+        out.orientation = Quat{ox, oy, oz, ow};
+        if (!out.orientation.try_normalize()) {
+            return std::unexpected("Body orientation is degenerate");
+        }
+    }
+
+    const bool any_velocity = has_vx || has_vy || has_vz;
+    const bool full_velocity = has_vx && has_vy && has_vz;
+    if (any_velocity && !full_velocity) {
+        return std::unexpected("Body velocity must specify all of vx/vy/vz when present");
+    }
+    if (full_velocity) {
+        out.velocity = Vec3{vx, vy, vz};
+    }
+
+    const bool any_angular = has_wx || has_wy || has_wz;
+    const bool full_angular = has_wx && has_wy && has_wz;
+    if (any_angular && !full_angular) {
+        return std::unexpected("Body angular velocity must specify all of wx/wy/wz when present");
+    }
+    if (full_angular) {
+        out.angular_velocity = Vec3{wx, wy, wz};
+    }
+
+    if (!out.position.is_finite()) {
+        return std::unexpected("Body position contains non-finite values");
+    }
+    if (!out.orientation.is_finite()) {
+        return std::unexpected("Body orientation contains non-finite values");
+    }
+    if (!out.velocity.is_finite()) {
+        return std::unexpected("Body velocity contains non-finite values");
+    }
+    if (!out.angular_velocity.is_finite()) {
+        return std::unexpected("Body angular velocity contains non-finite values");
+    }
+
+    return out;
+}
+} // namespace detail
 
 struct SceneFile final {
     u32 version{kSceneFileVersion};
@@ -212,16 +837,126 @@ struct SceneFile final {
     }
 
     [[nodiscard]] static std::expected<SceneFile, SceneFileError>
-    load(const std::filesystem::path &path, const SceneFileLoadOptions & /*options*/ = {}) {
-        return std::unexpected(SceneFileError{
-            .path = path,
-            .line = 0u,
-            .message = "SceneFile::load is not implemented yet",
-        });
+    load(const std::filesystem::path &path, const SceneFileLoadOptions &options = {}) {
+        auto error = [&path](const u32 line, std::string message) -> std::expected<SceneFile, SceneFileError> {
+            return std::unexpected(SceneFileError{
+                .path = path,
+                .line = line,
+                .message = std::move(message),
+            });
+        };
+
+        std::ifstream file{path, std::ios::binary};
+        if (!file.is_open()) {
+            return error(0u, "Unable to open scene file for reading");
+        }
+
+        SceneFile out{};
+        out.clear();
+
+        u32 scene_line = 0u;
+        u32 line_no = 0u;
+        std::unordered_map<std::string, u32> shape_line_by_id{};
+        std::unordered_map<std::string, u32> body_line_by_id{};
+        std::vector<u32> body_lines{};
+        std::string line{};
+        line.reserve(256);
+
+        while (std::getline(file, line)) {
+            ++line_no;
+            std::string_view line_view{line};
+            if (!line_view.empty() && line_view.back() == '\r') {
+                line_view.remove_suffix(1);
+            }
+            if (line_no == 1u && line_view.starts_with(detail::kUtf8Bom)) {
+                line_view.remove_prefix(detail::kUtf8Bom.size());
+            }
+            line_view = detail::trim(detail::strip_comment(line_view));
+            if (line_view.empty()) {
+                continue;
+            }
+
+            detail::TokenCursor cursor{line_view};
+            const auto record_token = cursor.next();
+            if (!record_token) {
+                continue;
+            }
+
+            const std::string_view record = *record_token;
+            const std::string_view payload = cursor.rest;
+            if (record == "scene") {
+                if (scene_line != 0u) {
+                    return error(line_no, std::format("Duplicate scene record (first declared on line {})", scene_line));
+                }
+                auto parsed = detail::parse_scene_header_record(payload);
+                if (!parsed) {
+                    return error(line_no, std::move(parsed.error()));
+                }
+                scene_line = line_no;
+                out.version = parsed->version;
+                out.units = std::move(parsed->units);
+                continue;
+            }
+
+            if (record == "shape") {
+                auto parsed = detail::parse_shape_record(payload);
+                if (!parsed) {
+                    return error(line_no, std::move(parsed.error()));
+                }
+                auto [it, inserted] = shape_line_by_id.emplace(parsed->id, line_no);
+                if (!inserted) {
+                    return error(line_no, std::format("Duplicate shape id '{}' (first declared on line {})", parsed->id,
+                                                      it->second));
+                }
+                out.shapes.push_back(std::move(*parsed));
+                continue;
+            }
+
+            if (record == "body") {
+                auto parsed = detail::parse_body_record(payload);
+                if (!parsed) {
+                    return error(line_no, std::move(parsed.error()));
+                }
+                auto [it, inserted] = body_line_by_id.emplace(parsed->id, line_no);
+                if (!inserted) {
+                    return error(line_no, std::format("Duplicate body id '{}' (first declared on line {})", parsed->id,
+                                                      it->second));
+                }
+                body_lines.push_back(line_no);
+                out.bodies.push_back(std::move(*parsed));
+                continue;
+            }
+
+            return error(line_no, std::format("Unknown record '{}'", record));
+        }
+
+        if (file.bad()) {
+            return error(line_no, "I/O error while reading scene file");
+        }
+        if (scene_line == 0u) {
+            return error(0u, "Missing required 'scene' record");
+        }
+
+        for (usize i = 0; i < out.bodies.size(); ++i) {
+            const SceneFileBody &body = out.bodies[i];
+            if (!shape_line_by_id.contains(body.shape_id)) {
+                return error(body_lines[i],
+                             std::format("body '{}' references unknown shape '{}'", body.id, body.shape_id));
+            }
+        }
+
+        if (options.validate_after_parse) {
+            auto valid = out.validate(path);
+            if (!valid) {
+                return std::unexpected(valid.error());
+            }
+        }
+
+        return out;
     }
 
-    [[nodiscard]] std::expected<void, SceneFileError> save(
-        const std::filesystem::path &path, const SceneFileSaveOptions & /*options*/ = {}) const {
+    [[nodiscard]] std::expected<void, SceneFileError> save(const std::filesystem::path &path,
+                                                           const SceneFileSaveOptions & /*options*/ = {}) const {
         return std::unexpected(SceneFileError{
             .path = path,
             .line = 0u,
