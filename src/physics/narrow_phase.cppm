@@ -20,7 +20,9 @@ inline constexpr f32 kAxisEpsSq = 1e-8f;
 inline constexpr f32 kAxisAbsEps = 1e-6f;
 inline constexpr u32 kBoxFaceFeatureTag = 1u << 8u;
 inline constexpr u32 kBoxGroundVertexFeatureTag = 1u << 9u;
+inline constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
 inline constexpr f32 kReductionEps = 1e-6f;
+inline constexpr f32 kAxisHysteresisAbs = 0.02f;
 
 [[nodiscard]] inline const SphereShape &sphere_shape(std::span<const ShapeKind> shape_kind,
                                                      std::span<const ShapeData> shapes,
@@ -88,6 +90,43 @@ inline constexpr f32 kReductionEps = 1e-6f;
 
 [[nodiscard]] inline u32 box_ground_vertex_feature_id(const u32 vertex_index) noexcept {
     return kBoxGroundVertexFeatureTag | vertex_index;
+}
+
+enum struct BoxAxisType : u8 { face_a = 0, face_b = 1, edge_edge = 2 };
+
+struct BoxAxisKey final {
+    BoxAxisType type{BoxAxisType::face_a};
+    u8 i{};
+    u8 j{};
+};
+
+[[nodiscard]] inline u32 box_axis_feature_id(const BoxAxisKey key) noexcept {
+    return kBoxAxisFeatureTag | (static_cast<u32>(key.type) & 0x3u) | (static_cast<u32>(key.i & 0x3u) << 2u) |
+           (static_cast<u32>(key.j & 0x3u) << 4u);
+}
+
+[[nodiscard]] inline bool decode_box_axis_feature_id(const u32 feature_id, BoxAxisKey &out) noexcept {
+    if ((feature_id & kBoxAxisFeatureTag) == 0u) {
+        return false;
+    }
+    const u32 type = feature_id & 0x3u;
+    if (type > static_cast<u32>(BoxAxisType::edge_edge)) {
+        return false;
+    }
+    out.type = static_cast<BoxAxisType>(type);
+    out.i = static_cast<u8>((feature_id >> 2u) & 0x3u);
+    out.j = static_cast<u8>((feature_id >> 4u) & 0x3u);
+    return true;
+}
+
+[[nodiscard]] inline bool axis_key_less(const BoxAxisKey lhs, const BoxAxisKey rhs) noexcept {
+    if (lhs.type != rhs.type) {
+        return static_cast<u8>(lhs.type) < static_cast<u8>(rhs.type);
+    }
+    if (lhs.i != rhs.i) {
+        return lhs.i < rhs.i;
+    }
+    return lhs.j < rhs.j;
 }
 
 [[nodiscard]] inline Vec3 world_offset_to_local_anchor(const Quat q, const Vec3 offset_world) noexcept {
@@ -238,10 +277,56 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
                                penetration, feature_id, r_a, r_b, manifolds);
 }
 
+struct BoxAxisCandidate final {
+    BoxAxisKey key{};
+    Vec3 axis{};
+    f32 depth{};
+    bool valid{};
+};
+
+[[nodiscard]] inline bool better_axis_candidate(const BoxAxisCandidate &lhs, const BoxAxisCandidate &rhs) noexcept {
+    if (!lhs.valid) {
+        return false;
+    }
+    if (!rhs.valid) {
+        return true;
+    }
+    const f32 diff = lhs.depth - rhs.depth;
+    if (std::fabs(diff) > kReductionEps) {
+        return lhs.depth < rhs.depth;
+    }
+    return axis_key_less(lhs.key, rhs.key);
+}
+
+[[nodiscard]] inline const BoxAxisCandidate *
+find_axis_candidate(const std::array<BoxAxisCandidate, 3> &face_axes_a, const std::array<BoxAxisCandidate, 3> &face_axes_b,
+                    const std::array<std::array<BoxAxisCandidate, 3>, 3> &edge_axes, const BoxAxisKey key) noexcept {
+    switch (key.type) {
+    case BoxAxisType::face_a:
+        return (key.i < 3u) ? &face_axes_a[key.i] : nullptr;
+    case BoxAxisType::face_b:
+        return (key.i < 3u) ? &face_axes_b[key.i] : nullptr;
+    case BoxAxisType::edge_edge:
+        return (key.i < 3u && key.j < 3u) ? &edge_axes[key.i][key.j] : nullptr;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] inline std::optional<BoxAxisKey> previous_box_axis_key(const ContactManifold *manifold) noexcept {
+    if (manifold == nullptr || manifold->point_count == 0u) {
+        return std::nullopt;
+    }
+    BoxAxisKey key{};
+    if (!decode_box_axis_feature_id(manifold->points[0].feature_id, key)) {
+        return std::nullopt;
+    }
+    return key;
+}
+
 void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                          std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                          std::span<const u32> shape_index, const u32 a, const u32 b,
-                         std::vector<ContactManifold> &manifolds) {
+                         const ContactManifold *previous_manifold, std::vector<ContactManifold> &manifolds) {
     const BoxShape &box_a = box_shape(shape_kind, shapes, shape_index, a);
     const BoxShape &box_b = box_shape(shape_kind, shapes, shape_index, b);
 
@@ -279,16 +364,9 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 delta = center_b - center_a;
     const f32 t[3]{dot(delta, a0), dot(delta, a1), dot(delta, a2)};
 
-    f32 best_overlap = std::numeric_limits<f32>::max();
-    Vec3 best_axis = Vec3::unit_x();
-
-    auto update_axis = [&](const Vec3 axis, const f32 overlap, const f32 axis_len) {
-        const f32 depth = overlap / axis_len;
-        if (depth < best_overlap) {
-            best_overlap = depth;
-            best_axis = axis / axis_len;
-        }
-    };
+    std::array<BoxAxisCandidate, 3> face_axes_a{};
+    std::array<BoxAxisCandidate, 3> face_axes_b{};
+    std::array<std::array<BoxAxisCandidate, 3>, 3> edge_axes{};
 
     // Axes: A0, A1, A2
     for (int i = 0; i < 3; ++i) {
@@ -298,7 +376,12 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         if (dist > ra + rb) {
             return;
         }
-        update_axis((i == 0) ? a0 : (i == 1) ? a1 : a2, (ra + rb) - dist, 1.0f);
+        face_axes_a[i] = BoxAxisCandidate{
+            .key = BoxAxisKey{.type = BoxAxisType::face_a, .i = static_cast<u8>(i), .j = 0u},
+            .axis = (i == 0) ? a0 : (i == 1) ? a1 : a2,
+            .depth = (ra + rb) - dist,
+            .valid = true,
+        };
     }
 
     // Axes: B0, B1, B2
@@ -309,7 +392,12 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         if (dist > ra + rb) {
             return;
         }
-        update_axis((j == 0) ? b0 : (j == 1) ? b1 : b2, (ra + rb) - dist, 1.0f);
+        face_axes_b[j] = BoxAxisCandidate{
+            .key = BoxAxisKey{.type = BoxAxisType::face_b, .i = static_cast<u8>(j), .j = 0u},
+            .axis = (j == 0) ? b0 : (j == 1) ? b1 : b2,
+            .depth = (ra + rb) - dist,
+            .valid = true,
+        };
     }
 
     // Axes: Ai x Bj
@@ -341,11 +429,44 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
                 continue;
             }
             const f32 axis_len = std::sqrt(axis_len_sq);
-            update_axis(axis, (ra + rb) - dist, axis_len);
+            edge_axes[i][j] = BoxAxisCandidate{
+                .key = BoxAxisKey{.type = BoxAxisType::edge_edge, .i = static_cast<u8>(i), .j = static_cast<u8>(j)},
+                .axis = axis / axis_len,
+                .depth = ((ra + rb) - dist) / axis_len,
+                .valid = true,
+            };
         }
     }
 
-    Vec3 normal = best_axis;
+    BoxAxisCandidate best_axis{};
+    for (const BoxAxisCandidate &candidate : face_axes_a) {
+        if (better_axis_candidate(candidate, best_axis)) {
+            best_axis = candidate;
+        }
+    }
+    for (const BoxAxisCandidate &candidate : face_axes_b) {
+        if (better_axis_candidate(candidate, best_axis)) {
+            best_axis = candidate;
+        }
+    }
+    for (const auto &row : edge_axes) {
+        for (const BoxAxisCandidate &candidate : row) {
+            if (better_axis_candidate(candidate, best_axis)) {
+                best_axis = candidate;
+            }
+        }
+    }
+
+    if (const std::optional<BoxAxisKey> previous_axis_key = previous_box_axis_key(previous_manifold)) {
+        if (const BoxAxisCandidate *previous_axis =
+                find_axis_candidate(face_axes_a, face_axes_b, edge_axes, *previous_axis_key);
+            previous_axis != nullptr && previous_axis->valid &&
+            previous_axis->depth <= best_axis.depth + kAxisHysteresisAbs) {
+            best_axis = *previous_axis;
+        }
+    }
+
+    Vec3 normal = best_axis.axis;
     if (dot(delta, normal) < 0.0f) {
         normal = -normal;
     }
@@ -353,8 +474,8 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
     const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
 
-    push_single_point_manifold(orientation, a, b, normal, best_overlap, 0u, point_a - center_a, point_b - center_b,
-                               manifolds);
+    push_single_point_manifold(orientation, a, b, normal, best_axis.depth, box_axis_feature_id(best_axis.key),
+                               point_a - center_a, point_b - center_b, manifolds);
 }
 
 void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
@@ -546,7 +667,9 @@ export namespace javelin {
 void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat> orientation,
                            std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                            std::span<const u32> shape_index, std::span<const f32> inv_mass,
-                           std::span<const BodyPair> pairs, std::vector<ContactManifold> &manifolds) {
+                           std::span<const BodyPair> pairs, std::span<const ContactManifold> previous_manifolds,
+                           const std::unordered_map<u64, u32> &previous_manifold_lookup,
+                           std::vector<ContactManifold> &manifolds) {
     ZoneScopedN("Physics narrow phase");
     manifolds.clear();
     manifolds.reserve(pairs.size() + position.size());
@@ -568,7 +691,19 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
             detail::add_sphere_box_contact(position, orientation, shape_kind, shapes, shape_index, b, a, false,
                                            manifolds);
         } else if (kind_a == ShapeKind::box && kind_b == ShapeKind::box) {
-            detail::add_box_box_contact(position, orientation, shape_kind, shapes, shape_index, a, b, manifolds);
+            const ContactManifold *previous_manifold = nullptr;
+            if (const auto it = previous_manifold_lookup.find(body_pair_key(a, b)); it != previous_manifold_lookup.end()) {
+#ifndef NDEBUG
+                if (it->second >= previous_manifolds.size()) {
+                    log::error(physics, "Previous manifold lookup out of range (a={} b={} index={} size={})", a, b,
+                               it->second, previous_manifolds.size());
+                    std::terminate();
+                }
+#endif
+                previous_manifold = &previous_manifolds[it->second];
+            }
+            detail::add_box_box_contact(position, orientation, shape_kind, shapes, shape_index, a, b, previous_manifold,
+                                        manifolds);
         }
     }
 

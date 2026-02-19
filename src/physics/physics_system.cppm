@@ -154,7 +154,8 @@ struct PhysicsSystem final {
                         run_broad_phase_queries_(dynamic_ids);
                         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
                         narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes,
-                                              view.shape_index, view.inv_mass, candidate_pairs_, next_manifolds_);
+                                              view.shape_index, view.inv_mass, candidate_pairs_, manifolds_,
+                                              manifold_lookup_, next_manifolds_);
                         manifolds_.swap(next_manifolds_);
                         build_legacy_contacts_from_manifolds_(view.orientation);
                         TracyPlot("physics_contacts", static_cast<i64>(legacy_contacts_.size()));
