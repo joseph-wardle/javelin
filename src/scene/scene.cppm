@@ -90,11 +90,13 @@ inline constexpr SpawnSettings kSpawnSettings{
 }
 
 [[nodiscard]] inline f32 spawn_inv_mass(const f32 radius) noexcept {
+    // Scene-file contract (v1): dynamic sphere mass uses unit density and r^3 proportional volume.
     const f32 mass = radius * radius * radius;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
 [[nodiscard]] inline f32 spawn_inv_mass_box(const Vec3 half_extents) noexcept {
+    // Scene-file contract (v1): dynamic box mass uses unit density and full box volume.
     const f32 mass = 8.0f * half_extents.x * half_extents.y * half_extents.z;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
@@ -145,6 +147,25 @@ inline constexpr SpawnSettings kSpawnSettings{
 } // namespace detail
 
 struct Scene final {
+    /*
+    Scene data contract (v1)
+
+    Authored + serialized:
+    - shape definitions (kind + shape parameters).
+    - per-body authored state: shape reference, material, mesh, initial position/orientation,
+      initial linear velocity, initial angular velocity, and motion intent (dynamic/static).
+
+    Derived at load/runtime (not serialized):
+    - identity/liveness bookkeeping: generation_, alive_.
+    - runtime shape indirection/cache: shape_kind_, shape_index_, shapes_.
+    - physics derived properties: inv_mass_, inv_inertia_.
+    - transient runtime state: capacity_, count_, pose channel buffers/timestamps.
+
+    Notes:
+    - inv_mass_ and inv_inertia_ are always recomputed from authored shape + mobility policy.
+    - Render/physics consume the SoA runtime arrays; scene-file data is an authored source, not
+      the in-memory layout contract.
+    */
     void reserve(u32 capacity) {
         capacity_ = capacity;
 
@@ -223,6 +244,7 @@ struct Scene final {
     }
 
     void reset_simulation() noexcept {
+        // TEMP: still procedural until authored initial-state snapshots are wired in.
         for (u32 i = 0; i < count_; ++i) {
             position_[i] = detail::spawn_position(i);
             velocity_[i] = Vec3{};
@@ -290,29 +312,34 @@ struct Scene final {
     }
 
   private:
+    // Runtime bookkeeping (derived/transient).
     u32 capacity_{0};
     u32 count_{0};
 
-    // identity (kept for future spawn/despawn; can be minimal in v1)
+    // Runtime identity/liveness (derived, not serialized).
     std::vector<u32> generation_{};
     std::vector<u8> alive_{};
 
-    // authored/static
+    // Runtime authored caches + indirection (derived from authored scene-file records).
     std::vector<ShapeKind> shape_kind_{};
     std::vector<u32> shape_index_{};
     std::vector<ShapeData> shapes_{};
+
+    // Authored ids (serialized values).
     std::vector<MaterialId> material_{};
     std::vector<MeshId> mesh_{};
+
+    // Physics derived values (recomputed during load/build).
     std::vector<f32> inv_mass_{};
     std::vector<Vec3> inv_inertia_{};
 
-    // simulation state (physics-owned)
+    // Simulation state (seeded from authored initial state; then physics-owned).
     std::vector<Vec3> position_{};
     std::vector<Vec3> velocity_{};
     std::vector<Quat> orientation_{};
     std::vector<Vec3> angular_velocity_{};
 
-    // presentation channel (physics publishes, render reads)
+    // Presentation channel (runtime only: physics publishes, render reads).
     PoseChannel poses_{};
 };
 } // namespace javelin
