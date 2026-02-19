@@ -59,6 +59,98 @@ struct ContactManifold final {
     std::array<ContactPoint, kMaxManifoldPoints> points{};
 };
 
+[[nodiscard]] inline constexpr u32 ordered_float_key(const f32 value) noexcept {
+    const u32 bits = std::bit_cast<u32>(value);
+    return (bits & 0x80000000u) ? ~bits : (bits ^ 0x80000000u);
+}
+
+inline void sort_manifold_points(ContactManifold &manifold) noexcept {
+#ifndef NDEBUG
+    if (manifold.point_count > kMaxManifoldPoints) {
+        std::terminate();
+    }
+#endif
+    if (manifold.point_count <= 1u) {
+        return;
+    }
+
+    std::array<u32, kMaxManifoldPoints> order{};
+    for (u32 i = 0; i < manifold.point_count; ++i) {
+        order[i] = i;
+    }
+
+    auto point_less = [&](const u32 lhs_index, const u32 rhs_index) noexcept {
+        const ContactPoint &lhs = manifold.points[lhs_index];
+        const ContactPoint &rhs = manifold.points[rhs_index];
+        const bool lhs_valid_feature = lhs.feature_id != kInvalidContactFeature;
+        const bool rhs_valid_feature = rhs.feature_id != kInvalidContactFeature;
+
+        // Primary key: feature id when valid on both points.
+        if (lhs_valid_feature && rhs_valid_feature && lhs.feature_id != rhs.feature_id) {
+            return lhs.feature_id < rhs.feature_id;
+        }
+        // Valid features sort before invalid ones.
+        if (lhs_valid_feature != rhs_valid_feature) {
+            return lhs_valid_feature;
+        }
+
+        // Geometric tie-breaker in local space.
+        const u32 lhs_a_x = ordered_float_key(lhs.local_anchor_a.x);
+        const u32 rhs_a_x = ordered_float_key(rhs.local_anchor_a.x);
+        if (lhs_a_x != rhs_a_x) {
+            return lhs_a_x < rhs_a_x;
+        }
+        const u32 lhs_a_y = ordered_float_key(lhs.local_anchor_a.y);
+        const u32 rhs_a_y = ordered_float_key(rhs.local_anchor_a.y);
+        if (lhs_a_y != rhs_a_y) {
+            return lhs_a_y < rhs_a_y;
+        }
+        const u32 lhs_a_z = ordered_float_key(lhs.local_anchor_a.z);
+        const u32 rhs_a_z = ordered_float_key(rhs.local_anchor_a.z);
+        if (lhs_a_z != rhs_a_z) {
+            return lhs_a_z < rhs_a_z;
+        }
+
+        const u32 lhs_b_x = ordered_float_key(lhs.local_anchor_b.x);
+        const u32 rhs_b_x = ordered_float_key(rhs.local_anchor_b.x);
+        if (lhs_b_x != rhs_b_x) {
+            return lhs_b_x < rhs_b_x;
+        }
+        const u32 lhs_b_y = ordered_float_key(lhs.local_anchor_b.y);
+        const u32 rhs_b_y = ordered_float_key(rhs.local_anchor_b.y);
+        if (lhs_b_y != rhs_b_y) {
+            return lhs_b_y < rhs_b_y;
+        }
+        const u32 lhs_b_z = ordered_float_key(lhs.local_anchor_b.z);
+        const u32 rhs_b_z = ordered_float_key(rhs.local_anchor_b.z);
+        if (lhs_b_z != rhs_b_z) {
+            return lhs_b_z < rhs_b_z;
+        }
+
+        const u32 lhs_sep = ordered_float_key(lhs.separation);
+        const u32 rhs_sep = ordered_float_key(rhs.separation);
+        if (lhs_sep != rhs_sep) {
+            return lhs_sep < rhs_sep;
+        }
+
+        // Last-resort deterministic fallback.
+        if (lhs.feature_id != rhs.feature_id) {
+            return lhs.feature_id < rhs.feature_id;
+        }
+        return lhs_index < rhs_index;
+    };
+
+    std::sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(manifold.point_count), point_less);
+
+    std::array<ContactPoint, kMaxManifoldPoints> sorted_points{};
+    for (u32 i = 0; i < manifold.point_count; ++i) {
+        sorted_points[i] = manifold.points[order[i]];
+    }
+    for (u32 i = 0; i < manifold.point_count; ++i) {
+        manifold.points[i] = sorted_points[i];
+    }
+}
+
 inline void canonicalize_manifold_orientation(ContactManifold &manifold) noexcept {
     if (manifold.a <= manifold.b) {
         return;

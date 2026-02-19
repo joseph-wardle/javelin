@@ -156,6 +156,7 @@ struct PhysicsSystem final {
                         narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes,
                                               view.shape_index, view.inv_mass, candidate_pairs_, manifolds_,
                                               manifold_lookup_, next_manifolds_);
+                        sort_manifold_points_(next_manifolds_);
                         manifolds_.swap(next_manifolds_);
                         build_legacy_contacts_from_manifolds_(view.orientation);
                         TracyPlot("physics_contacts", static_cast<i64>(legacy_contacts_.size()));
@@ -267,6 +268,7 @@ struct PhysicsSystem final {
     void prepare_manifold_lookup_() {
         next_manifolds_.clear();
         manifold_lookup_.clear();
+        sort_manifold_points_(manifolds_);
         for (u32 i = 0; i < manifolds_.size(); ++i) {
             const ContactManifold &manifold = manifolds_[i];
             const auto [_, inserted] = manifold_lookup_.emplace(body_pair_key(manifold.a, manifold.b), i);
@@ -303,6 +305,12 @@ struct PhysicsSystem final {
                     .r_b = r_b,
                 });
             }
+        }
+    }
+
+    void sort_manifold_points_(std::vector<ContactManifold> &manifolds) {
+        for (ContactManifold &manifold : manifolds) {
+            sort_manifold_points(manifold);
         }
     }
 

@@ -24,6 +24,7 @@ inline constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
 inline constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
 inline constexpr f32 kReductionEps = 1e-6f;
 inline constexpr f32 kAxisHysteresisAbs = 0.02f;
+inline constexpr f32 kSegmentEps = 1e-8f;
 
 [[nodiscard]] inline const SphereShape &sphere_shape(std::span<const ShapeKind> shape_kind,
                                                      std::span<const ShapeData> shapes,
@@ -104,6 +105,11 @@ struct BoxAxisKey final {
 [[nodiscard]] inline u32 box_axis_feature_id(const BoxAxisKey key) noexcept {
     return kBoxAxisFeatureTag | (static_cast<u32>(key.type) & 0x3u) | (static_cast<u32>(key.i & 0x3u) << 2u) |
            (static_cast<u32>(key.j & 0x3u) << 4u);
+}
+
+[[nodiscard]] inline u32 box_edge_edge_feature_id(const BoxAxisKey key, const u8 edge_a, const u8 edge_b) noexcept {
+    return box_axis_feature_id(key) | ((static_cast<u32>(edge_a) & 0x3u) << 6u) |
+           ((static_cast<u32>(edge_b) & 0x3u) << 8u);
 }
 
 [[nodiscard]] inline bool decode_box_axis_feature_id(const u32 feature_id, BoxAxisKey &out) noexcept {
@@ -425,6 +431,82 @@ struct ClipVertex final {
            ((static_cast<u32>(b & 0x7u)) << 10u);
 }
 
+struct BoxSupportEdge final {
+    Vec3 p0_world{};
+    Vec3 p1_world{};
+    u8 edge_code{};
+};
+
+[[nodiscard]] inline BoxSupportEdge box_support_edge(const Vec3 center, const std::array<Vec3, 3> &axes,
+                                                     const Vec3 half_extents, const u32 edge_axis,
+                                                     const Vec3 support_dir) noexcept {
+#ifndef NDEBUG
+    if (edge_axis >= 3u) {
+        log::error(physics, "Invalid edge axis index={}", edge_axis);
+        std::terminate();
+    }
+#endif
+
+    const u32 u_axis = (edge_axis + 1u) % 3u;
+    const u32 v_axis = (edge_axis + 2u) % 3u;
+
+    const bool u_positive = dot(support_dir, axes[u_axis]) >= 0.0f;
+    const bool v_positive = dot(support_dir, axes[v_axis]) >= 0.0f;
+    const f32 u_offset = u_positive ? half_extents[u_axis] : -half_extents[u_axis];
+    const f32 v_offset = v_positive ? half_extents[v_axis] : -half_extents[v_axis];
+
+    const Vec3 base = center + axes[u_axis] * u_offset + axes[v_axis] * v_offset;
+    const Vec3 edge_extent = axes[edge_axis] * half_extents[edge_axis];
+    return BoxSupportEdge{
+        .p0_world = base - edge_extent,
+        .p1_world = base + edge_extent,
+        .edge_code = static_cast<u8>((u_positive ? 1u : 0u) | (v_positive ? 2u : 0u)),
+    };
+}
+
+[[nodiscard]] inline std::pair<Vec3, Vec3> closest_points_on_segments(const Vec3 p0, const Vec3 p1, const Vec3 q0,
+                                                                       const Vec3 q1) noexcept {
+    const Vec3 d1 = p1 - p0;
+    const Vec3 d2 = q1 - q0;
+    const Vec3 r = p0 - q0;
+    const f32 a = dot(d1, d1);
+    const f32 e = dot(d2, d2);
+    const f32 f = dot(d2, r);
+
+    f32 s = 0.0f;
+    f32 t = 0.0f;
+
+    if (a <= kSegmentEps && e <= kSegmentEps) {
+        return std::pair{p0, q0};
+    }
+
+    if (a <= kSegmentEps) {
+        t = std::clamp(f / e, 0.0f, 1.0f);
+    } else {
+        const f32 c = dot(d1, r);
+        if (e <= kSegmentEps) {
+            s = std::clamp(-c / a, 0.0f, 1.0f);
+        } else {
+            const f32 b = dot(d1, d2);
+            const f32 denom = a * e - b * b;
+            if (std::fabs(denom) > kSegmentEps) {
+                s = std::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+            }
+
+            t = (b * s + f) / e;
+            if (t < 0.0f) {
+                t = 0.0f;
+                s = std::clamp(-c / a, 0.0f, 1.0f);
+            } else if (t > 1.0f) {
+                t = 1.0f;
+                s = std::clamp((b - c) / a, 0.0f, 1.0f);
+            }
+        }
+    }
+
+    return std::pair{p0 + d1 * s, q0 + d2 * t};
+}
+
 void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                          std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                          std::span<const u32> shape_index, const u32 a, const u32 b,
@@ -573,16 +655,20 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         normal = -normal;
     }
 
+    const std::array<Vec3, 3> axes_a{a0, a1, a2};
+    const std::array<Vec3, 3> axes_b{b0, b1, b2};
+
     if (best_axis.key.type == BoxAxisType::edge_edge) {
-        const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
-        const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
-        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, box_axis_feature_id(best_axis.key),
+        const BoxSupportEdge edge_a = box_support_edge(center_a, axes_a, he_a, best_axis.key.i, normal);
+        const BoxSupportEdge edge_b = box_support_edge(center_b, axes_b, he_b, best_axis.key.j, -normal);
+        const auto [point_a, point_b] =
+            closest_points_on_segments(edge_a.p0_world, edge_a.p1_world, edge_b.p0_world, edge_b.p1_world);
+        const u32 feature_id = box_edge_edge_feature_id(best_axis.key, edge_a.edge_code, edge_b.edge_code);
+        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, feature_id,
                                    point_a - center_a, point_b - center_b, manifolds);
         return;
     }
 
-    const std::array<Vec3, 3> axes_a{a0, a1, a2};
-    const std::array<Vec3, 3> axes_b{b0, b1, b2};
     const bool ref_is_a = best_axis.key.type == BoxAxisType::face_a;
     const std::array<Vec3, 3> &ref_axes = ref_is_a ? axes_a : axes_b;
     const std::array<Vec3, 3> &incident_axes = ref_is_a ? axes_b : axes_a;
