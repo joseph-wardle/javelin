@@ -45,6 +45,8 @@ struct ContactPoint final {
     f32 normal_impulse{};
     f32 tangent_impulse_u{};
     f32 tangent_impulse_v{};
+    // True when this point reuses cached state from a previous frame.
+    bool persisted{};
     // Stable identifier used to match points across frames.
     u32 feature_id{kInvalidContactFeature};
 };

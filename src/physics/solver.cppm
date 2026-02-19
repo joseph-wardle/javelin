@@ -11,10 +11,13 @@ import javelin.math.vec3;
 import javelin.physics.types;
 
 namespace javelin::detail {
-inline constexpr f32 kPositionSlop = 0.01f;
-inline constexpr f32 kPositionCorrectionPercent = 0.8f;
 inline constexpr u32 kSolverIterations = 8;
-inline constexpr f32 kTangentEpsSq = 1e-8f;
+inline constexpr f32 kMassEps = 1e-8f;
+inline constexpr f32 kDtEps = 1e-8f;
+inline constexpr f32 kPenetrationBiasFactor = 0.2f;
+inline constexpr f32 kPenetrationSlop = 0.005f;
+// Resting contacts should not bounce; restitution is applied only above this impact speed.
+inline constexpr f32 kRestitutionVelocityThreshold = 1.0f;
 
 [[nodiscard]] inline Vec3 to_body_space(const Quat q, const Vec3 v) noexcept { return rotate(inverse_unit(q), v); }
 
@@ -30,122 +33,253 @@ inline constexpr f32 kTangentEpsSq = 1e-8f;
     const Vec3 scaled = hadamard(inv_inertia_body, v_body);
     return to_world_space(q, scaled);
 }
+
+struct SolverPoint final {
+    u32 manifold_index{};
+    u32 point_index{};
+    u32 a{};
+    u32 b{kInvalidBody};
+    Vec3 normal{};
+    Vec3 tangent_u{};
+    Vec3 tangent_v{};
+    Vec3 r_a{};
+    Vec3 r_b{};
+    f32 normal_mass{};
+    f32 tangent_mass_u{};
+    f32 tangent_mass_v{};
+    f32 velocity_bias{};
+};
+
+[[nodiscard]] inline bool has_body_b(const SolverPoint &point) noexcept { return point.b != kInvalidBody; }
+
+[[nodiscard]] inline f32 restitution_bias(const f32 normal_velocity, const f32 restitution_coeff) noexcept {
+    if (normal_velocity >= -kRestitutionVelocityThreshold) {
+        return 0.0f;
+    }
+    return -restitution_coeff * normal_velocity;
+}
+
+[[nodiscard]] inline bool has_warm_start_impulse(const ContactPoint &point) noexcept {
+    return std::fabs(point.normal_impulse) > kMassEps || std::fabs(point.tangent_impulse_u) > kMassEps ||
+           std::fabs(point.tangent_impulse_v) > kMassEps;
+}
+
+[[nodiscard]] inline std::pair<Vec3, Vec3> tangent_basis(const Vec3 normal) noexcept {
+    // Deterministic orthonormal basis from normal.
+    Vec3 tangent_u =
+        (std::fabs(normal.x) >= 0.57735026919f) ? Vec3{normal.y, -normal.x, 0.0f} : Vec3{0.0f, normal.z, -normal.y};
+    if (!tangent_u.try_normalize()) {
+        tangent_u = Vec3::unit_x();
+    }
+    Vec3 tangent_v = cross(normal, tangent_u);
+    if (!tangent_v.try_normalize()) {
+        tangent_v = cross(normal, Vec3::unit_y()).normalized_or_zero();
+    }
+    return std::pair{tangent_u, tangent_v};
+}
+
+[[nodiscard]] inline f32 axis_effective_mass_inverse(const SolverPoint &point, std::span<const f32> inv_mass,
+                                                     std::span<const Vec3> inv_inertia_body,
+                                                     std::span<const Quat> orientation, const Vec3 axis) noexcept {
+    const f32 inv_mass_a = inv_mass[point.a];
+    const f32 inv_mass_b = has_body_b(point) ? inv_mass[point.b] : 0.0f;
+    const f32 inv_mass_sum = inv_mass_a + inv_mass_b;
+    if (inv_mass_sum <= kMassEps) {
+        return 0.0f;
+    }
+
+    const Vec3 ra_cross_axis = cross(point.r_a, axis);
+    const f32 ang_term_a = inv_inertia_term(inv_inertia_body[point.a], orientation[point.a], ra_cross_axis);
+    f32 ang_term_b = 0.0f;
+    if (has_body_b(point)) {
+        const Vec3 rb_cross_axis = cross(point.r_b, axis);
+        ang_term_b = inv_inertia_term(inv_inertia_body[point.b], orientation[point.b], rb_cross_axis);
+    }
+
+    const f32 denom = inv_mass_sum + ang_term_a + ang_term_b;
+    return (denom > kMassEps) ? (1.0f / denom) : 0.0f;
+}
+
+[[nodiscard]] inline Vec3 relative_velocity_at_point(const SolverPoint &point, std::span<const Vec3> velocity,
+                                                     std::span<const Vec3> angular_velocity) noexcept {
+    const Vec3 v_a = velocity[point.a] + cross(angular_velocity[point.a], point.r_a);
+    if (!has_body_b(point)) {
+        return -v_a;
+    }
+    const Vec3 v_b = velocity[point.b] + cross(angular_velocity[point.b], point.r_b);
+    return v_b - v_a;
+}
+
+inline void apply_impulse_at_point(const SolverPoint &point, const Vec3 impulse, std::span<Vec3> velocity,
+                                   std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                                   std::span<const Vec3> inv_inertia_body,
+                                   std::span<const Quat> orientation) noexcept {
+    velocity[point.a] -= impulse * inv_mass[point.a];
+    angular_velocity[point.a] -=
+        apply_inv_inertia(inv_inertia_body[point.a], orientation[point.a], cross(point.r_a, impulse));
+
+    if (!has_body_b(point)) {
+        return;
+    }
+
+    velocity[point.b] += impulse * inv_mass[point.b];
+    angular_velocity[point.b] +=
+        apply_inv_inertia(inv_inertia_body[point.b], orientation[point.b], cross(point.r_b, impulse));
+}
+
+inline void warm_start_solver_point(const SolverPoint &solver_point, const ContactPoint &point, std::span<Vec3> velocity,
+                                    std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                                    std::span<const Vec3> inv_inertia_body,
+                                    std::span<const Quat> orientation) noexcept {
+    if (!has_warm_start_impulse(point)) {
+        return;
+    }
+    const Vec3 impulse = solver_point.normal * point.normal_impulse +
+                         solver_point.tangent_u * point.tangent_impulse_u +
+                         solver_point.tangent_v * point.tangent_impulse_v;
+    apply_impulse_at_point(solver_point, impulse, velocity, angular_velocity, inv_mass, inv_inertia_body, orientation);
+}
+
+[[nodiscard]] inline std::vector<SolverPoint> &solver_points_cache() {
+    static thread_local std::vector<SolverPoint> cache{};
+    return cache;
+}
 } // namespace javelin::detail
 
 export namespace javelin {
 
-void solve_contacts(std::span<Vec3> position, std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
-                    std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
-                    std::span<const Quat> orientation, std::span<const LegacyContact> contacts, const f32 restitution,
-                    const f32 friction) {
+void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                    std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
+                    std::span<ContactManifold> manifolds, const f32 dt, const f32 restitution, const f32 friction) {
     ZoneScopedN("Physics solve");
-    if (contacts.empty()) {
+    if (manifolds.empty()) {
         return;
     }
 
-    for (const LegacyContact contact : contacts) {
-        const u32 a = contact.a;
-        const u32 b = contact.b;
-        const bool has_b = (b != kInvalidBody);
-        const f32 inv_mass_a = inv_mass[a];
-        const f32 inv_mass_b = has_b ? inv_mass[b] : 0.0f;
-        const f32 inv_mass_sum = inv_mass_a + inv_mass_b;
-        if (inv_mass_sum <= 0.0f) {
+    const f32 inv_dt = (dt > detail::kDtEps) ? (1.0f / dt) : 0.0f;
+    const f32 restitution_coeff = std::clamp(restitution, 0.0f, 1.0f);
+    const f32 friction_coeff = std::max(friction, 0.0f);
+
+    usize point_count = 0;
+    for (const ContactManifold &manifold : manifolds) {
+#ifndef NDEBUG
+        if (manifold.point_count > kMaxManifoldPoints) {
+            std::terminate();
+        }
+#endif
+        point_count += manifold.point_count;
+    }
+    if (point_count == 0u) {
+        return;
+    }
+
+    std::vector<detail::SolverPoint> &solver_points = detail::solver_points_cache();
+    solver_points.clear();
+    solver_points.reserve(point_count);
+
+    // Pre-step: world anchors, tangent basis, effective masses, and velocity bias.
+    for (u32 manifold_index = 0; manifold_index < manifolds.size(); ++manifold_index) {
+        ContactManifold &manifold = manifolds[manifold_index];
+        if (manifold.point_count == 0u) {
             continue;
         }
+        Vec3 normal = manifold.normal;
+        if (!normal.try_normalize()) {
+            continue;
+        }
+        const auto [tangent_u, tangent_v] = detail::tangent_basis(normal);
+        // Split-bias style distribution: manifold penetration correction is shared by all points.
+        const f32 manifold_bias_share = 1.0f / static_cast<f32>(manifold.point_count);
 
-        const f32 correction_mag = std::max(contact.penetration - detail::kPositionSlop, 0.0f) *
-                                   detail::kPositionCorrectionPercent / inv_mass_sum;
-        if (correction_mag > 0.0f) {
-            const Vec3 correction = contact.normal * correction_mag;
-            position[a] -= correction * inv_mass_a;
-            if (has_b) {
-                position[b] += correction * inv_mass_b;
-            }
+        for (u32 point_index = 0; point_index < manifold.point_count; ++point_index) {
+            ContactPoint &point = manifold.points[point_index];
+
+            detail::SolverPoint solver_point{
+                .manifold_index = manifold_index,
+                .point_index = point_index,
+                .a = manifold.a,
+                .b = manifold.b,
+                .normal = normal,
+                .tangent_u = tangent_u,
+                .tangent_v = tangent_v,
+                .r_a = rotate(orientation[manifold.a], point.local_anchor_a),
+                .r_b = (manifold.b != kInvalidBody) ? rotate(orientation[manifold.b], point.local_anchor_b) : Vec3{},
+            };
+
+            solver_point.normal_mass =
+                detail::axis_effective_mass_inverse(solver_point, inv_mass, inv_inertia_body, orientation, normal);
+            solver_point.tangent_mass_u =
+                detail::axis_effective_mass_inverse(solver_point, inv_mass, inv_inertia_body, orientation, tangent_u);
+            solver_point.tangent_mass_v =
+                detail::axis_effective_mass_inverse(solver_point, inv_mass, inv_inertia_body, orientation, tangent_v);
+
+            const f32 separation = point.separation + detail::kPenetrationSlop;
+            const f32 penetration_bias = (inv_dt > 0.0f)
+                                             ? (-detail::kPenetrationBiasFactor * inv_dt * std::min(separation, 0.0f) *
+                                                manifold_bias_share)
+                                             : 0.0f;
+
+            const Vec3 relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
+            const f32 normal_velocity = dot(relative_velocity, normal);
+            const f32 restitution_velocity_bias = detail::restitution_bias(normal_velocity, restitution_coeff);
+            solver_point.velocity_bias = std::max(penetration_bias, restitution_velocity_bias);
+
+            solver_points.push_back(solver_point);
         }
     }
 
+    // Warm start: apply accumulated normal + two tangent impulses per point.
+    for (const detail::SolverPoint &solver_point : solver_points) {
+        ContactPoint &point = manifolds[solver_point.manifold_index].points[solver_point.point_index];
+        detail::warm_start_solver_point(solver_point, point, velocity, angular_velocity, inv_mass, inv_inertia_body,
+                                        orientation);
+    }
+
+    // Iterative projected Gauss-Seidel.
     for (u32 iteration = 0; iteration < detail::kSolverIterations; ++iteration) {
-        for (const LegacyContact contact : contacts) {
-            const u32 a = contact.a;
-            const u32 b = contact.b;
-            const bool has_b = (b != kInvalidBody);
-            const f32 inv_mass_a = inv_mass[a];
-            const f32 inv_mass_b = has_b ? inv_mass[b] : 0.0f;
-            const f32 inv_mass_sum = inv_mass_a + inv_mass_b;
-            if (inv_mass_sum <= 0.0f) {
-                continue;
+        for (const detail::SolverPoint &solver_point : solver_points) {
+            ContactPoint &point = manifolds[solver_point.manifold_index].points[solver_point.point_index];
+
+            Vec3 relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
+            const f32 vn = dot(relative_velocity, solver_point.normal);
+            const f32 delta_normal = solver_point.normal_mass * (solver_point.velocity_bias - vn);
+            const f32 old_normal_impulse = point.normal_impulse;
+            point.normal_impulse = std::max(old_normal_impulse + delta_normal, 0.0f);
+            const f32 applied_normal_impulse = point.normal_impulse - old_normal_impulse;
+            if (std::fabs(applied_normal_impulse) > detail::kMassEps) {
+                detail::apply_impulse_at_point(solver_point, solver_point.normal * applied_normal_impulse, velocity,
+                                               angular_velocity, inv_mass, inv_inertia_body, orientation);
             }
 
-            const Vec3 r_a = contact.r_a;
-            const Vec3 r_b = contact.r_b;
-            const Vec3 ang_a = angular_velocity[a];
-            const Vec3 ang_b = has_b ? angular_velocity[b] : Vec3{};
-            const Vec3 vel_a = velocity[a] + cross(ang_a, r_a);
-            const Vec3 vel_b = has_b ? (velocity[b] + cross(ang_b, r_b)) : Vec3{};
-            const Vec3 relative = vel_b - vel_a;
-            const f32 vn = dot(relative, contact.normal);
-            if (vn > 0.0f) {
-                continue;
+            relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
+            const f32 vt_u = dot(relative_velocity, solver_point.tangent_u);
+            const f32 vt_v = dot(relative_velocity, solver_point.tangent_v);
+            const f32 old_tangent_u = point.tangent_impulse_u;
+            const f32 old_tangent_v = point.tangent_impulse_v;
+
+            f32 new_tangent_u = old_tangent_u - solver_point.tangent_mass_u * vt_u;
+            f32 new_tangent_v = old_tangent_v - solver_point.tangent_mass_v * vt_v;
+
+            // Coulomb friction on the accumulated tangent impulse vector.
+            const f32 max_friction = friction_coeff * point.normal_impulse;
+            const f32 max_friction_sq = max_friction * max_friction;
+            const f32 tangent_impulse_sq = new_tangent_u * new_tangent_u + new_tangent_v * new_tangent_v;
+            if (tangent_impulse_sq > max_friction_sq && tangent_impulse_sq > detail::kMassEps * detail::kMassEps) {
+                const f32 scale = max_friction / std::sqrt(tangent_impulse_sq);
+                new_tangent_u *= scale;
+                new_tangent_v *= scale;
             }
 
-            const Vec3 inv_inertia_a = inv_inertia_body[a];
-            const Vec3 inv_inertia_b = has_b ? inv_inertia_body[b] : Vec3{};
-            const Quat orient_a = orientation[a];
-            const Quat orient_b = has_b ? orientation[b] : Quat::identity();
-            const Vec3 ra_cross_n = cross(r_a, contact.normal);
-            const Vec3 rb_cross_n = cross(r_b, contact.normal);
-            const f32 ang_term_a = detail::inv_inertia_term(inv_inertia_a, orient_a, ra_cross_n);
-            const f32 ang_term_b = has_b ? detail::inv_inertia_term(inv_inertia_b, orient_b, rb_cross_n) : 0.0f;
-            const f32 impulse_denom = inv_mass_sum + ang_term_a + ang_term_b;
-            if (impulse_denom <= 0.0f) {
-                continue;
-            }
+            point.tangent_impulse_u = new_tangent_u;
+            point.tangent_impulse_v = new_tangent_v;
 
-            const f32 impulse_mag = -(1.0f + restitution) * vn / impulse_denom;
-            const Vec3 impulse = contact.normal * impulse_mag;
-            velocity[a] -= impulse * inv_mass_a;
-            if (has_b) {
-                velocity[b] += impulse * inv_mass_b;
-            }
-            angular_velocity[a] -= detail::apply_inv_inertia(inv_inertia_a, orient_a, cross(r_a, impulse));
-            if (has_b) {
-                angular_velocity[b] += detail::apply_inv_inertia(inv_inertia_b, orient_b, cross(r_b, impulse));
-            }
-
-            const Vec3 ang_a_after = angular_velocity[a];
-            const Vec3 ang_b_after = has_b ? angular_velocity[b] : Vec3{};
-            const Vec3 vel_a_after = velocity[a] + cross(ang_a_after, r_a);
-            const Vec3 vel_b_after = has_b ? (velocity[b] + cross(ang_b_after, r_b)) : Vec3{};
-            const Vec3 relative_after = vel_b_after - vel_a_after;
-            const Vec3 tangent_velocity = relative_after - contact.normal * dot(relative_after, contact.normal);
-            const f32 tangent_speed_sq = tangent_velocity.length_sq();
-            if (tangent_speed_sq <= detail::kTangentEpsSq) {
-                continue;
-            }
-
-            const f32 tangent_speed = std::sqrt(tangent_speed_sq);
-            const Vec3 tangent = tangent_velocity / tangent_speed;
-            const Vec3 ra_cross_t = cross(r_a, tangent);
-            const Vec3 rb_cross_t = cross(r_b, tangent);
-            const f32 ang_t_a = detail::inv_inertia_term(inv_inertia_a, orient_a, ra_cross_t);
-            const f32 ang_t_b = has_b ? detail::inv_inertia_term(inv_inertia_b, orient_b, rb_cross_t) : 0.0f;
-            const f32 friction_denom = inv_mass_sum + ang_t_a + ang_t_b;
-            if (friction_denom <= 0.0f) {
-                continue;
-            }
-            f32 friction_impulse_mag = -dot(relative_after, tangent) / friction_denom;
-            const f32 max_friction = friction * impulse_mag;
-            friction_impulse_mag = std::clamp(friction_impulse_mag, -max_friction, max_friction);
-
-            const Vec3 friction_impulse = tangent * friction_impulse_mag;
-            velocity[a] -= friction_impulse * inv_mass_a;
-            if (has_b) {
-                velocity[b] += friction_impulse * inv_mass_b;
-            }
-            angular_velocity[a] -= detail::apply_inv_inertia(inv_inertia_a, orient_a, cross(r_a, friction_impulse));
-            if (has_b) {
-                angular_velocity[b] += detail::apply_inv_inertia(inv_inertia_b, orient_b, cross(r_b, friction_impulse));
+            const f32 applied_tangent_u = new_tangent_u - old_tangent_u;
+            const f32 applied_tangent_v = new_tangent_v - old_tangent_v;
+            if (std::fabs(applied_tangent_u) > detail::kMassEps || std::fabs(applied_tangent_v) > detail::kMassEps) {
+                const Vec3 tangent_impulse =
+                    solver_point.tangent_u * applied_tangent_u + solver_point.tangent_v * applied_tangent_v;
+                detail::apply_impulse_at_point(solver_point, tangent_impulse, velocity, angular_velocity, inv_mass,
+                                               inv_inertia_body, orientation);
             }
         }
     }
