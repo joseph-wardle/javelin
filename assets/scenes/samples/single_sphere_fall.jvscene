@@ -1,0 +1,10 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# scene: one dynamic sphere falling onto the implicit ground plane
+scene version=1 units=m
+
+# shapes
+shape id=sphere kind=sphere r=0.5
+
+# bodies
+body id=sphere_fall shape=sphere motion=dynamic material=1 mesh=0 px=0 py=8 pz=0

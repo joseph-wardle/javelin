@@ -1,0 +1,21 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# scene: vertical stack of dynamic boxes
+scene version=1 units=m
+
+# shapes
+shape id=cube kind=box hx=0.5 hy=0.5 hz=0.5
+
+# bodies
+body id=box_00 shape=cube motion=dynamic material=0 mesh=0 px=0 py=0.5 pz=0
+body id=box_01 shape=cube motion=dynamic material=0 mesh=0 px=0 py=1.55 pz=0
+body id=box_02 shape=cube motion=dynamic material=0 mesh=0 px=0 py=2.6 pz=0
+body id=box_03 shape=cube motion=dynamic material=0 mesh=0 px=0 py=3.65 pz=0
+body id=box_04 shape=cube motion=dynamic material=0 mesh=0 px=0 py=4.7 pz=0
+body id=box_05 shape=cube motion=dynamic material=0 mesh=0 px=0 py=5.75 pz=0
+body id=box_06 shape=cube motion=dynamic material=0 mesh=0 px=0 py=6.8 pz=0
+body id=box_07 shape=cube motion=dynamic material=0 mesh=0 px=0 py=7.85 pz=0
+body id=box_08 shape=cube motion=dynamic material=0 mesh=0 px=0 py=8.9 pz=0
+body id=box_09 shape=cube motion=dynamic material=0 mesh=0 px=0 py=9.95 pz=0
+body id=box_10 shape=cube motion=dynamic material=0 mesh=0 px=0 py=11 pz=0
+body id=box_11 shape=cube motion=dynamic material=0 mesh=0 px=0 py=12.05 pz=0
