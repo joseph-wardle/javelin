@@ -191,6 +191,9 @@ struct Scene final {
         shape_kind_.resize(capacity_, ShapeKind::sphere);
         shape_index_.resize(capacity_);
         shapes_.reserve(capacity_);
+        shape_ids_.clear();
+        shape_ids_.reserve(capacity_);
+        body_ids_.resize(capacity_);
         material_.resize(capacity_);
         mesh_.resize(capacity_);
         inv_mass_.resize(capacity_, 1.0f);
@@ -266,6 +269,68 @@ struct Scene final {
         publish_poses_from_sim();
     }
 
+    [[nodiscard]] std::expected<void, SceneFileError> save_scene_to_disk(
+        std::filesystem::path scene_path, const SceneFileSaveOptions &save_options = {}) const {
+        auto error = [&scene_path](std::string message) -> std::expected<void, SceneFileError> {
+            return std::unexpected(SceneFileError{
+                .path = scene_path,
+                .line = 0u,
+                .message = std::move(message),
+            });
+        };
+
+        SceneFile out{};
+        out.clear();
+        out.reserve(static_cast<u32>(shapes_.size()), count_);
+
+        std::vector<std::string> shape_ids{};
+        shape_ids.reserve(shapes_.size());
+        for (u32 i = 0; i < shapes_.size(); ++i) {
+            std::string id{};
+            if (i < shape_ids_.size() && !shape_ids_[i].empty()) {
+                id = shape_ids_[i];
+            } else {
+                id = std::format("shape_{:05}", i);
+            }
+            shape_ids.push_back(id);
+            out.shapes.push_back(SceneFileShape{
+                .id = std::move(id),
+                .shape = shapes_[i],
+            });
+        }
+
+        for (u32 i = 0; i < count_; ++i) {
+            if (shape_index_[i] >= shape_ids.size()) {
+                return error(
+                    std::format("Cannot export body {}: shape_index={} is out of range (shape_count={})", i,
+                                shape_index_[i], shape_ids.size()));
+            }
+
+            std::string body_id{};
+            if (i < body_ids_.size() && !body_ids_[i].empty()) {
+                body_id = body_ids_[i];
+            } else {
+                body_id = std::format("body_{:05}", i);
+            }
+
+            const SceneFileBodyMotion motion =
+                (inv_mass_[i] == 0.0f) ? SceneFileBodyMotion::static_body : SceneFileBodyMotion::dynamic_body;
+            out.bodies.push_back(SceneFileBody{
+                .id = std::move(body_id),
+                .shape_id = shape_ids[shape_index_[i]],
+                .motion = motion,
+                .material = material_[i],
+                .mesh = mesh_[i],
+                .position = initial_position_[i],
+                .orientation = initial_orientation_[i],
+                .velocity = initial_velocity_[i],
+                .angular_velocity = initial_angular_velocity_[i],
+            });
+        }
+
+        return out.save(scene_path, save_options);
+    }
+
   private:
     void snapshot_initial_state_from_sim_() noexcept {
         for (u32 i = 0; i < count_; ++i) {
@@ -311,9 +376,12 @@ struct Scene final {
 
         std::unordered_map<std::string_view, u32> shape_lookup{};
         shape_lookup.reserve(in.shapes.size() * 2u + 1u);
+        out.shape_ids_.clear();
+        out.shape_ids_.reserve(in.shapes.size());
         for (const SceneFileShape &shape : in.shapes) {
             const u32 shape_index = static_cast<u32>(out.shapes_.size());
             out.shapes_.push_back(shape.shape);
+            out.shape_ids_.push_back(shape.id);
             shape_lookup.emplace(shape.id, shape_index);
         }
 
@@ -337,6 +405,7 @@ struct Scene final {
             out.inv_mass_[idx] = inv_mass;
             out.inv_inertia_[idx] = detail::shape_inv_inertia(kind, shape, inv_mass);
 
+            out.body_ids_[idx] = body.id;
             out.material_[idx] = body.material;
             out.mesh_[idx] = body.mesh;
             out.position_[idx] = body.position;
@@ -380,6 +449,10 @@ struct Scene final {
     std::vector<ShapeKind> shape_kind_{};
     std::vector<u32> shape_index_{};
     std::vector<ShapeData> shapes_{};
+
+    // Authored logical ids (serialized values, preserved for round-trip export).
+    std::vector<std::string> shape_ids_{};
+    std::vector<std::string> body_ids_{};
 
     // Authored ids (serialized values).
     std::vector<MaterialId> material_{};
