@@ -11,6 +11,7 @@ import javelin.scene.entity;
 import javelin.scene.physics_view;
 import javelin.scene.pose_channel;
 import javelin.scene.render_view;
+import javelin.scene.scene_file;
 import javelin.scene.shapes;
 
 export namespace javelin {
@@ -144,6 +145,19 @@ inline constexpr SpawnSettings kSpawnSettings{
     }
     return Vec3{};
 }
+
+[[nodiscard]] inline f32 shape_inv_mass(const SceneFileBodyMotion motion, const ShapeData &shape) noexcept {
+    if (motion == SceneFileBodyMotion::static_body) {
+        return 0.0f;
+    }
+    switch (shape.kind) {
+    case ShapeKind::sphere:
+        return spawn_inv_mass(shape_sphere(shape).radius);
+    case ShapeKind::box:
+        return spawn_inv_mass_box(shape_box(shape).half_extents);
+    }
+    return 0.0f;
+}
 } // namespace detail
 
 struct Scene final {
@@ -187,6 +201,10 @@ struct Scene final {
         velocity_.resize(capacity_);
         orientation_.resize(capacity_);
         angular_velocity_.resize(capacity_);
+        initial_position_.resize(capacity_);
+        initial_velocity_.resize(capacity_);
+        initial_orientation_.resize(capacity_);
+        initial_angular_velocity_.resize(capacity_);
 
         poses_.reserve(capacity_);
     }
@@ -244,70 +262,97 @@ struct Scene final {
     }
 
     void reset_simulation() noexcept {
-        // TEMP: still procedural until authored initial-state snapshots are wired in.
         for (u32 i = 0; i < count_; ++i) {
-            position_[i] = detail::spawn_position(i);
-            velocity_[i] = Vec3{};
-            orientation_[i] = Quat::identity();
-            angular_velocity_[i] = Vec3{};
+            position_[i] = initial_position_[i];
+            velocity_[i] = initial_velocity_[i];
+            orientation_[i] = initial_orientation_[i];
+            angular_velocity_[i] = initial_angular_velocity_[i];
         }
+        publish_poses_from_sim();
     }
 
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
         log::info(scene, "Loading scene from disk: {}", scene_path.string());
 
-        // TEMP: procedural body cloud until real scene data/asset loading is in place.
-        Scene out{};
-        constexpr u32 kSphereCount = detail::spawn_count();
+        const auto file = SceneFile::load(scene_path);
+        if (!file) {
+            log::error(scene, "{}", format_scene_file_error(file.error()));
+            std::terminate();
+        }
 
-        out.reserve(kSphereCount);
-        out.count_ = kSphereCount;
+        const SceneFile &in = *file;
+
+        Scene out{};
+        const u32 body_count = static_cast<u32>(in.bodies.size());
+
+        out.reserve(body_count);
+        out.count_ = body_count;
         out.shapes_.clear();
-        out.shapes_.reserve(out.count_);
+        out.shapes_.reserve(in.shapes.size());
         u32 sphere_count = 0;
         u32 box_count = 0;
+        u32 static_count = 0;
+        u32 dynamic_count = 0;
+
+        std::unordered_map<std::string_view, u32> shape_lookup{};
+        shape_lookup.reserve(in.shapes.size() * 2u + 1u);
+        for (const SceneFileShape &shape : in.shapes) {
+            const u32 shape_index = static_cast<u32>(out.shapes_.size());
+            out.shapes_.push_back(shape.shape);
+            shape_lookup.emplace(shape.id, shape_index);
+        }
 
         for (u32 idx = 0; idx < out.count_; ++idx) {
-            const ShapeKind kind = detail::spawn_shape_kind(idx);
-            const Vec3 position = detail::spawn_position(idx);
+            const SceneFileBody &body = in.bodies[idx];
+            const auto shape_it = shape_lookup.find(body.shape_id);
+            if (shape_it == shape_lookup.end()) {
+                log::error(scene, "Body references unknown shape (body='{}' shape='{}')", body.id, body.shape_id);
+                std::terminate();
+            }
+            const u32 shape_index = shape_it->second;
+            const ShapeData &shape = out.shapes_[shape_index];
+            const ShapeKind kind = shape.kind;
 
             out.alive_[idx] = 1u;
             out.generation_[idx] = 1;
             out.shape_kind_[idx] = kind;
-            out.shape_index_[idx] = static_cast<u32>(out.shapes_.size());
-            f32 inv_mass = 0.0f;
-            switch (kind) {
-            case ShapeKind::sphere: {
-                const f32 radius = detail::spawn_radius(idx);
-                out.shapes_.push_back(ShapeData::make_sphere(SphereShape{radius}));
-                inv_mass = detail::spawn_inv_mass(radius);
-                ++sphere_count;
-            } break;
-            case ShapeKind::box: {
-                const Vec3 half_extents = detail::spawn_cube_half_extents(idx);
-                out.shapes_.push_back(ShapeData::make_box(BoxShape{half_extents}));
-                inv_mass = detail::spawn_inv_mass_box(half_extents);
-                ++box_count;
-            } break;
-            }
-            out.material_[idx] = MaterialId{0};
-            out.mesh_[idx] = MeshId{0};
+            out.shape_index_[idx] = shape_index;
+
+            const f32 inv_mass = detail::shape_inv_mass(body.motion, shape);
             out.inv_mass_[idx] = inv_mass;
-            out.inv_inertia_[idx] =
-                detail::shape_inv_inertia(out.shape_kind_[idx], out.shapes_[out.shape_index_[idx]], inv_mass);
-            out.position_[idx] = position;
-            out.velocity_[idx] = Vec3{};
-            out.orientation_[idx] = Quat::identity();
-            out.angular_velocity_[idx] = Vec3{};
+            out.inv_inertia_[idx] = detail::shape_inv_inertia(kind, shape, inv_mass);
+
+            out.material_[idx] = body.material;
+            out.mesh_[idx] = body.mesh;
+            out.position_[idx] = body.position;
+            out.velocity_[idx] = body.velocity;
+            out.orientation_[idx] = body.orientation;
+            out.angular_velocity_[idx] = body.angular_velocity;
+
+            out.initial_position_[idx] = body.position;
+            out.initial_velocity_[idx] = body.velocity;
+            out.initial_orientation_[idx] = body.orientation;
+            out.initial_angular_velocity_[idx] = body.angular_velocity;
+
+            switch (kind) {
+            case ShapeKind::sphere:
+                ++sphere_count;
+                break;
+            case ShapeKind::box:
+                ++box_count;
+                break;
+            }
+            if (body.motion == SceneFileBodyMotion::static_body) {
+                ++static_count;
+            } else {
+                ++dynamic_count;
+            }
         }
 
         out.publish_poses_from_sim();
-        log::info(scene, "Loaded {} bodies (spheres={}, boxes={})", out.count_, sphere_count, box_count);
-        log::info(
-            scene, "Test scene params: sphere_radius=[{}..{}], cube_half=[{}..{}], height=[{}..{}], pile_radius={}",
-            detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max, detail::kSpawnSettings.box_half_min,
-            detail::kSpawnSettings.box_half_max, detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
-            detail::kSpawnSettings.pile_radius);
+        log::info(scene, "Loaded scene file version={} units={}", in.version, in.units);
+        log::info(scene, "Loaded {} bodies (dynamic={}, static={}, spheres={}, boxes={})", out.count_, dynamic_count,
+                  static_count, sphere_count, box_count);
         return out;
     }
 
@@ -338,6 +383,10 @@ struct Scene final {
     std::vector<Vec3> velocity_{};
     std::vector<Quat> orientation_{};
     std::vector<Vec3> angular_velocity_{};
+    std::vector<Vec3> initial_position_{};
+    std::vector<Vec3> initial_velocity_{};
+    std::vector<Quat> initial_orientation_{};
+    std::vector<Vec3> initial_angular_velocity_{};
 
     // Presentation channel (runtime only: physics publishes, render reads).
     PoseChannel poses_{};

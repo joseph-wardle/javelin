@@ -1,0 +1,1032 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# source=legacy_procedural_spawn count=512
+scene version=1 units=m
+
+# shapes
+shape id=shape_00000 kind=sphere r=0.595768178
+shape id=shape_00001 kind=sphere r=0.499004969
+shape id=shape_00002 kind=sphere r=0.33500737
+shape id=shape_00003 kind=sphere r=0.271036822
+shape id=shape_00004 kind=box hx=0.591014314 hy=0.591014314 hz=0.591014314
+shape id=shape_00005 kind=sphere r=0.590046
+shape id=shape_00006 kind=sphere r=0.589579868
+shape id=shape_00007 kind=box hx=0.216866136 hy=0.216866136 hz=0.216866136
+shape id=shape_00008 kind=sphere r=0.258580261
+shape id=shape_00009 kind=sphere r=0.270733139
+shape id=shape_00010 kind=box hx=0.257314777 hy=0.257314777 hz=0.257314777
+shape id=shape_00011 kind=sphere r=0.272595415
+shape id=shape_00012 kind=sphere r=0.493055442
+shape id=shape_00013 kind=box hx=0.37294724 hy=0.37294724 hz=0.37294724
+shape id=shape_00014 kind=sphere r=0.49912799
+shape id=shape_00015 kind=sphere r=0.336781213
+shape id=shape_00016 kind=box hx=0.38185966 hy=0.38185966 hz=0.38185966
+shape id=shape_00017 kind=box hx=0.355044436 hy=0.355044436 hz=0.355044436
+shape id=shape_00018 kind=box hx=0.540549445 hy=0.540549445 hz=0.540549445
+shape id=shape_00019 kind=box hx=0.269483376 hy=0.269483376 hz=0.269483376
+shape id=shape_00020 kind=sphere r=0.351352161
+shape id=shape_00021 kind=sphere r=0.565747505
+shape id=shape_00022 kind=sphere r=0.574202326
+shape id=shape_00023 kind=sphere r=0.341293895
+shape id=shape_00024 kind=sphere r=0.316127577
+shape id=shape_00025 kind=sphere r=0.494496146
+shape id=shape_00026 kind=box hx=0.522713828 hy=0.522713828 hz=0.522713828
+shape id=shape_00027 kind=sphere r=0.25439133
+shape id=shape_00028 kind=sphere r=0.444253215
+shape id=shape_00029 kind=sphere r=0.540457061
+shape id=shape_00030 kind=sphere r=0.368234453
+shape id=shape_00031 kind=box hx=0.521935439 hy=0.521935439 hz=0.521935439
+shape id=shape_00032 kind=sphere r=0.570250446
+shape id=shape_00033 kind=box hx=0.412612391 hy=0.412612391 hz=0.412612391
+shape id=shape_00034 kind=box hx=0.482483673 hy=0.482483673 hz=0.482483673
+shape id=shape_00035 kind=sphere r=0.49621481
+shape id=shape_00036 kind=box hx=0.560290027 hy=0.560290027 hz=0.560290027
+shape id=shape_00037 kind=box hx=0.494597745 hy=0.494597745 hz=0.494597745
+shape id=shape_00038 kind=sphere r=0.410811549
+shape id=shape_00039 kind=sphere r=0.482543039
+shape id=shape_00040 kind=box hx=0.42210443 hy=0.42210443 hz=0.42210443
+shape id=shape_00041 kind=sphere r=0.309125268
+shape id=shape_00042 kind=sphere r=0.498760283
+shape id=shape_00043 kind=box hx=0.21722343 hy=0.21722343 hz=0.21722343
+shape id=shape_00044 kind=box hx=0.496515989 hy=0.496515989 hz=0.496515989
+shape id=shape_00045 kind=box hx=0.49013412 hy=0.49013412 hz=0.49013412
+shape id=shape_00046 kind=box hx=0.573624754 hy=0.573624754 hz=0.573624754
+shape id=shape_00047 kind=box hx=0.362754679 hy=0.362754679 hz=0.362754679
+shape id=shape_00048 kind=sphere r=0.343802631
+shape id=shape_00049 kind=sphere r=0.354518163
+shape id=shape_00050 kind=sphere r=0.427143595
+shape id=shape_00051 kind=sphere r=0.548425242
+shape id=shape_00052 kind=box hx=0.583744097 hy=0.583744097 hz=0.583744097
+shape id=shape_00053 kind=box hx=0.485377645 hy=0.485377645 hz=0.485377645
+shape id=shape_00054 kind=sphere r=0.492811194
+shape id=shape_00055 kind=box hx=0.248639059 hy=0.248639059 hz=0.248639059
+shape id=shape_00056 kind=box hx=0.578558588 hy=0.578558588 hz=0.578558588
+shape id=shape_00057 kind=sphere r=0.2850618
+shape id=shape_00058 kind=box hx=0.407120252 hy=0.407120252 hz=0.407120252
+shape id=shape_00059 kind=box hx=0.401759267 hy=0.401759267 hz=0.401759267
+shape id=shape_00060 kind=sphere r=0.544512227
+shape id=shape_00061 kind=sphere r=0.523015115
+shape id=shape_00062 kind=sphere r=0.266824776
+shape id=shape_00063 kind=box hx=0.498702836 hy=0.498702836 hz=0.498702836
+shape id=shape_00064 kind=box hx=0.530425286 hy=0.530425286 hz=0.530425286
+shape id=shape_00065 kind=box hx=0.571144724 hy=0.571144724 hz=0.571144724
+shape id=shape_00066 kind=sphere r=0.589334577
+shape id=shape_00067 kind=box hx=0.377346587 hy=0.377346587 hz=0.377346587
+shape id=shape_00068 kind=sphere r=0.300059369
+shape id=shape_00069 kind=sphere r=0.427045795
+shape id=shape_00070 kind=box hx=0.207747149 hy=0.207747149 hz=0.207747149
+shape id=shape_00071 kind=sphere r=0.547824073
+shape id=shape_00072 kind=sphere r=0.432840049
+shape id=shape_00073 kind=sphere r=0.297483793
+shape id=shape_00074 kind=box hx=0.278933692 hy=0.278933692 hz=0.278933692
+shape id=shape_00075 kind=box hx=0.398535681 hy=0.398535681 hz=0.398535681
+shape id=shape_00076 kind=sphere r=0.27197814
+shape id=shape_00077 kind=sphere r=0.398915541
+shape id=shape_00078 kind=sphere r=0.440294325
+shape id=shape_00079 kind=sphere r=0.438471124
+shape id=shape_00080 kind=box hx=0.24487977 hy=0.24487977 hz=0.24487977
+shape id=shape_00081 kind=box hx=0.240235949 hy=0.240235949 hz=0.240235949
+shape id=shape_00082 kind=sphere r=0.307834059
+shape id=shape_00083 kind=box hx=0.286989641 hy=0.286989641 hz=0.286989641
+shape id=shape_00084 kind=sphere r=0.377319211
+shape id=shape_00085 kind=box hx=0.559844589 hy=0.559844589 hz=0.559844589
+shape id=shape_00086 kind=sphere r=0.512526077
+shape id=shape_00087 kind=sphere r=0.294125718
+shape id=shape_00088 kind=sphere r=0.54433724
+shape id=shape_00089 kind=sphere r=0.38123886
+shape id=shape_00090 kind=sphere r=0.379449934
+shape id=shape_00091 kind=box hx=0.328465128 hy=0.328465128 hz=0.328465128
+shape id=shape_00092 kind=sphere r=0.333493692
+shape id=shape_00093 kind=box hx=0.217967653 hy=0.217967653 hz=0.217967653
+shape id=shape_00094 kind=box hx=0.201230097 hy=0.201230097 hz=0.201230097
+shape id=shape_00095 kind=box hx=0.452346659 hy=0.452346659 hz=0.452346659
+shape id=shape_00096 kind=box hx=0.373042107 hy=0.373042107 hz=0.373042107
+shape id=shape_00097 kind=box hx=0.215724325 hy=0.215724325 hz=0.215724325
+shape id=shape_00098 kind=box hx=0.25067625 hy=0.25067625 hz=0.25067625
+shape id=shape_00099 kind=box hx=0.247082305 hy=0.247082305 hz=0.247082305
+shape id=shape_00100 kind=box hx=0.440231657 hy=0.440231657 hz=0.440231657
+shape id=shape_00101 kind=sphere r=0.257303822
+shape id=shape_00102 kind=box hx=0.225796962 hy=0.225796962 hz=0.225796962
+shape id=shape_00103 kind=box hx=0.32287755 hy=0.32287755 hz=0.32287755
+shape id=shape_00104 kind=sphere r=0.472732213
+shape id=shape_00105 kind=sphere r=0.359768638
+shape id=shape_00106 kind=box hx=0.40624454 hy=0.40624454 hz=0.40624454
+shape id=shape_00107 kind=box hx=0.201087856 hy=0.201087856 hz=0.201087856
+shape id=shape_00108 kind=sphere r=0.544833413
+shape id=shape_00109 kind=box hx=0.268980932 hy=0.268980932 hz=0.268980932
+shape id=shape_00110 kind=sphere r=0.550947788
+shape id=shape_00111 kind=sphere r=0.291447127
+shape id=shape_00112 kind=sphere r=0.326869771
+shape id=shape_00113 kind=sphere r=0.261734977
+shape id=shape_00114 kind=box hx=0.464877915 hy=0.464877915 hz=0.464877915
+shape id=shape_00115 kind=sphere r=0.537245393
+shape id=shape_00116 kind=sphere r=0.596045241
+shape id=shape_00117 kind=box hx=0.387566733 hy=0.387566733 hz=0.387566733
+shape id=shape_00118 kind=box hx=0.418502021 hy=0.418502021 hz=0.418502021
+shape id=shape_00119 kind=sphere r=0.312385878
+shape id=shape_00120 kind=box hx=0.329504275 hy=0.329504275 hz=0.329504275
+shape id=shape_00121 kind=sphere r=0.392866984
+shape id=shape_00122 kind=box hx=0.480309153 hy=0.480309153 hz=0.480309153
+shape id=shape_00123 kind=box hx=0.465616989 hy=0.465616989 hz=0.465616989
+shape id=shape_00124 kind=sphere r=0.266556787
+shape id=shape_00125 kind=box hx=0.203280163 hy=0.203280163 hz=0.203280163
+shape id=shape_00126 kind=sphere r=0.36930044
+shape id=shape_00127 kind=box hx=0.266770816 hy=0.266770816 hz=0.266770816
+shape id=shape_00128 kind=box hx=0.395325828 hy=0.395325828 hz=0.395325828
+shape id=shape_00129 kind=sphere r=0.532602659
+shape id=shape_00130 kind=sphere r=0.538135433
+shape id=shape_00131 kind=box hx=0.305405927 hy=0.305405927 hz=0.305405927
+shape id=shape_00132 kind=sphere r=0.466725776
+shape id=shape_00133 kind=box hx=0.383777022 hy=0.383777022 hz=0.383777022
+shape id=shape_00134 kind=sphere r=0.40163112
+shape id=shape_00135 kind=box hx=0.595771432 hy=0.595771432 hz=0.595771432
+shape id=shape_00136 kind=box hx=0.474963975 hy=0.474963975 hz=0.474963975
+shape id=shape_00137 kind=sphere r=0.279784915
+shape id=shape_00138 kind=sphere r=0.410633287
+shape id=shape_00139 kind=sphere r=0.447366604
+shape id=shape_00140 kind=sphere r=0.324229836
+shape id=shape_00141 kind=box hx=0.588230777 hy=0.588230777 hz=0.588230777
+shape id=shape_00142 kind=sphere r=0.442032829
+shape id=shape_00143 kind=sphere r=0.385644293
+shape id=shape_00144 kind=sphere r=0.325130329
+shape id=shape_00145 kind=box hx=0.256850195 hy=0.256850195 hz=0.256850195
+shape id=shape_00146 kind=box hx=0.266480255 hy=0.266480255 hz=0.266480255
+shape id=shape_00147 kind=box hx=0.525708961 hy=0.525708961 hz=0.525708961
+shape id=shape_00148 kind=sphere r=0.390130857
+shape id=shape_00149 kind=sphere r=0.578383893
+shape id=shape_00150 kind=box hx=0.314867043 hy=0.314867043 hz=0.314867043
+shape id=shape_00151 kind=sphere r=0.515052024
+shape id=shape_00152 kind=sphere r=0.448551607
+shape id=shape_00153 kind=sphere r=0.581499723
+shape id=shape_00154 kind=box hx=0.313418388 hy=0.313418388 hz=0.313418388
+shape id=shape_00155 kind=box hx=0.315243316 hy=0.315243316 hz=0.315243316
+shape id=shape_00156 kind=sphere r=0.371244285
+shape id=shape_00157 kind=sphere r=0.481175914
+shape id=shape_00158 kind=box hx=0.484582782 hy=0.484582782 hz=0.484582782
+shape id=shape_00159 kind=box hx=0.313021636 hy=0.313021636 hz=0.313021636
+shape id=shape_00160 kind=box hx=0.573463631 hy=0.573463631 hz=0.573463631
+shape id=shape_00161 kind=sphere r=0.305374432
+shape id=shape_00162 kind=sphere r=0.414945447
+shape id=shape_00163 kind=box hx=0.425847173 hy=0.425847173 hz=0.425847173
+shape id=shape_00164 kind=box hx=0.578165007 hy=0.578165007 hz=0.578165007
+shape id=shape_00165 kind=box hx=0.282605243 hy=0.282605243 hz=0.282605243
+shape id=shape_00166 kind=box hx=0.449729013 hy=0.449729013 hz=0.449729013
+shape id=shape_00167 kind=box hx=0.560932231 hy=0.560932231 hz=0.560932231
+shape id=shape_00168 kind=sphere r=0.589577991
+shape id=shape_00169 kind=sphere r=0.470363981
+shape id=shape_00170 kind=box hx=0.567653036 hy=0.567653036 hz=0.567653036
+shape id=shape_00171 kind=box hx=0.514314556 hy=0.514314556 hz=0.514314556
+shape id=shape_00172 kind=box hx=0.278141236 hy=0.278141236 hz=0.278141236
+shape id=shape_00173 kind=sphere r=0.265488526
+shape id=shape_00174 kind=sphere r=0.583820954
+shape id=shape_00175 kind=box hx=0.405575061 hy=0.405575061 hz=0.405575061
+shape id=shape_00176 kind=box hx=0.573743701 hy=0.573743701 hz=0.573743701
+shape id=shape_00177 kind=sphere r=0.506115821
+shape id=shape_00178 kind=box hx=0.360290885 hy=0.360290885 hz=0.360290885
+shape id=shape_00179 kind=sphere r=0.288201204
+shape id=shape_00180 kind=sphere r=0.513653252
+shape id=shape_00181 kind=box hx=0.405976272 hy=0.405976272 hz=0.405976272
+shape id=shape_00182 kind=sphere r=0.500726116
+shape id=shape_00183 kind=box hx=0.427044439 hy=0.427044439 hz=0.427044439
+shape id=shape_00184 kind=box hx=0.430859494 hy=0.430859494 hz=0.430859494
+shape id=shape_00185 kind=box hx=0.239268517 hy=0.239268517 hz=0.239268517
+shape id=shape_00186 kind=sphere r=0.346311179
+shape id=shape_00187 kind=box hx=0.388146496 hy=0.388146496 hz=0.388146496
+shape id=shape_00188 kind=box hx=0.282252026 hy=0.282252026 hz=0.282252026
+shape id=shape_00189 kind=sphere r=0.382912567
+shape id=shape_00190 kind=sphere r=0.385198772
+shape id=shape_00191 kind=box hx=0.397171688 hy=0.397171688 hz=0.397171688
+shape id=shape_00192 kind=box hx=0.416721606 hy=0.416721606 hz=0.416721606
+shape id=shape_00193 kind=sphere r=0.32908394
+shape id=shape_00194 kind=box hx=0.298284817 hy=0.298284817 hz=0.298284817
+shape id=shape_00195 kind=sphere r=0.285642025
+shape id=shape_00196 kind=sphere r=0.509829462
+shape id=shape_00197 kind=sphere r=0.533340743
+shape id=shape_00198 kind=sphere r=0.408990934
+shape id=shape_00199 kind=box hx=0.57978282 hy=0.57978282 hz=0.57978282
+shape id=shape_00200 kind=box hx=0.471703386 hy=0.471703386 hz=0.471703386
+shape id=shape_00201 kind=sphere r=0.457883242
+shape id=shape_00202 kind=box hx=0.380247021 hy=0.380247021 hz=0.380247021
+shape id=shape_00203 kind=box hx=0.529979324 hy=0.529979324 hz=0.529979324
+shape id=shape_00204 kind=box hx=0.554592562 hy=0.554592562 hz=0.554592562
+shape id=shape_00205 kind=box hx=0.334403944 hy=0.334403944 hz=0.334403944
+shape id=shape_00206 kind=box hx=0.272146749 hy=0.272146749 hz=0.272146749
+shape id=shape_00207 kind=sphere r=0.52288425
+shape id=shape_00208 kind=sphere r=0.430475113
+shape id=shape_00209 kind=box hx=0.256564021 hy=0.256564021 hz=0.256564021
+shape id=shape_00210 kind=box hx=0.502072191 hy=0.502072191 hz=0.502072191
+shape id=shape_00211 kind=sphere r=0.382762489
+shape id=shape_00212 kind=box hx=0.568270302 hy=0.568270302 hz=0.568270302
+shape id=shape_00213 kind=sphere r=0.454180428
+shape id=shape_00214 kind=sphere r=0.257984746
+shape id=shape_00215 kind=sphere r=0.556742668
+shape id=shape_00216 kind=box hx=0.304289794 hy=0.304289794 hz=0.304289794
+shape id=shape_00217 kind=sphere r=0.377565086
+shape id=shape_00218 kind=box hx=0.277804828 hy=0.277804828 hz=0.277804828
+shape id=shape_00219 kind=sphere r=0.507750642
+shape id=shape_00220 kind=box hx=0.538070107 hy=0.538070107 hz=0.538070107
+shape id=shape_00221 kind=box hx=0.255637431 hy=0.255637431 hz=0.255637431
+shape id=shape_00222 kind=sphere r=0.374845439
+shape id=shape_00223 kind=sphere r=0.340134948
+shape id=shape_00224 kind=sphere r=0.275979838
+shape id=shape_00225 kind=box hx=0.31506629 hy=0.31506629 hz=0.31506629
+shape id=shape_00226 kind=sphere r=0.48747552
+shape id=shape_00227 kind=sphere r=0.478637952
+shape id=shape_00228 kind=box hx=0.206407428 hy=0.206407428 hz=0.206407428
+shape id=shape_00229 kind=sphere r=0.351499695
+shape id=shape_00230 kind=sphere r=0.340714526
+shape id=shape_00231 kind=sphere r=0.598707706
+shape id=shape_00232 kind=sphere r=0.252816007
+shape id=shape_00233 kind=box hx=0.580150604 hy=0.580150604 hz=0.580150604
+shape id=shape_00234 kind=sphere r=0.411034769
+shape id=shape_00235 kind=box hx=0.446156573 hy=0.446156573 hz=0.446156573
+shape id=shape_00236 kind=sphere r=0.333794349
+shape id=shape_00237 kind=box hx=0.469377351 hy=0.469377351 hz=0.469377351
+shape id=shape_00238 kind=sphere r=0.422890055
+shape id=shape_00239 kind=box hx=0.465976453 hy=0.465976453 hz=0.465976453
+shape id=shape_00240 kind=box hx=0.585833526 hy=0.585833526 hz=0.585833526
+shape id=shape_00241 kind=sphere r=0.358241546
+shape id=shape_00242 kind=sphere r=0.370829305
+shape id=shape_00243 kind=box hx=0.437312603 hy=0.437312603 hz=0.437312603
+shape id=shape_00244 kind=box hx=0.305439043 hy=0.305439043 hz=0.305439043
+shape id=shape_00245 kind=sphere r=0.492726412
+shape id=shape_00246 kind=box hx=0.401438761 hy=0.401438761 hz=0.401438761
+shape id=shape_00247 kind=box hx=0.212137222 hy=0.212137222 hz=0.212137222
+shape id=shape_00248 kind=sphere r=0.461781821
+shape id=shape_00249 kind=box hx=0.40971837 hy=0.40971837 hz=0.40971837
+shape id=shape_00250 kind=box hx=0.580358672 hy=0.580358672 hz=0.580358672
+shape id=shape_00251 kind=box hx=0.47239244 hy=0.47239244 hz=0.47239244
+shape id=shape_00252 kind=box hx=0.418288279 hy=0.418288279 hz=0.418288279
+shape id=shape_00253 kind=sphere r=0.331915343
+shape id=shape_00254 kind=box hx=0.298154306 hy=0.298154306 hz=0.298154306
+shape id=shape_00255 kind=sphere r=0.446034443
+shape id=shape_00256 kind=box hx=0.279744363 hy=0.279744363 hz=0.279744363
+shape id=shape_00257 kind=sphere r=0.343930262
+shape id=shape_00258 kind=sphere r=0.379472297
+shape id=shape_00259 kind=box hx=0.416581702 hy=0.416581702 hz=0.416581702
+shape id=shape_00260 kind=box hx=0.412686729 hy=0.412686729 hz=0.412686729
+shape id=shape_00261 kind=sphere r=0.371908414
+shape id=shape_00262 kind=sphere r=0.287561962
+shape id=shape_00263 kind=box hx=0.494694638 hy=0.494694638 hz=0.494694638
+shape id=shape_00264 kind=sphere r=0.590487808
+shape id=shape_00265 kind=box hx=0.575271201 hy=0.575271201 hz=0.575271201
+shape id=shape_00266 kind=sphere r=0.547467297
+shape id=shape_00267 kind=box hx=0.341145396 hy=0.341145396 hz=0.341145396
+shape id=shape_00268 kind=sphere r=0.411088112
+shape id=shape_00269 kind=sphere r=0.307100126
+shape id=shape_00270 kind=sphere r=0.379052603
+shape id=shape_00271 kind=sphere r=0.385326424
+shape id=shape_00272 kind=box hx=0.350903273 hy=0.350903273 hz=0.350903273
+shape id=shape_00273 kind=box hx=0.297775531 hy=0.297775531 hz=0.297775531
+shape id=shape_00274 kind=box hx=0.387043095 hy=0.387043095 hz=0.387043095
+shape id=shape_00275 kind=box hx=0.589501786 hy=0.589501786 hz=0.589501786
+shape id=shape_00276 kind=box hx=0.208415318 hy=0.208415318 hz=0.208415318
+shape id=shape_00277 kind=box hx=0.527119088 hy=0.527119088 hz=0.527119088
+shape id=shape_00278 kind=box hx=0.532892656 hy=0.532892656 hz=0.532892656
+shape id=shape_00279 kind=box hx=0.434389162 hy=0.434389162 hz=0.434389162
+shape id=shape_00280 kind=sphere r=0.383607531
+shape id=shape_00281 kind=box hx=0.592342734 hy=0.592342734 hz=0.592342734
+shape id=shape_00282 kind=box hx=0.252838254 hy=0.252838254 hz=0.252838254
+shape id=shape_00283 kind=sphere r=0.260174924
+shape id=shape_00284 kind=box hx=0.470050645 hy=0.470050645 hz=0.470050645
+shape id=shape_00285 kind=sphere r=0.576587373
+shape id=shape_00286 kind=box hx=0.585394359 hy=0.585394359 hz=0.585394359
+shape id=shape_00287 kind=sphere r=0.562944391
+shape id=shape_00288 kind=box hx=0.313942122 hy=0.313942122 hz=0.313942122
+shape id=shape_00289 kind=sphere r=0.506517991
+shape id=shape_00290 kind=sphere r=0.529664695
+shape id=shape_00291 kind=box hx=0.448974562 hy=0.448974562 hz=0.448974562
+shape id=shape_00292 kind=box hx=0.592351985 hy=0.592351985 hz=0.592351985
+shape id=shape_00293 kind=box hx=0.489330745 hy=0.489330745 hz=0.489330745
+shape id=shape_00294 kind=box hx=0.425930309 hy=0.425930309 hz=0.425930309
+shape id=shape_00295 kind=box hx=0.434840107 hy=0.434840107 hz=0.434840107
+shape id=shape_00296 kind=box hx=0.269614339 hy=0.269614339 hz=0.269614339
+shape id=shape_00297 kind=box hx=0.347175741 hy=0.347175741 hz=0.347175741
+shape id=shape_00298 kind=sphere r=0.498464695
+shape id=shape_00299 kind=sphere r=0.411626217
+shape id=shape_00300 kind=box hx=0.330385065 hy=0.330385065 hz=0.330385065
+shape id=shape_00301 kind=sphere r=0.391081041
+shape id=shape_00302 kind=sphere r=0.559079087
+shape id=shape_00303 kind=box hx=0.366241789 hy=0.366241789 hz=0.366241789
+shape id=shape_00304 kind=box hx=0.217948723 hy=0.217948723 hz=0.217948723
+shape id=shape_00305 kind=box hx=0.288563037 hy=0.288563037 hz=0.288563037
+shape id=shape_00306 kind=box hx=0.434411931 hy=0.434411931 hz=0.434411931
+shape id=shape_00307 kind=sphere r=0.357240334
+shape id=shape_00308 kind=sphere r=0.359792775
+shape id=shape_00309 kind=sphere r=0.378403014
+shape id=shape_00310 kind=sphere r=0.25752458
+shape id=shape_00311 kind=sphere r=0.591492566
+shape id=shape_00312 kind=box hx=0.495958543 hy=0.495958543 hz=0.495958543
+shape id=shape_00313 kind=box hx=0.5893121 hy=0.5893121 hz=0.5893121
+shape id=shape_00314 kind=sphere r=0.557839781
+shape id=shape_00315 kind=box hx=0.265975475 hy=0.265975475 hz=0.265975475
+shape id=shape_00316 kind=box hx=0.234450555 hy=0.234450555 hz=0.234450555
+shape id=shape_00317 kind=box hx=0.547688651 hy=0.547688651 hz=0.547688651
+shape id=shape_00318 kind=box hx=0.431378317 hy=0.431378317 hz=0.431378317
+shape id=shape_00319 kind=box hx=0.39533534 hy=0.39533534 hz=0.39533534
+shape id=shape_00320 kind=box hx=0.410472703 hy=0.410472703 hz=0.410472703
+shape id=shape_00321 kind=sphere r=0.294985133
+shape id=shape_00322 kind=sphere r=0.289550596
+shape id=shape_00323 kind=box hx=0.518026948 hy=0.518026948 hz=0.518026948
+shape id=shape_00324 kind=sphere r=0.502519152
+shape id=shape_00325 kind=box hx=0.353854251 hy=0.353854251 hz=0.353854251
+shape id=shape_00326 kind=sphere r=0.343154961
+shape id=shape_00327 kind=box hx=0.211724854 hy=0.211724854 hz=0.211724854
+shape id=shape_00328 kind=box hx=0.350602078 hy=0.350602078 hz=0.350602078
+shape id=shape_00329 kind=sphere r=0.251676023
+shape id=shape_00330 kind=sphere r=0.558173504
+shape id=shape_00331 kind=box hx=0.343453526 hy=0.343453526 hz=0.343453526
+shape id=shape_00332 kind=box hx=0.326839709 hy=0.326839709 hz=0.326839709
+shape id=shape_00333 kind=box hx=0.214315391 hy=0.214315391 hz=0.214315391
+shape id=shape_00334 kind=sphere r=0.435821885
+shape id=shape_00335 kind=box hx=0.430102634 hy=0.430102634 hz=0.430102634
+shape id=shape_00336 kind=sphere r=0.349126226
+shape id=shape_00337 kind=box hx=0.237624502 hy=0.237624502 hz=0.237624502
+shape id=shape_00338 kind=box hx=0.411434698 hy=0.411434698 hz=0.411434698
+shape id=shape_00339 kind=sphere r=0.306219119
+shape id=shape_00340 kind=sphere r=0.561099306
+shape id=shape_00341 kind=box hx=0.367750502 hy=0.367750502 hz=0.367750502
+shape id=shape_00342 kind=box hx=0.400981593 hy=0.400981593 hz=0.400981593
+shape id=shape_00343 kind=box hx=0.481630516 hy=0.481630516 hz=0.481630516
+shape id=shape_00344 kind=sphere r=0.496288994
+shape id=shape_00345 kind=sphere r=0.363565683
+shape id=shape_00346 kind=sphere r=0.574962398
+shape id=shape_00347 kind=sphere r=0.446129134
+shape id=shape_00348 kind=box hx=0.316423893 hy=0.316423893 hz=0.316423893
+shape id=shape_00349 kind=sphere r=0.310460433
+shape id=shape_00350 kind=box hx=0.373082113 hy=0.373082113 hz=0.373082113
+shape id=shape_00351 kind=sphere r=0.298832476
+shape id=shape_00352 kind=box hx=0.325497723 hy=0.325497723 hz=0.325497723
+shape id=shape_00353 kind=sphere r=0.458989722
+shape id=shape_00354 kind=sphere r=0.529930744
+shape id=shape_00355 kind=box hx=0.359846592 hy=0.359846592 hz=0.359846592
+shape id=shape_00356 kind=box hx=0.410258055 hy=0.410258055 hz=0.410258055
+shape id=shape_00357 kind=box hx=0.337008214 hy=0.337008214 hz=0.337008214
+shape id=shape_00358 kind=box hx=0.551765347 hy=0.551765347 hz=0.551765347
+shape id=shape_00359 kind=sphere r=0.260568771
+shape id=shape_00360 kind=box hx=0.420329618 hy=0.420329618 hz=0.420329618
+shape id=shape_00361 kind=box hx=0.311002493 hy=0.311002493 hz=0.311002493
+shape id=shape_00362 kind=sphere r=0.309195489
+shape id=shape_00363 kind=sphere r=0.56988447
+shape id=shape_00364 kind=sphere r=0.384524503
+shape id=shape_00365 kind=sphere r=0.278391796
+shape id=shape_00366 kind=sphere r=0.461093825
+shape id=shape_00367 kind=box hx=0.245587635 hy=0.245587635 hz=0.245587635
+shape id=shape_00368 kind=sphere r=0.312121999
+shape id=shape_00369 kind=sphere r=0.25016124
+shape id=shape_00370 kind=sphere r=0.358618015
+shape id=shape_00371 kind=box hx=0.536880422 hy=0.536880422 hz=0.536880422
+shape id=shape_00372 kind=sphere r=0.298431703
+shape id=shape_00373 kind=box hx=0.551316643 hy=0.551316643 hz=0.551316643
+shape id=shape_00374 kind=sphere r=0.35462971
+shape id=shape_00375 kind=box hx=0.511834359 hy=0.511834359 hz=0.511834359
+shape id=shape_00376 kind=sphere r=0.345529535
+shape id=shape_00377 kind=box hx=0.582104611 hy=0.582104611 hz=0.582104611
+shape id=shape_00378 kind=sphere r=0.430806708
+shape id=shape_00379 kind=box hx=0.233615541 hy=0.233615541 hz=0.233615541
+shape id=shape_00380 kind=sphere r=0.425977638
+shape id=shape_00381 kind=sphere r=0.364992139
+shape id=shape_00382 kind=sphere r=0.381632519
+shape id=shape_00383 kind=box hx=0.24442153 hy=0.24442153 hz=0.24442153
+shape id=shape_00384 kind=box hx=0.329931903 hy=0.329931903 hz=0.329931903
+shape id=shape_00385 kind=sphere r=0.257697856
+shape id=shape_00386 kind=box hx=0.440089345 hy=0.440089345 hz=0.440089345
+shape id=shape_00387 kind=box hx=0.513825965 hy=0.513825965 hz=0.513825965
+shape id=shape_00388 kind=sphere r=0.469202781
+shape id=shape_00389 kind=sphere r=0.537388963
+shape id=shape_00390 kind=sphere r=0.295660216
+shape id=shape_00391 kind=box hx=0.291196728 hy=0.291196728 hz=0.291196728
+shape id=shape_00392 kind=sphere r=0.374367729
+shape id=shape_00393 kind=sphere r=0.322571442
+shape id=shape_00394 kind=sphere r=0.472761565
+shape id=shape_00395 kind=box hx=0.56425004 hy=0.56425004 hz=0.56425004
+shape id=shape_00396 kind=box hx=0.562036681 hy=0.562036681 hz=0.562036681
+shape id=shape_00397 kind=box hx=0.217993593 hy=0.217993593 hz=0.217993593
+shape id=shape_00398 kind=box hx=0.323864079 hy=0.323864079 hz=0.323864079
+shape id=shape_00399 kind=box hx=0.544116616 hy=0.544116616 hz=0.544116616
+shape id=shape_00400 kind=sphere r=0.381339329
+shape id=shape_00401 kind=box hx=0.297422028 hy=0.297422028 hz=0.297422028
+shape id=shape_00402 kind=box hx=0.547714567 hy=0.547714567 hz=0.547714567
+shape id=shape_00403 kind=sphere r=0.315830946
+shape id=shape_00404 kind=box hx=0.221441483 hy=0.221441483 hz=0.221441483
+shape id=shape_00405 kind=sphere r=0.30834471
+shape id=shape_00406 kind=box hx=0.369398212 hy=0.369398212 hz=0.369398212
+shape id=shape_00407 kind=sphere r=0.283846402
+shape id=shape_00408 kind=box hx=0.452575636 hy=0.452575636 hz=0.452575636
+shape id=shape_00409 kind=sphere r=0.338932902
+shape id=shape_00410 kind=sphere r=0.320131049
+shape id=shape_00411 kind=sphere r=0.286696371
+shape id=shape_00412 kind=sphere r=0.598619837
+shape id=shape_00413 kind=sphere r=0.531925532
+shape id=shape_00414 kind=sphere r=0.445020089
+shape id=shape_00415 kind=box hx=0.548341751 hy=0.548341751 hz=0.548341751
+shape id=shape_00416 kind=sphere r=0.542109802
+shape id=shape_00417 kind=sphere r=0.403673661
+shape id=shape_00418 kind=box hx=0.426069283 hy=0.426069283 hz=0.426069283
+shape id=shape_00419 kind=box hx=0.574086595 hy=0.574086595 hz=0.574086595
+shape id=shape_00420 kind=box hx=0.467081714 hy=0.467081714 hz=0.467081714
+shape id=shape_00421 kind=box hx=0.222552586 hy=0.222552586 hz=0.222552586
+shape id=shape_00422 kind=sphere r=0.391103488
+shape id=shape_00423 kind=box hx=0.59447794 hy=0.59447794 hz=0.59447794
+shape id=shape_00424 kind=sphere r=0.478456998
+shape id=shape_00425 kind=box hx=0.223424792 hy=0.223424792 hz=0.223424792
+shape id=shape_00426 kind=sphere r=0.462331066
+shape id=shape_00427 kind=box hx=0.444384599 hy=0.444384599 hz=0.444384599
+shape id=shape_00428 kind=sphere r=0.365340215
+shape id=shape_00429 kind=box hx=0.375431609 hy=0.375431609 hz=0.375431609
+shape id=shape_00430 kind=sphere r=0.356355175
+shape id=shape_00431 kind=sphere r=0.59444336
+shape id=shape_00432 kind=sphere r=0.255402347
+shape id=shape_00433 kind=sphere r=0.462637627
+shape id=shape_00434 kind=sphere r=0.363349953
+shape id=shape_00435 kind=sphere r=0.330482545
+shape id=shape_00436 kind=sphere r=0.587500757
+shape id=shape_00437 kind=box hx=0.434197497 hy=0.434197497 hz=0.434197497
+shape id=shape_00438 kind=sphere r=0.439972305
+shape id=shape_00439 kind=sphere r=0.471863368
+shape id=shape_00440 kind=box hx=0.406323195 hy=0.406323195 hz=0.406323195
+shape id=shape_00441 kind=sphere r=0.490737319
+shape id=shape_00442 kind=box hx=0.303155923 hy=0.303155923 hz=0.303155923
+shape id=shape_00443 kind=box hx=0.46175859 hy=0.46175859 hz=0.46175859
+shape id=shape_00444 kind=sphere r=0.376873752
+shape id=shape_00445 kind=sphere r=0.521728182
+shape id=shape_00446 kind=box hx=0.537466621 hy=0.537466621 hz=0.537466621
+shape id=shape_00447 kind=sphere r=0.362645018
+shape id=shape_00448 kind=sphere r=0.293110195
+shape id=shape_00449 kind=sphere r=0.270396808
+shape id=shape_00450 kind=box hx=0.319715881 hy=0.319715881 hz=0.319715881
+shape id=shape_00451 kind=sphere r=0.423266107
+shape id=shape_00452 kind=box hx=0.208937573 hy=0.208937573 hz=0.208937573
+shape id=shape_00453 kind=sphere r=0.54252474
+shape id=shape_00454 kind=box hx=0.290038967 hy=0.290038967 hz=0.290038967
+shape id=shape_00455 kind=sphere r=0.315857753
+shape id=shape_00456 kind=sphere r=0.327303109
+shape id=shape_00457 kind=box hx=0.590250134 hy=0.590250134 hz=0.590250134
+shape id=shape_00458 kind=box hx=0.383002186 hy=0.383002186 hz=0.383002186
+shape id=shape_00459 kind=sphere r=0.55312013
+shape id=shape_00460 kind=box hx=0.292970777 hy=0.292970777 hz=0.292970777
+shape id=shape_00461 kind=box hx=0.231578922 hy=0.231578922 hz=0.231578922
+shape id=shape_00462 kind=box hx=0.453269672 hy=0.453269672 hz=0.453269672
+shape id=shape_00463 kind=box hx=0.304840899 hy=0.304840899 hz=0.304840899
+shape id=shape_00464 kind=box hx=0.52316215 hy=0.52316215 hz=0.52316215
+shape id=shape_00465 kind=sphere r=0.311441994
+shape id=shape_00466 kind=sphere r=0.553492343
+shape id=shape_00467 kind=sphere r=0.26318219
+shape id=shape_00468 kind=box hx=0.402045512 hy=0.402045512 hz=0.402045512
+shape id=shape_00469 kind=box hx=0.598988414 hy=0.598988414 hz=0.598988414
+shape id=shape_00470 kind=sphere r=0.48254959
+shape id=shape_00471 kind=box hx=0.525037265 hy=0.525037265 hz=0.525037265
+shape id=shape_00472 kind=box hx=0.387765455 hy=0.387765455 hz=0.387765455
+shape id=shape_00473 kind=box hx=0.273704076 hy=0.273704076 hz=0.273704076
+shape id=shape_00474 kind=sphere r=0.599933702
+shape id=shape_00475 kind=sphere r=0.494648248
+shape id=shape_00476 kind=box hx=0.513835883 hy=0.513835883 hz=0.513835883
+shape id=shape_00477 kind=box hx=0.578217578 hy=0.578217578 hz=0.578217578
+shape id=shape_00478 kind=sphere r=0.377894762
+shape id=shape_00479 kind=sphere r=0.51973694
+shape id=shape_00480 kind=sphere r=0.359415159
+shape id=shape_00481 kind=box hx=0.222997713 hy=0.222997713 hz=0.222997713
+shape id=shape_00482 kind=sphere r=0.527931449
+shape id=shape_00483 kind=sphere r=0.488591534
+shape id=shape_00484 kind=box hx=0.434218121 hy=0.434218121 hz=0.434218121
+shape id=shape_00485 kind=box hx=0.205638981 hy=0.205638981 hz=0.205638981
+shape id=shape_00486 kind=sphere r=0.430926558
+shape id=shape_00487 kind=box hx=0.523647666 hy=0.523647666 hz=0.523647666
+shape id=shape_00488 kind=sphere r=0.254165816
+shape id=shape_00489 kind=sphere r=0.426453242
+shape id=shape_00490 kind=box hx=0.54340632 hy=0.54340632 hz=0.54340632
+shape id=shape_00491 kind=sphere r=0.399491364
+shape id=shape_00492 kind=sphere r=0.44925963
+shape id=shape_00493 kind=box hx=0.476596403 hy=0.476596403 hz=0.476596403
+shape id=shape_00494 kind=sphere r=0.579279691
+shape id=shape_00495 kind=box hx=0.482472062 hy=0.482472062 hz=0.482472062
+shape id=shape_00496 kind=box hx=0.384373546 hy=0.384373546 hz=0.384373546
+shape id=shape_00497 kind=box hx=0.273971272 hy=0.273971272 hz=0.273971272
+shape id=shape_00498 kind=sphere r=0.527320287
+shape id=shape_00499 kind=box hx=0.589689612 hy=0.589689612 hz=0.589689612
+shape id=shape_00500 kind=sphere r=0.327613404
+shape id=shape_00501 kind=box hx=0.35805819 hy=0.35805819 hz=0.35805819
+shape id=shape_00502 kind=box hx=0.317217565 hy=0.317217565 hz=0.317217565
+shape id=shape_00503 kind=box hx=0.345782399 hy=0.345782399 hz=0.345782399
+shape id=shape_00504 kind=box hx=0.592253256 hy=0.592253256 hz=0.592253256
+shape id=shape_00505 kind=box hx=0.309209418 hy=0.309209418 hz=0.309209418
+shape id=shape_00506 kind=sphere r=0.415918747
+shape id=shape_00507 kind=sphere r=0.378140137
+shape id=shape_00508 kind=box hx=0.30930953 hy=0.30930953 hz=0.30930953
+shape id=shape_00509 kind=box hx=0.328499937 hy=0.328499937 hz=0.328499937
+shape id=shape_00510 kind=box hx=0.547614074 hy=0.547614074 hz=0.547614074
+shape id=shape_00511 kind=box hx=0.585004139 hy=0.585004139 hz=0.585004139
+
+# bodies
+body id=body_00000 shape=shape_00000 motion=dynamic material=0 mesh=0 px=-0.863807798 py=31.6787653 pz=1.6449949 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00001 shape=shape_00001 motion=dynamic material=0 mesh=0 px=2.08840561 py=262.351224 pz=1.32064128 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00002 shape=shape_00002 motion=dynamic material=0 mesh=0 px=-0.493530264 py=131.389167 pz=1.82095676 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00003 shape=shape_00003 motion=dynamic material=0 mesh=0 px=-2.03955724 py=85.9149424 pz=0.740432589 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00004 shape=shape_00004 motion=dynamic material=0 mesh=0 px=-0.505064402 py=248.240194 pz=-2.28026828 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00005 shape=shape_00005 motion=dynamic material=0 mesh=0 px=0.368518467 py=217.720628 pz=0.585087452 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00006 shape=shape_00006 motion=dynamic material=0 mesh=0 px=-0.10646664 py=169.950248 pz=0.270407407 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00007 shape=shape_00007 motion=dynamic material=0 mesh=0 px=0.614152102 py=61.3037424 pz=-1.31969054 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00008 shape=shape_00008 motion=dynamic material=0 mesh=0 px=-1.70071891 py=44.1153642 pz=0.0139522906 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00009 shape=shape_00009 motion=dynamic material=0 mesh=0 px=1.62281298 py=22.2172111 pz=0.764977326 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00010 shape=shape_00010 motion=dynamic material=0 mesh=0 px=-0.248759867 py=184.460504 pz=-1.96344986 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00011 shape=shape_00011 motion=dynamic material=0 mesh=0 px=0.613605065 py=124.114684 pz=0.111094896 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00012 shape=shape_00012 motion=dynamic material=0 mesh=0 px=-1.93008018 py=290.134435 pz=1.13806983 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00013 shape=shape_00013 motion=dynamic material=0 mesh=0 px=-1.30520207 py=265.305205 pz=-0.212861588 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00014 shape=shape_00014 motion=dynamic material=0 mesh=0 px=-1.84146073 py=194.983963 pz=0.588972743 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00015 shape=shape_00015 motion=dynamic material=0 mesh=0 px=-0.171497908 py=154.448339 pz=1.88090596 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00016 shape=shape_00016 motion=dynamic material=0 mesh=0 px=0.52435701 py=217.486546 pz=-0.422784663 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00017 shape=shape_00017 motion=dynamic material=0 mesh=0 px=0.493527163 py=285.024085 pz=-0.818767746 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00018 shape=shape_00018 motion=dynamic material=0 mesh=0 px=-1.54875848 py=20.3532958 pz=-1.60956261 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00019 shape=shape_00019 motion=dynamic material=0 mesh=0 px=1.51903544 py=286.584085 pz=-1.62603132 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00020 shape=shape_00020 motion=dynamic material=0 mesh=0 px=-2.08471977 py=64.0198735 pz=0.112887574 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00021 shape=shape_00021 motion=dynamic material=0 mesh=0 px=0.594133887 py=71.6340022 pz=0.027903548 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00022 shape=shape_00022 motion=dynamic material=0 mesh=0 px=1.314773 py=99.7732269 pz=1.27398055 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00023 shape=shape_00023 motion=dynamic material=0 mesh=0 px=-0.589596671 py=96.3330488 pz=2.08884878 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00024 shape=shape_00024 motion=dynamic material=0 mesh=0 px=2.34548748 py=193.538288 pz=0.862037769 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00025 shape=shape_00025 motion=dynamic material=0 mesh=0 px=0.67579362 py=123.934662 pz=1.33598795 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00026 shape=shape_00026 motion=dynamic material=0 mesh=0 px=-1.89659982 py=107.484157 pz=-1.59817159 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00027 shape=shape_00027 motion=dynamic material=0 mesh=0 px=-0.18972594 py=54.1596712 pz=2.39821678 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00028 shape=shape_00028 motion=dynamic material=0 mesh=0 px=-1.60911457 py=99.6231533 pz=0.192246931 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00029 shape=shape_00029 motion=dynamic material=0 mesh=0 px=-2.30449503 py=184.128008 pz=0.00424361961 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00030 shape=shape_00030 motion=dynamic material=0 mesh=0 px=-1.05397443 py=19.2772315 pz=1.78309289 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00031 shape=shape_00031 motion=dynamic material=0 mesh=0 px=1.2734038 py=42.015579 pz=-1.59136332 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00032 shape=shape_00032 motion=dynamic material=0 mesh=0 px=-0.40063844 py=143.151872 pz=1.08512117 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00033 shape=shape_00033 motion=dynamic material=0 mesh=0 px=-1.73205051 py=107.69828 pz=-1.39460044 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00034 shape=shape_00034 motion=dynamic material=0 mesh=0 px=-1.55188018 py=224.661389 pz=-0.859238391 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00035 shape=shape_00035 motion=dynamic material=0 mesh=0 px=-0.656472573 py=272.079647 pz=1.48977235 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00036 shape=shape_00036 motion=dynamic material=0 mesh=0 px=0.37560956 py=14.8686726 pz=-0.937492537 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00037 shape=shape_00037 motion=dynamic material=0 mesh=0 px=0.748851465 py=57.7156463 pz=-0.941569245 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00038 shape=shape_00038 motion=dynamic material=0 mesh=0 px=2.28777679 py=235.077761 pz=0.967611281 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00039 shape=shape_00039 motion=dynamic material=0 mesh=0 px=-2.24485222 py=145.438337 pz=0.246689277 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00040 shape=shape_00040 motion=dynamic material=0 mesh=0 px=0.0715721805 py=212.603058 pz=-1.79459159 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00041 shape=shape_00041 motion=dynamic material=0 mesh=0 px=-0.436492493 py=289.083833 pz=1.66496282 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00042 shape=shape_00042 motion=dynamic material=0 mesh=0 px=0.644930713 py=275.9623 pz=0.0793886706 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00043 shape=shape_00043 motion=dynamic material=0 mesh=0 px=2.1090701 py=260.352007 pz=-0.658226903 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00044 shape=shape_00044 motion=dynamic material=0 mesh=0 px=0.0882208853 py=39.8959744 pz=-0.548784421 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00045 shape=shape_00045 motion=dynamic material=0 mesh=0 px=0.473661471 py=245.544706 pz=-2.10822446 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00046 shape=shape_00046 motion=dynamic material=0 mesh=0 px=-0.942192223 py=220.592651 pz=-0.792678256 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00047 shape=shape_00047 motion=dynamic material=0 mesh=0 px=1.34770222 py=36.7101713 pz=-1.31374476 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00048 shape=shape_00048 motion=dynamic material=0 mesh=0 px=-0.63362603 py=212.67077 pz=2.3541229 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00049 shape=shape_00049 motion=dynamic material=0 mesh=0 px=-1.3756446 py=238.211395 pz=0.678607631 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00050 shape=shape_00050 motion=dynamic material=0 mesh=0 px=-0.134836067 py=100.533846 pz=1.42906274 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00051 shape=shape_00051 motion=dynamic material=0 mesh=0 px=1.51266292 py=118.662725 pz=1.76643487 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00052 shape=shape_00052 motion=dynamic material=0 mesh=0 px=1.84680418 py=262.670261 pz=-0.0102557603 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00053 shape=shape_00053 motion=dynamic material=0 mesh=0 px=1.67373593 py=204.964852 pz=-0.251363882 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00054 shape=shape_00054 motion=dynamic material=0 mesh=0 px=-0.0255375689 py=182.969039 pz=0.0214176129 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00055 shape=shape_00055 motion=dynamic material=0 mesh=0 px=0.366056326 py=290.773229 pz=-0.950304822 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00056 shape=shape_00056 motion=dynamic material=0 mesh=0 px=-1.52676546 py=158.666467 pz=-1.68720992 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00057 shape=shape_00057 motion=dynamic material=0 mesh=0 px=-0.500316917 py=277.747937 pz=2.29458026 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00058 shape=shape_00058 motion=dynamic material=0 mesh=0 px=0.30637201 py=18.0472383 pz=-2.2022859 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00059 shape=shape_00059 motion=dynamic material=0 mesh=0 px=-2.10913918 py=211.456688 pz=-1.11721189 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00060 shape=shape_00060 motion=dynamic material=0 mesh=0 px=-0.30108007 py=63.8748994 pz=2.33799063 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00061 shape=shape_00061 motion=dynamic material=0 mesh=0 px=-0.0491415303 py=236.675542 pz=1.47903619 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00062 shape=shape_00062 motion=dynamic material=0 mesh=0 px=-0.515301443 py=67.1641452 pz=1.42202711 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00063 shape=shape_00063 motion=dynamic material=0 mesh=0 px=-2.1636485 py=227.706301 pz=-0.814913543 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00064 shape=shape_00064 motion=dynamic material=0 mesh=0 px=0.188068969 py=52.6996086 pz=-0.161322912 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00065 shape=shape_00065 motion=dynamic material=0 mesh=0 px=-1.11560005 py=16.7642709 pz=-1.81079586 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00066 shape=shape_00066 motion=dynamic material=0 mesh=0 px=1.36894326 py=277.481383 pz=2.00339627 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00067 shape=shape_00067 motion=dynamic material=0 mesh=0 px=-0.772644789 py=153.003785 pz=-1.2521249 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00068 shape=shape_00068 motion=dynamic material=0 mesh=0 px=2.2092126 py=280.668553 pz=0.148627375 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00069 shape=shape_00069 motion=dynamic material=0 mesh=0 px=0.874026901 py=157.516961 pz=1.58345344 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00070 shape=shape_00070 motion=dynamic material=0 mesh=0 px=0.143087303 py=51.2695291 pz=-0.514268764 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00071 shape=shape_00071 motion=dynamic material=0 mesh=0 px=-0.908799766 py=51.823175 pz=2.03446225 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00072 shape=shape_00072 motion=dynamic material=0 mesh=0 px=0.920352176 py=296.001602 pz=1.6960021 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00073 shape=shape_00073 motion=dynamic material=0 mesh=0 px=-1.35231431 py=296.835839 pz=1.49804532 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00074 shape=shape_00074 motion=dynamic material=0 mesh=0 px=1.57657679 py=275.518704 pz=-1.32457095 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00075 shape=shape_00075 motion=dynamic material=0 mesh=0 px=0.398665592 py=96.1612283 pz=-0.51850402 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00076 shape=shape_00076 motion=dynamic material=0 mesh=0 px=-2.19844234 py=171.751936 pz=0.559718087 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00077 shape=shape_00077 motion=dynamic material=0 mesh=0 px=-0.820169267 py=285.193995 pz=0.578603542 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00078 shape=shape_00078 motion=dynamic material=0 mesh=0 px=2.12948518 py=29.049149 pz=0.332837684 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00079 shape=shape_00079 motion=dynamic material=0 mesh=0 px=-0.588998411 py=172.185702 pz=0.862738801 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00080 shape=shape_00080 motion=dynamic material=0 mesh=0 px=0.452611572 py=184.008356 pz=-1.18600364 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00081 shape=shape_00081 motion=dynamic material=0 mesh=0 px=-0.520679773 py=187.216274 pz=-2.2804727 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00082 shape=shape_00082 motion=dynamic material=0 mesh=0 px=0.405791502 py=153.774603 pz=1.9423884 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00083 shape=shape_00083 motion=dynamic material=0 mesh=0 px=-1.73583475 py=213.843513 pz=-0.949833226 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00084 shape=shape_00084 motion=dynamic material=0 mesh=0 px=0.0759922047 py=230.792779 pz=0.744528179 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00085 shape=shape_00085 motion=dynamic material=0 mesh=0 px=1.65341702 py=35.4678941 pz=-0.872253711 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00086 shape=shape_00086 motion=dynamic material=0 mesh=0 px=2.21359058 py=233.155123 pz=0.193755228 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00087 shape=shape_00087 motion=dynamic material=0 mesh=0 px=0.39285756 py=23.6498841 pz=1.4388135 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00088 shape=shape_00088 motion=dynamic material=0 mesh=0 px=0.829184125 py=283.717986 pz=0.658654723 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00089 shape=shape_00089 motion=dynamic material=0 mesh=0 px=-1.35884564 py=162.887925 pz=0.736892973 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00090 shape=shape_00090 motion=dynamic material=0 mesh=0 px=1.24313787 py=292.665603 pz=0.393994845 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00091 shape=shape_00091 motion=dynamic material=0 mesh=0 px=-0.239625793 py=222.931951 pz=-1.26771562 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00092 shape=shape_00092 motion=dynamic material=0 mesh=0 px=-1.6509836 py=291.94797 pz=0.782073316 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00093 shape=shape_00093 motion=dynamic material=0 mesh=0 px=0.434811779 py=50.5577488 pz=-1.44618646 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00094 shape=shape_00094 motion=dynamic material=0 mesh=0 px=-0.73286251 py=172.409813 pz=-1.6217939 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00095 shape=shape_00095 motion=dynamic material=0 mesh=0 px=-1.0676085 py=276.99466 pz=-1.08655713 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00096 shape=shape_00096 motion=dynamic material=0 mesh=0 px=-0.114665577 py=297.301007 pz=-1.93683483 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00097 shape=shape_00097 motion=dynamic material=0 mesh=0 px=0.0122430304 py=237.426558 pz=-0.201655055 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00098 shape=shape_00098 motion=dynamic material=0 mesh=0 px=-2.09294529 py=230.795425 pz=-1.02362865 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00099 shape=shape_00099 motion=dynamic material=0 mesh=0 px=0.328861107 py=84.1341949 pz=-0.658317583 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00100 shape=shape_00100 motion=dynamic material=0 mesh=0 px=-0.038759598 py=147.858965 pz=-2.4280564 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00101 shape=shape_00101 motion=dynamic material=0 mesh=0 px=2.03600022 py=47.8223591 pz=1.05396041 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00102 shape=shape_00102 motion=dynamic material=0 mesh=0 px=-1.52102434 py=81.0730208 pz=-0.877614519 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00103 shape=shape_00103 motion=dynamic material=0 mesh=0 px=1.65202393 py=70.4597347 pz=-0.241734683 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00104 shape=shape_00104 motion=dynamic material=0 mesh=0 px=-0.620073261 py=204.81073 pz=0.323118316 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00105 shape=shape_00105 motion=dynamic material=0 mesh=0 px=-1.75440737 py=236.390921 pz=0.717474613 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00106 shape=shape_00106 motion=dynamic material=0 mesh=0 px=-0.311171823 py=48.4475895 pz=-0.291080478 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00107 shape=shape_00107 motion=dynamic material=0 mesh=0 px=0.0869850693 py=288.924489 pz=-1.48216863 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00108 shape=shape_00108 motion=dynamic material=0 mesh=0 px=0.952201442 py=59.6008354 pz=1.44355965 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00109 shape=shape_00109 motion=dynamic material=0 mesh=0 px=-1.79989306 py=249.005387 pz=-1.53744416 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00110 shape=shape_00110 motion=dynamic material=0 mesh=0 px=-1.12624666 py=254.138255 pz=0.513829391 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00111 shape=shape_00111 motion=dynamic material=0 mesh=0 px=-0.359447425 py=232.850543 pz=1.44217173 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00112 shape=shape_00112 motion=dynamic material=0 mesh=0 px=1.26315513 py=286.230684 pz=0.349703688 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00113 shape=shape_00113 motion=dynamic material=0 mesh=0 px=-0.349004005 py=183.182969 pz=0.624577685 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00114 shape=shape_00114 motion=dynamic material=0 mesh=0 px=-0.579792632 py=235.724633 pz=-1.60994577 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00115 shape=shape_00115 motion=dynamic material=0 mesh=0 px=2.00493445 py=198.815938 pz=0.578110293 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00116 shape=shape_00116 motion=dynamic material=0 mesh=0 px=0.805237154 py=113.112002 pz=2.2760428 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00117 shape=shape_00117 motion=dynamic material=0 mesh=0 px=0.246473951 py=81.012336 pz=-0.561939599 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00118 shape=shape_00118 motion=dynamic material=0 mesh=0 px=-0.412809627 py=128.531847 pz=-2.09224575 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00119 shape=shape_00119 motion=dynamic material=0 mesh=0 px=1.10482478 py=128.147691 pz=1.84156634 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00120 shape=shape_00120 motion=dynamic material=0 mesh=0 px=0.284133925 py=261.694065 pz=-0.671761274 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00121 shape=shape_00121 motion=dynamic material=0 mesh=0 px=-1.03461447 py=101.402727 pz=1.21985614 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00122 shape=shape_00122 motion=dynamic material=0 mesh=0 px=-0.283585646 py=190.04857 pz=-2.01107821 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00123 shape=shape_00123 motion=dynamic material=0 mesh=0 px=-0.193885524 py=264.414069 pz=-1.98203622 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00124 shape=shape_00124 motion=dynamic material=0 mesh=0 px=1.55694836 py=30.4312134 pz=1.33070188 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00125 shape=shape_00125 motion=dynamic material=0 mesh=0 px=1.35707235 py=86.2352242 pz=-1.07675407 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00126 shape=shape_00126 motion=dynamic material=0 mesh=0 px=0.765348764 py=160.221579 pz=2.10979845 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00127 shape=shape_00127 motion=dynamic material=0 mesh=0 px=2.07014104 py=84.9849561 pz=-1.39260636 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00128 shape=shape_00128 motion=dynamic material=0 mesh=0 px=0.244497157 py=75.8322583 pz=-0.53133666 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00129 shape=shape_00129 motion=dynamic material=0 mesh=0 px=2.20607691 py=224.976519 pz=0.21314854 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00130 shape=shape_00130 motion=dynamic material=0 mesh=0 px=1.53112386 py=244.18572 pz=0.778722616 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00131 shape=shape_00131 motion=dynamic material=0 mesh=0 px=-2.32838225 py=206.376111 pz=-0.112617846 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00132 shape=shape_00132 motion=dynamic material=0 mesh=0 px=0.238718047 py=223.951694 pz=1.24510844 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00133 shape=shape_00133 motion=dynamic material=0 mesh=0 px=-2.22742142 py=20.5349121 pz=-0.0267143863 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00134 shape=shape_00134 motion=dynamic material=0 mesh=0 px=-2.44373734 py=251.150909 pz=0.382770886 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00135 shape=shape_00135 motion=dynamic material=0 mesh=0 px=0.736172253 py=144.342857 pz=-0.909046716 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00136 shape=shape_00136 motion=dynamic material=0 mesh=0 px=0.773763169 py=266.189016 pz=-0.598951327 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00137 shape=shape_00137 motion=dynamic material=0 mesh=0 px=-0.597617988 py=186.401857 pz=1.49627136 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00138 shape=shape_00138 motion=dynamic material=0 mesh=0 px=0.693800269 py=6.7304256 pz=2.27391504 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00139 shape=shape_00139 motion=dynamic material=0 mesh=0 px=-1.68125572 py=256.765593 pz=0.700166246 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00140 shape=shape_00140 motion=dynamic material=0 mesh=0 px=-1.92743635 py=50.0090622 pz=0.396369448 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00141 shape=shape_00141 motion=dynamic material=0 mesh=0 px=0.746100711 py=72.2949986 pz=-0.859876044 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00142 shape=shape_00142 motion=dynamic material=0 mesh=0 px=0.830295564 py=253.105317 pz=0.219583141 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00143 shape=shape_00143 motion=dynamic material=0 mesh=0 px=-0.577060307 py=259.330459 pz=0.602145054 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00144 shape=shape_00144 motion=dynamic material=0 mesh=0 px=1.80556365 py=76.3126724 pz=1.4852062 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00145 shape=shape_00145 motion=dynamic material=0 mesh=0 px=-1.65517967 py=95.5631772 pz=-0.892935423 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00146 shape=shape_00146 motion=dynamic material=0 mesh=0 px=-1.39161106 py=204.250916 pz=-1.74299255 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00147 shape=shape_00147 motion=dynamic material=0 mesh=0 px=-0.0349385475 py=243.741808 pz=-0.0382052911 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00148 shape=shape_00148 motion=dynamic material=0 mesh=0 px=1.65738948 py=179.221932 pz=1.17727884 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00149 shape=shape_00149 motion=dynamic material=0 mesh=0 px=0.486477004 py=251.315404 pz=2.22669551 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00150 shape=shape_00150 motion=dynamic material=0 mesh=0 px=1.47384967 py=199.438277 pz=-0.99379665 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00151 shape=shape_00151 motion=dynamic material=0 mesh=0 px=-0.459195472 py=227.162556 pz=2.21170392 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00152 shape=shape_00152 motion=dynamic material=0 mesh=0 px=0.21460653 py=204.079691 pz=1.6494767 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00153 shape=shape_00153 motion=dynamic material=0 mesh=0 px=1.05658328 py=265.925353 pz=0.775145242 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00154 shape=shape_00154 motion=dynamic material=0 mesh=0 px=-0.818111544 py=99.6375053 pz=-0.0489007326 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00155 shape=shape_00155 motion=dynamic material=0 mesh=0 px=-0.898192936 py=163.254697 pz=-2.12487587 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00156 shape=shape_00156 motion=dynamic material=0 mesh=0 px=-2.18658663 py=250.341276 pz=1.20980094 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00157 shape=shape_00157 motion=dynamic material=0 mesh=0 px=-0.282740062 py=224.537794 pz=1.15149038 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00158 shape=shape_00158 motion=dynamic material=0 mesh=0 px=0.61047279 py=113.787473 pz=-1.3165246 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00159 shape=shape_00159 motion=dynamic material=0 mesh=0 px=1.04755945 py=251.480689 pz=-0.0631052541 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00160 shape=shape_00160 motion=dynamic material=0 mesh=0 px=2.17655633 py=91.3775032 pz=-0.923785904 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00161 shape=shape_00161 motion=dynamic material=0 mesh=0 px=-0.578656832 py=178.079715 pz=0.144761067 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00162 shape=shape_00162 motion=dynamic material=0 mesh=0 px=0.809141684 py=173.257245 pz=2.2541976 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00163 shape=shape_00163 motion=dynamic material=0 mesh=0 px=-1.76230298 py=151.625401 pz=-1.6714189 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00164 shape=shape_00164 motion=dynamic material=0 mesh=0 px=1.20921691 py=23.5153191 pz=-1.70008702 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00165 shape=shape_00165 motion=dynamic material=0 mesh=0 px=2.19696909 py=77.5821115 pz=-0.228990753 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00166 shape=shape_00166 motion=dynamic material=0 mesh=0 px=0.168668723 py=38.8682055 pz=-2.31271046 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00167 shape=shape_00167 motion=dynamic material=0 mesh=0 px=-0.588494351 py=169.336285 pz=-2.40630283 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00168 shape=shape_00168 motion=dynamic material=0 mesh=0 px=0.223703127 py=201.351977 pz=1.42329307 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00169 shape=shape_00169 motion=dynamic material=0 mesh=0 px=-1.56061001 py=134.994664 pz=0.429641016 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00170 shape=shape_00170 motion=dynamic material=0 mesh=0 px=2.1619766 py=220.167857 pz=-0.686706665 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00171 shape=shape_00171 motion=dynamic material=0 mesh=0 px=-1.44111295 py=31.5399245 pz=-0.599444763 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00172 shape=shape_00172 motion=dynamic material=0 mesh=0 px=0.297325681 py=101.02898 pz=-2.40382058 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00173 shape=shape_00173 motion=dynamic material=0 mesh=0 px=1.31920191 py=132.503871 pz=0.312840604 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00174 shape=shape_00174 motion=dynamic material=0 mesh=0 px=-2.16148526 py=100.204136 pz=1.22514963 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00175 shape=shape_00175 motion=dynamic material=0 mesh=0 px=0.132104359 py=75.2329981 pz=-0.0611900532 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00176 shape=shape_00176 motion=dynamic material=0 mesh=0 px=1.0172776 py=14.826931 pz=-0.623595844 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00177 shape=shape_00177 motion=dynamic material=0 mesh=0 px=-1.3311732 py=187.076399 pz=2.10076814 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00178 shape=shape_00178 motion=dynamic material=0 mesh=0 px=-0.40818786 py=73.9224483 pz=-0.9602609 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00179 shape=shape_00179 motion=dynamic material=0 mesh=0 px=2.16271263 py=109.002048 pz=1.18627285 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00180 shape=shape_00180 motion=dynamic material=0 mesh=0 px=0.784203165 py=106.107998 pz=0.17267785 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00181 shape=shape_00181 motion=dynamic material=0 mesh=0 px=1.35183581 py=140.86835 pz=-0.968284089 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00182 shape=shape_00182 motion=dynamic material=0 mesh=0 px=0.343011072 py=57.1458085 pz=2.06394403 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00183 shape=shape_00183 motion=dynamic material=0 mesh=0 px=0.227217353 py=94.9923055 pz=-0.217375901 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00184 shape=shape_00184 motion=dynamic material=0 mesh=0 px=2.10657281 py=231.856437 pz=-0.825186212 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00185 shape=shape_00185 motion=dynamic material=0 mesh=0 px=1.3257364 py=73.7443192 pz=-1.71349319 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00186 shape=shape_00186 motion=dynamic material=0 mesh=0 px=1.21899416 py=186.782911 pz=1.38370281 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00187 shape=shape_00187 motion=dynamic material=0 mesh=0 px=-1.27845376 py=290.034848 pz=-0.570484074 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00188 shape=shape_00188 motion=dynamic material=0 mesh=0 px=0.101913641 py=44.1752079 pz=-2.19420336 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00189 shape=shape_00189 motion=dynamic material=0 mesh=0 px=-0.461464345 py=250.5769 pz=0.947482579 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00190 shape=shape_00190 motion=dynamic material=0 mesh=0 px=-0.138268943 py=24.5485379 pz=1.14665173 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00191 shape=shape_00191 motion=dynamic material=0 mesh=0 px=-0.60802384 py=9.7711494 pz=-2.06403373 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00192 shape=shape_00192 motion=dynamic material=0 mesh=0 px=-0.890539842 py=30.0982969 pz=-1.82916707 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00193 shape=shape_00193 motion=dynamic material=0 mesh=0 px=1.81005426 py=285.673656 pz=0.637224509 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00194 shape=shape_00194 motion=dynamic material=0 mesh=0 px=-1.5293325 py=80.5172546 pz=-0.492566996 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00195 shape=shape_00195 motion=dynamic material=0 mesh=0 px=1.234344 py=179.012821 pz=2.0490937 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00196 shape=shape_00196 motion=dynamic material=0 mesh=0 px=-2.42892642 py=18.3774211 pz=0.1843257 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00197 shape=shape_00197 motion=dynamic material=0 mesh=0 px=1.50727366 py=110.312247 pz=1.09119492 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00198 shape=shape_00198 motion=dynamic material=0 mesh=0 px=1.33073203 py=232.675761 pz=0.125549742 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00199 shape=shape_00199 motion=dynamic material=0 mesh=0 px=1.34702464 py=221.568041 pz=-1.07721219 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00200 shape=shape_00200 motion=dynamic material=0 mesh=0 px=-0.794862679 py=29.4534574 pz=-2.21547687 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00201 shape=shape_00201 motion=dynamic material=0 mesh=0 px=-2.35821056 py=247.330938 pz=0.649056779 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00202 shape=shape_00202 motion=dynamic material=0 mesh=0 px=-0.321163098 py=153.238604 pz=-1.35650484 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00203 shape=shape_00203 motion=dynamic material=0 mesh=0 px=0.208176924 py=224.680104 pz=-0.670647906 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00204 shape=shape_00204 motion=dynamic material=0 mesh=0 px=0.647680539 py=32.9574745 pz=-0.30846427 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00205 shape=shape_00205 motion=dynamic material=0 mesh=0 px=-0.156110571 py=43.2409809 pz=-1.12093817 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00206 shape=shape_00206 motion=dynamic material=0 mesh=0 px=0.089819576 py=60.9853356 pz=-2.02723021 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00207 shape=shape_00207 motion=dynamic material=0 mesh=0 px=2.07307692 py=90.4588373 pz=0.970075268 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00208 shape=shape_00208 motion=dynamic material=0 mesh=0 px=-0.000439605327 py=278.513936 pz=0.434266952 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00209 shape=shape_00209 motion=dynamic material=0 mesh=0 px=-1.01707957 py=75.981701 pz=-2.17973259 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00210 shape=shape_00210 motion=dynamic material=0 mesh=0 px=0.296037186 py=26.2839339 pz=-0.571738985 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00211 shape=shape_00211 motion=dynamic material=0 mesh=0 px=0.0628554913 py=82.2435908 pz=0.551723249 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00212 shape=shape_00212 motion=dynamic material=0 mesh=0 px=1.70999413 py=223.737676 pz=-1.47845099 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00213 shape=shape_00213 motion=dynamic material=0 mesh=0 px=-0.321861778 py=283.667185 pz=1.45258982 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00214 shape=shape_00214 motion=dynamic material=0 mesh=0 px=2.00400645 py=42.3601137 pz=0.106197224 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00215 shape=shape_00215 motion=dynamic material=0 mesh=0 px=-0.142491828 py=53.2987286 pz=1.70889501 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00216 shape=shape_00216 motion=dynamic material=0 mesh=0 px=-2.35322882 py=53.3112055 pz=-0.490819702 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00217 shape=shape_00217 motion=dynamic material=0 mesh=0 px=0.841898818 py=60.2672642 pz=1.86654296 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00218 shape=shape_00218 motion=dynamic material=0 mesh=0 px=2.27949858 py=215.167714 pz=-0.558224582 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00219 shape=shape_00219 motion=dynamic material=0 mesh=0 px=-2.10866347 py=15.0598919 pz=0.236963026 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00220 shape=shape_00220 motion=dynamic material=0 mesh=0 px=0.147633115 py=118.498247 pz=-0.286434452 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00221 shape=shape_00221 motion=dynamic material=0 mesh=0 px=-1.7716758 py=209.610297 pz=-1.42443326 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00222 shape=shape_00222 motion=dynamic material=0 mesh=0 px=0.148282539 py=173.482864 pz=2.39524601 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00223 shape=shape_00223 motion=dynamic material=0 mesh=0 px=1.07937788 py=159.659469 pz=1.64997897 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00224 shape=shape_00224 motion=dynamic material=0 mesh=0 px=-1.17622784 py=273.627802 pz=1.8111971 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00225 shape=shape_00225 motion=dynamic material=0 mesh=0 px=1.73162093 py=136.095174 pz=-0.841405044 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00226 shape=shape_00226 motion=dynamic material=0 mesh=0 px=1.21471608 py=240.691078 pz=2.1315625 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00227 shape=shape_00227 motion=dynamic material=0 mesh=0 px=-0.939819193 py=192.073441 pz=0.706972004 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00228 shape=shape_00228 motion=dynamic material=0 mesh=0 px=0.561409276 py=229.63763 pz=-1.67895047 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00229 shape=shape_00229 motion=dynamic material=0 mesh=0 px=-0.0525204245 py=215.31607 pz=1.4018167 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00230 shape=shape_00230 motion=dynamic material=0 mesh=0 px=-1.24457006 py=275.399595 pz=1.41175247 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00231 shape=shape_00231 motion=dynamic material=0 mesh=0 px=-0.24017691 py=202.941628 pz=2.26594751 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00232 shape=shape_00232 motion=dynamic material=0 mesh=0 px=1.09863474 py=181.066028 pz=0.850748996 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00233 shape=shape_00233 motion=dynamic material=0 mesh=0 px=-1.22899391 py=226.453772 pz=-2.14363289 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00234 shape=shape_00234 motion=dynamic material=0 mesh=0 px=0.719105795 py=243.056734 pz=0.82844989 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00235 shape=shape_00235 motion=dynamic material=0 mesh=0 px=-1.71325987 py=194.323125 pz=-1.43208926 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00236 shape=shape_00236 motion=dynamic material=0 mesh=0 px=-1.03115181 py=104.339377 pz=0.998022319 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00237 shape=shape_00237 motion=dynamic material=0 mesh=0 px=0.677902488 py=124.503571 pz=-0.627243686 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00238 shape=shape_00238 motion=dynamic material=0 mesh=0 px=-1.25335307 py=93.9047806 pz=1.1601325 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00239 shape=shape_00239 motion=dynamic material=0 mesh=0 px=1.75848597 py=234.788426 pz=-0.100734147 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00240 shape=shape_00240 motion=dynamic material=0 mesh=0 px=-1.08924279 py=41.1918043 pz=-0.268481791 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00241 shape=shape_00241 motion=dynamic material=0 mesh=0 px=1.43118046 py=75.7883964 pz=0.518558928 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00242 shape=shape_00242 motion=dynamic material=0 mesh=0 px=0.758982961 py=269.480032 pz=2.22004084 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00243 shape=shape_00243 motion=dynamic material=0 mesh=0 px=0.974755229 py=200.531935 pz=-0.671079125 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00244 shape=shape_00244 motion=dynamic material=0 mesh=0 px=0.4115402 py=227.411271 pz=-1.78182722 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00245 shape=shape_00245 motion=dynamic material=0 mesh=0 px=1.51380968 py=284.115565 pz=1.18140874 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00246 shape=shape_00246 motion=dynamic material=0 mesh=0 px=0.909370322 py=45.329656 pz=-0.642651283 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00247 shape=shape_00247 motion=dynamic material=0 mesh=0 px=-1.01035768 py=30.8554637 pz=-0.998156054 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00248 shape=shape_00248 motion=dynamic material=0 mesh=0 px=1.82831018 py=103.573694 pz=0.373025898 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00249 shape=shape_00249 motion=dynamic material=0 mesh=0 px=-1.17814906 py=222.677909 pz=-1.16150069 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00250 shape=shape_00250 motion=dynamic material=0 mesh=0 px=0.735756044 py=110.855764 pz=-1.47610187 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00251 shape=shape_00251 motion=dynamic material=0 mesh=0 px=-0.197205875 py=93.5973086 pz=-1.42279351 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00252 shape=shape_00252 motion=dynamic material=0 mesh=0 px=1.18205875 py=237.506222 pz=-2.03688738 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00253 shape=shape_00253 motion=dynamic material=0 mesh=0 px=-0.878661806 py=216.463509 pz=0.594205466 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00254 shape=shape_00254 motion=dynamic material=0 mesh=0 px=-1.36813822 py=40.4746792 pz=-0.435021956 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00255 shape=shape_00255 motion=dynamic material=0 mesh=0 px=-1.39531682 py=119.308458 pz=0.848122073 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00256 shape=shape_00256 motion=dynamic material=0 mesh=0 px=-0.671889483 py=128.061912 pz=-1.63903888 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00257 shape=shape_00257 motion=dynamic material=0 mesh=0 px=-1.16281163 py=234.015154 pz=1.02761948 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00258 shape=shape_00258 motion=dynamic material=0 mesh=0 px=1.2231121 py=168.697772 pz=1.12746753 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00259 shape=shape_00259 motion=dynamic material=0 mesh=0 px=1.72879186 py=90.1036831 pz=-0.220428505 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00260 shape=shape_00260 motion=dynamic material=0 mesh=0 px=1.81472859 py=270.972618 pz=-1.10478701 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00261 shape=shape_00261 motion=dynamic material=0 mesh=0 px=-1.26759869 py=138.603771 pz=1.25106316 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00262 shape=shape_00262 motion=dynamic material=0 mesh=0 px=-0.0056279059 py=116.928923 pz=0.256348367 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00263 shape=shape_00263 motion=dynamic material=0 mesh=0 px=0.34309012 py=171.101892 pz=-1.95315451 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00264 shape=shape_00264 motion=dynamic material=0 mesh=0 px=1.85655664 py=254.997323 pz=0.165795429 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00265 shape=shape_00265 motion=dynamic material=0 mesh=0 px=0.782134767 py=51.01398 pz=-0.755017691 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00266 shape=shape_00266 motion=dynamic material=0 mesh=0 px=1.06666683 py=63.4062438 pz=1.55573346 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00267 shape=shape_00267 motion=dynamic material=0 mesh=0 px=-1.36512991 py=104.364156 pz=-1.99232142 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00268 shape=shape_00268 motion=dynamic material=0 mesh=0 px=1.57756867 py=152.37116 pz=1.62381017 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00269 shape=shape_00269 motion=dynamic material=0 mesh=0 px=0.061012025 py=148.548385 pz=1.18293763 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00270 shape=shape_00270 motion=dynamic material=0 mesh=0 px=2.24726067 py=243.812306 pz=0.485115439 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00271 shape=shape_00271 motion=dynamic material=0 mesh=0 px=1.71666679 py=273.950993 pz=1.51730956 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00272 shape=shape_00272 motion=dynamic material=0 mesh=0 px=-0.806136511 py=196.596991 pz=-1.57376696 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00273 shape=shape_00273 motion=dynamic material=0 mesh=0 px=0.848834675 py=291.901409 pz=-0.874106554 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00274 shape=shape_00274 motion=dynamic material=0 mesh=0 px=0.328807763 py=183.01581 pz=-0.717383357 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00275 shape=shape_00275 motion=dynamic material=0 mesh=0 px=0.85813639 py=26.5225725 pz=-1.22390731 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00276 shape=shape_00276 motion=dynamic material=0 mesh=0 px=-2.10419938 py=111.489949 pz=-0.600372849 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00277 shape=shape_00277 motion=dynamic material=0 mesh=0 px=-1.84518645 py=187.824366 pz=-1.17247026 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00278 shape=shape_00278 motion=dynamic material=0 mesh=0 px=0.154606222 py=38.5060419 pz=-1.49351651 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00279 shape=shape_00279 motion=dynamic material=0 mesh=0 px=0.738596704 py=178.712376 pz=-1.41037828 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00280 shape=shape_00280 motion=dynamic material=0 mesh=0 px=0.547158756 py=263.069242 pz=1.38242199 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00281 shape=shape_00281 motion=dynamic material=0 mesh=0 px=-1.60181248 py=132.74647 pz=-0.555702362 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00282 shape=shape_00282 motion=dynamic material=0 mesh=0 px=0.383036519 py=88.6404136 pz=-0.838526118 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00283 shape=shape_00283 motion=dynamic material=0 mesh=0 px=-1.17880269 py=45.3345802 pz=1.52573838 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00284 shape=shape_00284 motion=dynamic material=0 mesh=0 px=-0.788324886 py=199.826007 pz=-0.533546566 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00285 shape=shape_00285 motion=dynamic material=0 mesh=0 px=0.197269708 py=28.1414005 pz=2.02466047 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00286 shape=shape_00286 motion=dynamic material=0 mesh=0 px=0.6963076 py=244.30914 pz=-1.73035347 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00287 shape=shape_00287 motion=dynamic material=0 mesh=0 px=0.393117696 py=273.015048 pz=0.620935983 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00288 shape=shape_00288 motion=dynamic material=0 mesh=0 px=-1.17400743 py=99.2746933 pz=-2.17113931 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00289 shape=shape_00289 motion=dynamic material=0 mesh=0 px=-2.41451002 py=102.236262 pz=0.49315438 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00290 shape=shape_00290 motion=dynamic material=0 mesh=0 px=-0.61073576 py=241.439588 pz=1.76003545 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00291 shape=shape_00291 motion=dynamic material=0 mesh=0 px=1.73782962 py=111.461719 pz=-1.02761222 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00292 shape=shape_00292 motion=dynamic material=0 mesh=0 px=-2.38670915 py=209.911898 pz=-0.563834637 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00293 shape=shape_00293 motion=dynamic material=0 mesh=0 px=0.166751262 py=162.849425 pz=-1.61364774 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00294 shape=shape_00294 motion=dynamic material=0 mesh=0 px=-0.817059434 py=92.0822915 pz=-1.58994417 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00295 shape=shape_00295 motion=dynamic material=0 mesh=0 px=0.329273538 py=214.966348 pz=-1.97363644 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00296 shape=shape_00296 motion=dynamic material=0 mesh=0 px=-0.325271172 py=228.978316 pz=-1.70206431 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00297 shape=shape_00297 motion=dynamic material=0 mesh=0 px=-1.08741143 py=186.884356 pz=-1.45126372 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00298 shape=shape_00298 motion=dynamic material=0 mesh=0 px=0.10678807 py=250.824984 pz=1.10146331 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00299 shape=shape_00299 motion=dynamic material=0 mesh=0 px=0.858467617 py=235.600845 pz=2.33870537 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00300 shape=shape_00300 motion=dynamic material=0 mesh=0 px=-1.53878037 py=295.86122 pz=-0.181966079 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00301 shape=shape_00301 motion=dynamic material=0 mesh=0 px=0.328608566 py=225.613718 pz=2.12837447 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00302 shape=shape_00302 motion=dynamic material=0 mesh=0 px=-0.203037958 py=169.674161 pz=0.165296074 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00303 shape=shape_00303 motion=dynamic material=0 mesh=0 px=-1.26482767 py=31.2787503 pz=-0.718985853 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00304 shape=shape_00304 motion=dynamic material=0 mesh=0 px=0.49808717 py=249.790819 pz=-2.11942989 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00305 shape=shape_00305 motion=dynamic material=0 mesh=0 px=2.17248047 py=193.725459 pz=-0.896631694 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00306 shape=shape_00306 motion=dynamic material=0 mesh=0 px=-1.22459026 py=297.285148 pz=-0.211830427 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00307 shape=shape_00307 motion=dynamic material=0 mesh=0 px=-0.489544499 py=217.207445 pz=1.64056678 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00308 shape=shape_00308 motion=dynamic material=0 mesh=0 px=-1.27970769 py=160.331698 pz=0.91410962 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00309 shape=shape_00309 motion=dynamic material=0 mesh=0 px=-1.74878458 py=191.826268 pz=1.29571648 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00310 shape=shape_00310 motion=dynamic material=0 mesh=0 px=0.167850296 py=74.9947801 pz=0.188663549 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00311 shape=shape_00311 motion=dynamic material=0 mesh=0 px=1.16121174 py=70.5298473 pz=1.97620217 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00312 shape=shape_00312 motion=dynamic material=0 mesh=0 px=0.667289794 py=148.215153 pz=-0.969166448 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00313 shape=shape_00313 motion=dynamic material=0 mesh=0 px=1.02433482 py=296.922056 pz=-2.25992054 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00314 shape=shape_00314 motion=dynamic material=0 mesh=0 px=-0.626147885 py=94.6753707 pz=0.716975489 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00315 shape=shape_00315 motion=dynamic material=0 mesh=0 px=0.63669865 py=220.515091 pz=-1.28336463 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00316 shape=shape_00316 motion=dynamic material=0 mesh=0 px=-1.72101689 py=227.080124 pz=-0.966054949 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00317 shape=shape_00317 motion=dynamic material=0 mesh=0 px=-0.462689323 py=101.252163 pz=-1.6338957 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00318 shape=shape_00318 motion=dynamic material=0 mesh=0 px=0.454834274 py=228.835147 pz=-1.78858131 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00319 shape=shape_00319 motion=dynamic material=0 mesh=0 px=-1.70438447 py=204.597378 pz=-1.57815098 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00320 shape=shape_00320 motion=dynamic material=0 mesh=0 px=0.263441721 py=130.429372 pz=-1.51371835 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00321 shape=shape_00321 motion=dynamic material=0 mesh=0 px=0.719087611 py=38.9623257 pz=0.53305087 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00322 shape=shape_00322 motion=dynamic material=0 mesh=0 px=0.832875009 py=286.248067 pz=1.44163822 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00323 shape=shape_00323 motion=dynamic material=0 mesh=0 px=-1.66411027 py=157.26043 pz=-0.993511235 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00324 shape=shape_00324 motion=dynamic material=0 mesh=0 px=-0.454589563 py=168.261272 pz=2.29250514 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00325 shape=shape_00325 motion=dynamic material=0 mesh=0 px=-0.249419372 py=287.205373 pz=-0.958679734 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00326 shape=shape_00326 motion=dynamic material=0 mesh=0 px=1.04235742 py=73.4979175 pz=0.231809597 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00327 shape=shape_00327 motion=dynamic material=0 mesh=0 px=-0.297552619 py=267.421427 pz=-0.798448746 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00328 shape=shape_00328 motion=dynamic material=0 mesh=0 px=1.06651869 py=92.9117088 pz=-0.737091027 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00329 shape=shape_00329 motion=dynamic material=0 mesh=0 px=0.63791533 py=81.1178466 pz=0.453651195 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00330 shape=shape_00330 motion=dynamic material=0 mesh=0 px=-0.610717468 py=71.5395316 pz=1.41409259 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00331 shape=shape_00331 motion=dynamic material=0 mesh=0 px=-1.04946692 py=249.984141 pz=-1.99575632 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00332 shape=shape_00332 motion=dynamic material=0 mesh=0 px=1.85115119 py=209.756603 pz=-1.61357598 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00333 shape=shape_00333 motion=dynamic material=0 mesh=0 px=1.23361797 py=36.7980705 pz=-1.31786783 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00334 shape=shape_00334 motion=dynamic material=0 mesh=0 px=-0.819555508 py=11.8888789 pz=1.52559779 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00335 shape=shape_00335 motion=dynamic material=0 mesh=0 px=-2.07123481 py=190.295918 pz=-0.325643763 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00336 shape=shape_00336 motion=dynamic material=0 mesh=0 px=-1.91252191 py=192.781033 pz=1.29111326 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00337 shape=shape_00337 motion=dynamic material=0 mesh=0 px=-0.980651489 py=37.5160017 pz=-0.981963488 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00338 shape=shape_00338 motion=dynamic material=0 mesh=0 px=1.88340674 py=88.9726993 pz=-0.673406807 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00339 shape=shape_00339 motion=dynamic material=0 mesh=0 px=1.84723155 py=51.6112951 pz=1.22786269 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00340 shape=shape_00340 motion=dynamic material=0 mesh=0 px=0.111298467 py=146.335572 pz=1.78602123 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00341 shape=shape_00341 motion=dynamic material=0 mesh=0 px=-0.470472007 py=91.9025853 pz=-0.6819016 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00342 shape=shape_00342 motion=dynamic material=0 mesh=0 px=0.681643707 py=191.988083 pz=-0.976915197 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00343 shape=shape_00343 motion=dynamic material=0 mesh=0 px=1.13854305 py=202.993428 pz=-1.60630096 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00344 shape=shape_00344 motion=dynamic material=0 mesh=0 px=0.569442614 py=236.559745 pz=1.27912579 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00345 shape=shape_00345 motion=dynamic material=0 mesh=0 px=-1.35689085 py=132.670119 pz=0.666477674 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00346 shape=shape_00346 motion=dynamic material=0 mesh=0 px=-0.216707893 py=246.014273 pz=1.55888073 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00347 shape=shape_00347 motion=dynamic material=0 mesh=0 px=-0.274955003 py=269.434189 pz=1.01728636 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00348 shape=shape_00348 motion=dynamic material=0 mesh=0 px=-0.345511929 py=104.882105 pz=-0.983016962 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00349 shape=shape_00349 motion=dynamic material=0 mesh=0 px=-0.150389112 py=284.157394 pz=0.326978874 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00350 shape=shape_00350 motion=dynamic material=0 mesh=0 px=-0.515002269 py=251.560825 pz=-1.4420551 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00351 shape=shape_00351 motion=dynamic material=0 mesh=0 px=-0.164235214 py=191.828424 pz=1.55399 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00352 shape=shape_00352 motion=dynamic material=0 mesh=0 px=-1.33404184 py=198.958388 pz=-1.56632814 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00353 shape=shape_00353 motion=dynamic material=0 mesh=0 px=-1.96044462 py=299.729188 pz=1.36704791 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00354 shape=shape_00354 motion=dynamic material=0 mesh=0 px=1.92454165 py=297.516637 pz=1.2995067 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00355 shape=shape_00355 motion=dynamic material=0 mesh=0 px=-2.47163702 py=186.62143 pz=-0.331797808 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00356 shape=shape_00356 motion=dynamic material=0 mesh=0 px=-0.707571201 py=272.718108 pz=-1.70094973 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00357 shape=shape_00357 motion=dynamic material=0 mesh=0 px=-1.96944084 py=62.3241863 pz=-0.407035136 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00358 shape=shape_00358 motion=dynamic material=0 mesh=0 px=0.121084393 py=241.267908 pz=-2.45417085 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00359 shape=shape_00359 motion=dynamic material=0 mesh=0 px=-1.15935674 py=195.323346 pz=1.92505835 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00360 shape=shape_00360 motion=dynamic material=0 mesh=0 px=1.40421996 py=285.180555 pz=-1.89720587 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00361 shape=shape_00361 motion=dynamic material=0 mesh=0 px=2.2026992 py=281.873785 pz=-0.00384498554 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00362 shape=shape_00362 motion=dynamic material=0 mesh=0 px=-1.76843353 py=146.885029 pz=0.322726282 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00363 shape=shape_00363 motion=dynamic material=0 mesh=0 px=2.22287175 py=111.861558 pz=1.022717 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00364 shape=shape_00364 motion=dynamic material=0 mesh=0 px=-0.934072653 py=59.269794 pz=1.90335704 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00365 shape=shape_00365 motion=dynamic material=0 mesh=0 px=-0.936400754 py=267.725044 pz=1.0185876 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00366 shape=shape_00366 motion=dynamic material=0 mesh=0 px=-0.0655997634 py=172.555559 pz=2.30151745 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00367 shape=shape_00367 motion=dynamic material=0 mesh=0 px=-0.417783476 py=53.5401185 pz=-2.19342898 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00368 shape=shape_00368 motion=dynamic material=0 mesh=0 px=0.428346944 py=130.13089 pz=2.07256201 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00369 shape=shape_00369 motion=dynamic material=0 mesh=0 px=2.35046619 py=161.526363 pz=0.849713876 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00370 shape=shape_00370 motion=dynamic material=0 mesh=0 px=-1.95024337 py=257.248233 pz=0.370815949 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00371 shape=shape_00371 motion=dynamic material=0 mesh=0 px=-0.057439349 py=156.378757 pz=-0.173371611 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00372 shape=shape_00372 motion=dynamic material=0 mesh=0 px=-0.313054833 py=140.393999 pz=1.68415532 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00373 shape=shape_00373 motion=dynamic material=0 mesh=0 px=-0.015948885 py=22.4780349 pz=-1.99454058 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00374 shape=shape_00374 motion=dynamic material=0 mesh=0 px=1.326202 py=78.8966568 pz=1.80949627 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00375 shape=shape_00375 motion=dynamic material=0 mesh=0 px=0.037366387 py=100.800943 pz=-0.540473797 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00376 shape=shape_00376 motion=dynamic material=0 mesh=0 px=0.6523501 py=158.563901 pz=1.57886298 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00377 shape=shape_00377 motion=dynamic material=0 mesh=0 px=0.926582124 py=214.951856 pz=-1.72397842 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00378 shape=shape_00378 motion=dynamic material=0 mesh=0 px=0.632884016 py=68.4656178 pz=0.380079389 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00379 shape=shape_00379 motion=dynamic material=0 mesh=0 px=1.04349621 py=260.807205 pz=-0.412348105 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00380 shape=shape_00380 motion=dynamic material=0 mesh=0 px=0.413785611 py=217.79726 pz=1.21106189 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00381 shape=shape_00381 motion=dynamic material=0 mesh=0 px=0.00694650217 py=25.5948468 pz=1.82741872 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00382 shape=shape_00382 motion=dynamic material=0 mesh=0 px=-1.01351236 py=89.1127843 pz=1.06579782 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00383 shape=shape_00383 motion=dynamic material=0 mesh=0 px=1.96416257 py=142.15703 pz=-1.32372642 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00384 shape=shape_00384 motion=dynamic material=0 mesh=0 px=1.20750413 py=89.9305834 pz=-2.0684088 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00385 shape=shape_00385 motion=dynamic material=0 mesh=0 px=1.87721918 py=223.228471 pz=0.397700501 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00386 shape=shape_00386 motion=dynamic material=0 mesh=0 px=1.68658016 py=202.706284 pz=-1.64712336 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00387 shape=shape_00387 motion=dynamic material=0 mesh=0 px=-0.326860788 py=110.030746 pz=-1.22053511 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00388 shape=shape_00388 motion=dynamic material=0 mesh=0 px=0.998377933 py=108.264175 pz=0.450169256 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00389 shape=shape_00389 motion=dynamic material=0 mesh=0 px=0.861073827 py=46.7329942 pz=1.79874233 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00390 shape=shape_00390 motion=dynamic material=0 mesh=0 px=-0.136316114 py=299.095861 pz=1.51810178 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00391 shape=shape_00391 motion=dynamic material=0 mesh=0 px=-1.4442243 py=10.15315 pz=-0.0230539289 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00392 shape=shape_00392 motion=dynamic material=0 mesh=0 px=-1.18528641 py=298.241052 pz=1.957113 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00393 shape=shape_00393 motion=dynamic material=0 mesh=0 px=1.23962543 py=79.2314833 pz=1.29503135 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00394 shape=shape_00394 motion=dynamic material=0 mesh=0 px=-1.61710655 py=59.2606115 pz=1.50336747 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00395 shape=shape_00395 motion=dynamic material=0 mesh=0 px=1.85213737 py=132.540145 pz=-0.285432959 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00396 shape=shape_00396 motion=dynamic material=0 mesh=0 px=0.229512085 py=129.468369 pz=-2.29780588 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00397 shape=shape_00397 motion=dynamic material=0 mesh=0 px=1.55919735 py=61.8168383 pz=-0.0766359156 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00398 shape=shape_00398 motion=dynamic material=0 mesh=0 px=0.211066273 py=199.470713 pz=-0.904733277 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00399 shape=shape_00399 motion=dynamic material=0 mesh=0 px=-2.20397277 py=179.130458 pz=-0.912588576 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00400 shape=shape_00400 motion=dynamic material=0 mesh=0 px=-1.47037757 py=189.527063 pz=0.546495127 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00401 shape=shape_00401 motion=dynamic material=0 mesh=0 px=-1.85268433 py=121.859042 pz=-0.757285713 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00402 shape=shape_00402 motion=dynamic material=0 mesh=0 px=0.69844696 py=279.714787 pz=-2.27547218 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00403 shape=shape_00403 motion=dynamic material=0 mesh=0 px=1.99202071 py=142.168596 pz=0.167738796 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00404 shape=shape_00404 motion=dynamic material=0 mesh=0 px=-1.31022821 py=122.049455 pz=-1.19494117 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00405 shape=shape_00405 motion=dynamic material=0 mesh=0 px=1.12398314 py=114.392831 pz=2.13811585 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00406 shape=shape_00406 motion=dynamic material=0 mesh=0 px=-0.802161689 py=138.487045 pz=-0.241263531 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00407 shape=shape_00407 motion=dynamic material=0 mesh=0 px=-0.328003393 py=168.278463 pz=0.0401508566 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00408 shape=shape_00408 motion=dynamic material=0 mesh=0 px=-1.53907995 py=57.1714808 pz=-1.56611849 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00409 shape=shape_00409 motion=dynamic material=0 mesh=0 px=-0.708241651 py=221.74561 pz=0.973641607 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00410 shape=shape_00410 motion=dynamic material=0 mesh=0 px=0.746555208 py=156.409529 pz=0.579061301 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00411 shape=shape_00411 motion=dynamic material=0 mesh=0 px=1.55650697 py=252.298172 pz=1.09235109 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00412 shape=shape_00412 motion=dynamic material=0 mesh=0 px=1.09786907 py=42.2180486 pz=1.83644391 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00413 shape=shape_00413 motion=dynamic material=0 mesh=0 px=-0.813373551 py=80.1078644 pz=0.798543272 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00414 shape=shape_00414 motion=dynamic material=0 mesh=0 px=1.50279265 py=291.225851 pz=0.273700964 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00415 shape=shape_00415 motion=dynamic material=0 mesh=0 px=-1.61891393 py=169.808831 pz=-0.742409223 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00416 shape=shape_00416 motion=dynamic material=0 mesh=0 px=-0.00997872258 py=115.741355 pz=0.52562352 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00417 shape=shape_00417 motion=dynamic material=0 mesh=0 px=0.846614587 py=97.8316287 pz=0.0999003377 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00418 shape=shape_00418 motion=dynamic material=0 mesh=0 px=-0.00018407638 py=93.4458157 pz=-2.10951283 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00419 shape=shape_00419 motion=dynamic material=0 mesh=0 px=0.862408299 py=99.0915349 pz=-1.42829875 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00420 shape=shape_00420 motion=dynamic material=0 mesh=0 px=1.94792606 py=294.160223 pz=-0.808545895 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00421 shape=shape_00421 motion=dynamic material=0 mesh=0 px=1.36942337 py=198.645975 pz=-1.23498229 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00422 shape=shape_00422 motion=dynamic material=0 mesh=0 px=0.0214867895 py=233.302077 pz=1.03422351 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00423 shape=shape_00423 motion=dynamic material=0 mesh=0 px=-1.8319796 py=181.038954 pz=-1.61348157 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00424 shape=shape_00424 motion=dynamic material=0 mesh=0 px=1.32273803 py=40.2103508 pz=1.15754165 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00425 shape=shape_00425 motion=dynamic material=0 mesh=0 px=0.30831616 py=64.5761129 pz=-2.14221811 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00426 shape=shape_00426 motion=dynamic material=0 mesh=0 px=0.752301696 py=236.50996 pz=1.94902528 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00427 shape=shape_00427 motion=dynamic material=0 mesh=0 px=0.653905432 py=210.700678 pz=-0.891821096 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00428 shape=shape_00428 motion=dynamic material=0 mesh=0 px=0.0277049296 py=208.770523 pz=0.628451885 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00429 shape=shape_00429 motion=dynamic material=0 mesh=0 px=0.498091221 py=265.643291 pz=-1.74703232 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00430 shape=shape_00430 motion=dynamic material=0 mesh=0 px=1.11206992 py=122.056955 pz=1.58490756 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00431 shape=shape_00431 motion=dynamic material=0 mesh=0 px=1.0617512 py=185.666875 pz=1.0839509 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00432 shape=shape_00432 motion=dynamic material=0 mesh=0 px=1.7476225 py=256.458963 pz=1.2370131 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00433 shape=shape_00433 motion=dynamic material=0 mesh=0 px=-1.25107113 py=175.426039 pz=0.988252236 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00434 shape=shape_00434 motion=dynamic material=0 mesh=0 px=1.12243281 py=142.632555 pz=0.699211303 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00435 shape=shape_00435 motion=dynamic material=0 mesh=0 px=1.03833255 py=269.085519 pz=1.49794098 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00436 shape=shape_00436 motion=dynamic material=0 mesh=0 px=1.82278689 py=108.682327 pz=1.19517657 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00437 shape=shape_00437 motion=dynamic material=0 mesh=0 px=-1.54208981 py=8.69881761 pz=-1.42869624 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00438 shape=shape_00438 motion=dynamic material=0 mesh=0 px=-0.333891963 py=50.1311678 pz=0.772288142 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00439 shape=shape_00439 motion=dynamic material=0 mesh=0 px=1.22371331 py=61.4290724 pz=0.808081066 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00440 shape=shape_00440 motion=dynamic material=0 mesh=0 px=-1.29898192 py=40.6959869 pz=-2.01993187 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00441 shape=shape_00441 motion=dynamic material=0 mesh=0 px=-0.638433635 py=58.2130233 pz=1.08474151 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00442 shape=shape_00442 motion=dynamic material=0 mesh=0 px=-0.763822339 py=201.088945 pz=-1.54401932 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00443 shape=shape_00443 motion=dynamic material=0 mesh=0 px=1.10030066 py=264.697463 pz=-0.386727529 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00444 shape=shape_00444 motion=dynamic material=0 mesh=0 px=-0.743796568 py=178.147883 pz=0.878324438 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00445 shape=shape_00445 motion=dynamic material=0 mesh=0 px=1.78904447 py=189.000281 pz=0.252179932 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00446 shape=shape_00446 motion=dynamic material=0 mesh=0 px=-2.36730591 py=42.2092867 pz=-0.655204815 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00447 shape=shape_00447 motion=dynamic material=0 mesh=0 px=-1.17751962 py=102.073431 pz=0.7702348 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00448 shape=shape_00448 motion=dynamic material=0 mesh=0 px=-0.771209856 py=30.3961658 pz=0.587142602 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00449 shape=shape_00449 motion=dynamic material=0 mesh=0 px=-0.289490587 py=281.157851 pz=2.26220483 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00450 shape=shape_00450 motion=dynamic material=0 mesh=0 px=-1.70323415 py=97.2295471 pz=-0.339320216 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00451 shape=shape_00451 motion=dynamic material=0 mesh=0 px=2.42539597 py=156.008392 pz=0.363446728 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00452 shape=shape_00452 motion=dynamic material=0 mesh=0 px=0.0237903731 py=267.685493 pz=-0.873561653 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00453 shape=shape_00453 motion=dynamic material=0 mesh=0 px=0.986767501 py=130.586438 pz=1.7497472 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00454 shape=shape_00454 motion=dynamic material=0 mesh=0 px=-0.0725892858 py=140.997254 pz=-1.00561631 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00455 shape=shape_00455 motion=dynamic material=0 mesh=0 px=0.666265031 py=114.332602 pz=0.541484562 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00456 shape=shape_00456 motion=dynamic material=0 mesh=0 px=-0.399051581 py=249.623029 pz=1.97214248 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00457 shape=shape_00457 motion=dynamic material=0 mesh=0 px=0.845817567 py=178.974409 pz=-1.81525019 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00458 shape=shape_00458 motion=dynamic material=0 mesh=0 px=-1.25312014 py=74.51363 pz=-0.307428804 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00459 shape=shape_00459 motion=dynamic material=0 mesh=0 px=1.90336698 py=266.949775 pz=0.191237452 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00460 shape=shape_00460 motion=dynamic material=0 mesh=0 px=1.14025719 py=217.857927 pz=-1.91474382 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00461 shape=shape_00461 motion=dynamic material=0 mesh=0 px=-0.634949184 py=284.258577 pz=-1.02827798 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00462 shape=shape_00462 motion=dynamic material=0 mesh=0 px=0.918787707 py=215.413152 pz=-1.44773874 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00463 shape=shape_00463 motion=dynamic material=0 mesh=0 px=-0.895198899 py=189.419905 pz=-2.18679775 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00464 shape=shape_00464 motion=dynamic material=0 mesh=0 px=-1.40028932 py=230.171246 pz=-0.10980773 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00465 shape=shape_00465 motion=dynamic material=0 mesh=0 px=-0.0425085395 py=62.1479673 pz=0.854487269 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00466 shape=shape_00466 motion=dynamic material=0 mesh=0 px=-0.919019606 py=18.1475794 pz=2.14235712 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00467 shape=shape_00467 motion=dynamic material=0 mesh=0 px=1.14024346 py=121.556932 pz=0.368885494 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00468 shape=shape_00468 motion=dynamic material=0 mesh=0 px=-0.62923737 py=292.442613 pz=-2.34585997 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00469 shape=shape_00469 motion=dynamic material=0 mesh=0 px=1.63330556 py=152.864156 pz=-1.55825791 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00470 shape=shape_00470 motion=dynamic material=0 mesh=0 px=-1.15592792 py=269.465925 pz=0.857740212 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00471 shape=shape_00471 motion=dynamic material=0 mesh=0 px=-1.61538468 py=116.287746 pz=-1.52148813 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00472 shape=shape_00472 motion=dynamic material=0 mesh=0 px=1.65239212 py=135.87271 pz=-0.179832236 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00473 shape=shape_00473 motion=dynamic material=0 mesh=0 px=-2.41419218 py=238.69994 pz=-0.4713978 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00474 shape=shape_00474 motion=dynamic material=0 mesh=0 px=-0.206241153 py=239.155313 pz=1.38506803 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00475 shape=shape_00475 motion=dynamic material=0 mesh=0 px=0.989437797 py=239.061175 pz=0.283345398 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00476 shape=shape_00476 motion=dynamic material=0 mesh=0 px=-1.21340568 py=246.368077 pz=-1.1963505 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00477 shape=shape_00477 motion=dynamic material=0 mesh=0 px=1.45903563 py=298.195403 pz=-1.75927296 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00478 shape=shape_00478 motion=dynamic material=0 mesh=0 px=-1.42406712 py=167.196441 pz=0.520486435 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00479 shape=shape_00479 motion=dynamic material=0 mesh=0 px=-0.0182020097 py=31.5335984 pz=0.593919629 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00480 shape=shape_00480 motion=dynamic material=0 mesh=0 px=-2.15373236 py=11.9130793 pz=0.854434642 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00481 shape=shape_00481 motion=dynamic material=0 mesh=0 px=2.16986297 py=98.1824019 pz=-0.927790615 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00482 shape=shape_00482 motion=dynamic material=0 mesh=0 px=2.01496384 py=189.572379 pz=1.07076014 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00483 shape=shape_00483 motion=dynamic material=0 mesh=0 px=-0.902943497 py=67.4095305 pz=1.59668891 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00484 shape=shape_00484 motion=dynamic material=0 mesh=0 px=-0.55418593 py=102.02058 pz=-0.0238235663 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00485 shape=shape_00485 motion=dynamic material=0 mesh=0 px=1.37439715 py=191.335831 pz=-0.260331534 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00486 shape=shape_00486 motion=dynamic material=0 mesh=0 px=-0.20423452 py=76.0626783 pz=0.822898083 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00487 shape=shape_00487 motion=dynamic material=0 mesh=0 px=-1.38483847 py=231.97672 pz=-1.31390646 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00488 shape=shape_00488 motion=dynamic material=0 mesh=0 px=2.07446639 py=123.773864 pz=0.464697893 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00489 shape=shape_00489 motion=dynamic material=0 mesh=0 px=0.481128826 py=205.065929 pz=0.663940286 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00490 shape=shape_00490 motion=dynamic material=0 mesh=0 px=0.428590627 py=101.910092 pz=-2.04656131 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00491 shape=shape_00491 motion=dynamic material=0 mesh=0 px=-2.24753387 py=102.54766 pz=0.643818663 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00492 shape=shape_00492 motion=dynamic material=0 mesh=0 px=1.85663746 py=51.3165804 pz=1.54191044 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00493 shape=shape_00493 motion=dynamic material=0 mesh=0 px=-1.28274903 py=157.627361 pz=-1.07842368 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00494 shape=shape_00494 motion=dynamic material=0 mesh=0 px=-1.52058388 py=184.947472 pz=1.1794596 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00495 shape=shape_00495 motion=dynamic material=0 mesh=0 px=-0.416844144 py=37.8063179 pz=-0.548835757 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00496 shape=shape_00496 motion=dynamic material=0 mesh=0 px=-0.849749305 py=120.641981 pz=-0.0869524634 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00497 shape=shape_00497 motion=dynamic material=0 mesh=0 px=1.67716789 py=216.109511 pz=-0.398316554 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00498 shape=shape_00498 motion=dynamic material=0 mesh=0 px=0.0513692865 py=179.751272 pz=0.865193419 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00499 shape=shape_00499 motion=dynamic material=0 mesh=0 px=0.653101802 py=74.8387835 pz=-1.90073846 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00500 shape=shape_00500 motion=dynamic material=0 mesh=0 px=-1.78051041 py=122.755312 pz=0.823920728 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00501 shape=shape_00501 motion=dynamic material=0 mesh=0 px=1.85882039 py=45.7583925 pz=-0.490755145 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00502 shape=shape_00502 motion=dynamic material=0 mesh=0 px=-1.08177761 py=239.589587 pz=-1.36277992 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00503 shape=shape_00503 motion=dynamic material=0 mesh=0 px=0.889457103 py=73.6288025 pz=-2.30973281 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00504 shape=shape_00504 motion=dynamic material=0 mesh=0 px=-0.0351451568 py=206.638774 pz=-1.97582466 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00505 shape=shape_00505 motion=dynamic material=0 mesh=0 px=-0.974104555 py=214.436359 pz=-0.291797518 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00506 shape=shape_00506 motion=dynamic material=0 mesh=0 px=-0.481861287 py=257.254647 pz=0.69630786 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00507 shape=shape_00507 motion=dynamic material=0 mesh=0 px=-1.55873657 py=270.710726 pz=1.2264563 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00508 shape=shape_00508 motion=dynamic material=0 mesh=0 px=0.0123292267 py=144.409044 pz=-1.85031073 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00509 shape=shape_00509 motion=dynamic material=0 mesh=0 px=-0.000824599005 py=29.3502774 pz=-0.46334656 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00510 shape=shape_00510 motion=dynamic material=0 mesh=0 px=-0.865988814 py=141.490689 pz=-1.95737997 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00511 shape=shape_00511 motion=dynamic material=0 mesh=0 px=-0.849117919 py=40.5491552 pz=-0.797940549 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0

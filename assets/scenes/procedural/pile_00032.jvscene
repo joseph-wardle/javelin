@@ -1,0 +1,72 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# source=legacy_procedural_spawn count=32
+scene version=1 units=m
+
+# shapes
+shape id=shape_00000 kind=sphere r=0.595768178
+shape id=shape_00001 kind=sphere r=0.499004969
+shape id=shape_00002 kind=sphere r=0.33500737
+shape id=shape_00003 kind=sphere r=0.271036822
+shape id=shape_00004 kind=box hx=0.591014314 hy=0.591014314 hz=0.591014314
+shape id=shape_00005 kind=sphere r=0.590046
+shape id=shape_00006 kind=sphere r=0.589579868
+shape id=shape_00007 kind=box hx=0.216866136 hy=0.216866136 hz=0.216866136
+shape id=shape_00008 kind=sphere r=0.258580261
+shape id=shape_00009 kind=sphere r=0.270733139
+shape id=shape_00010 kind=box hx=0.257314777 hy=0.257314777 hz=0.257314777
+shape id=shape_00011 kind=sphere r=0.272595415
+shape id=shape_00012 kind=sphere r=0.493055442
+shape id=shape_00013 kind=box hx=0.37294724 hy=0.37294724 hz=0.37294724
+shape id=shape_00014 kind=sphere r=0.49912799
+shape id=shape_00015 kind=sphere r=0.336781213
+shape id=shape_00016 kind=box hx=0.38185966 hy=0.38185966 hz=0.38185966
+shape id=shape_00017 kind=box hx=0.355044436 hy=0.355044436 hz=0.355044436
+shape id=shape_00018 kind=box hx=0.540549445 hy=0.540549445 hz=0.540549445
+shape id=shape_00019 kind=box hx=0.269483376 hy=0.269483376 hz=0.269483376
+shape id=shape_00020 kind=sphere r=0.351352161
+shape id=shape_00021 kind=sphere r=0.565747505
+shape id=shape_00022 kind=sphere r=0.574202326
+shape id=shape_00023 kind=sphere r=0.341293895
+shape id=shape_00024 kind=sphere r=0.316127577
+shape id=shape_00025 kind=sphere r=0.494496146
+shape id=shape_00026 kind=box hx=0.522713828 hy=0.522713828 hz=0.522713828
+shape id=shape_00027 kind=sphere r=0.25439133
+shape id=shape_00028 kind=sphere r=0.444253215
+shape id=shape_00029 kind=sphere r=0.540457061
+shape id=shape_00030 kind=sphere r=0.368234453
+shape id=shape_00031 kind=box hx=0.521935439 hy=0.521935439 hz=0.521935439
+
+# bodies
+body id=body_00000 shape=shape_00000 motion=dynamic material=0 mesh=0 px=-0.863807798 py=31.6787653 pz=1.6449949 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00001 shape=shape_00001 motion=dynamic material=0 mesh=0 px=2.08840561 py=262.351224 pz=1.32064128 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00002 shape=shape_00002 motion=dynamic material=0 mesh=0 px=-0.493530264 py=131.389167 pz=1.82095676 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00003 shape=shape_00003 motion=dynamic material=0 mesh=0 px=-2.03955724 py=85.9149424 pz=0.740432589 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00004 shape=shape_00004 motion=dynamic material=0 mesh=0 px=-0.505064402 py=248.240194 pz=-2.28026828 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00005 shape=shape_00005 motion=dynamic material=0 mesh=0 px=0.368518467 py=217.720628 pz=0.585087452 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00006 shape=shape_00006 motion=dynamic material=0 mesh=0 px=-0.10646664 py=169.950248 pz=0.270407407 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00007 shape=shape_00007 motion=dynamic material=0 mesh=0 px=0.614152102 py=61.3037424 pz=-1.31969054 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00008 shape=shape_00008 motion=dynamic material=0 mesh=0 px=-1.70071891 py=44.1153642 pz=0.0139522906 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00009 shape=shape_00009 motion=dynamic material=0 mesh=0 px=1.62281298 py=22.2172111 pz=0.764977326 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00010 shape=shape_00010 motion=dynamic material=0 mesh=0 px=-0.248759867 py=184.460504 pz=-1.96344986 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00011 shape=shape_00011 motion=dynamic material=0 mesh=0 px=0.613605065 py=124.114684 pz=0.111094896 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00012 shape=shape_00012 motion=dynamic material=0 mesh=0 px=-1.93008018 py=290.134435 pz=1.13806983 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00013 shape=shape_00013 motion=dynamic material=0 mesh=0 px=-1.30520207 py=265.305205 pz=-0.212861588 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00014 shape=shape_00014 motion=dynamic material=0 mesh=0 px=-1.84146073 py=194.983963 pz=0.588972743 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00015 shape=shape_00015 motion=dynamic material=0 mesh=0 px=-0.171497908 py=154.448339 pz=1.88090596 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00016 shape=shape_00016 motion=dynamic material=0 mesh=0 px=0.52435701 py=217.486546 pz=-0.422784663 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00017 shape=shape_00017 motion=dynamic material=0 mesh=0 px=0.493527163 py=285.024085 pz=-0.818767746 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00018 shape=shape_00018 motion=dynamic material=0 mesh=0 px=-1.54875848 py=20.3532958 pz=-1.60956261 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00019 shape=shape_00019 motion=dynamic material=0 mesh=0 px=1.51903544 py=286.584085 pz=-1.62603132 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00020 shape=shape_00020 motion=dynamic material=0 mesh=0 px=-2.08471977 py=64.0198735 pz=0.112887574 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00021 shape=shape_00021 motion=dynamic material=0 mesh=0 px=0.594133887 py=71.6340022 pz=0.027903548 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00022 shape=shape_00022 motion=dynamic material=0 mesh=0 px=1.314773 py=99.7732269 pz=1.27398055 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00023 shape=shape_00023 motion=dynamic material=0 mesh=0 px=-0.589596671 py=96.3330488 pz=2.08884878 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00024 shape=shape_00024 motion=dynamic material=0 mesh=0 px=2.34548748 py=193.538288 pz=0.862037769 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00025 shape=shape_00025 motion=dynamic material=0 mesh=0 px=0.67579362 py=123.934662 pz=1.33598795 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00026 shape=shape_00026 motion=dynamic material=0 mesh=0 px=-1.89659982 py=107.484157 pz=-1.59817159 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00027 shape=shape_00027 motion=dynamic material=0 mesh=0 px=-0.18972594 py=54.1596712 pz=2.39821678 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00028 shape=shape_00028 motion=dynamic material=0 mesh=0 px=-1.60911457 py=99.6231533 pz=0.192246931 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00029 shape=shape_00029 motion=dynamic material=0 mesh=0 px=-2.30449503 py=184.128008 pz=0.00424361961 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00030 shape=shape_00030 motion=dynamic material=0 mesh=0 px=-1.05397443 py=19.2772315 pz=1.78309289 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
+body id=body_00031 shape=shape_00031 motion=dynamic material=0 mesh=0 px=1.2734038 py=42.015579 pz=-1.59136332 ox=0 oy=0 oz=0 ow=1 vx=0 vy=0 vz=0 wx=0 wy=0 wz=0
