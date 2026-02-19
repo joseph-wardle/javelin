@@ -66,9 +66,33 @@ inline constexpr f32 kAxisAbsEps = 1e-6f;
     return center + a0 * s0 + a1 * s1 + a2 * s2;
 }
 
+[[nodiscard]] inline Vec3 world_offset_to_local_anchor(const Quat q, const Vec3 offset_world) noexcept {
+    return rotate(inverse_unit(q), offset_world);
+}
+
+void push_single_point_manifold(std::span<const Quat> orientation, const u32 a, const u32 b, const Vec3 normal,
+                                const f32 penetration, const Vec3 r_a_world, const Vec3 r_b_world,
+                                std::vector<ContactManifold> &manifolds) {
+    ContactManifold manifold{
+        .a = a,
+        .b = b,
+        .normal = normal,
+        .point_count = 1u,
+    };
+    ContactPoint &point = manifold.points[0];
+    point.local_anchor_a = world_offset_to_local_anchor(orientation[a], r_a_world);
+    point.local_anchor_b = (b != kInvalidBody) ? world_offset_to_local_anchor(orientation[b], r_b_world) : Vec3{};
+    point.separation = -penetration;
+    point.feature_id = 0u;
+
+    canonicalize_manifold_orientation(manifold);
+    manifolds.push_back(manifold);
+}
+
 void add_sphere_sphere_contact(std::span<const Vec3> position, std::span<const ShapeKind> shape_kind,
-                               std::span<const ShapeData> shapes, std::span<const u32> shape_index, const u32 a,
-                               const u32 b, std::vector<LegacyContact> &contacts) {
+                               std::span<const Quat> orientation, std::span<const ShapeData> shapes,
+                               std::span<const u32> shape_index, const u32 a, const u32 b,
+                               std::vector<ContactManifold> &manifolds) {
     const SphereShape &sphere_a = sphere_shape(shape_kind, shapes, shape_index, a);
     const SphereShape &sphere_b = sphere_shape(shape_kind, shapes, shape_index, b);
 
@@ -93,20 +117,13 @@ void add_sphere_sphere_contact(std::span<const Vec3> position, std::span<const S
     const f32 penetration = radius_sum - dist;
     const Vec3 r_a = normal * sphere_a.radius;
     const Vec3 r_b = -normal * sphere_b.radius;
-    contacts.push_back(LegacyContact{
-        .a = a,
-        .b = b,
-        .normal = normal,
-        .penetration = penetration,
-        .r_a = r_a,
-        .r_b = r_b,
-    });
+    push_single_point_manifold(orientation, a, b, normal, penetration, r_a, r_b, manifolds);
 }
 
 void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                             std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                             std::span<const u32> shape_index, const u32 sphere_id, const u32 box_id,
-                            const bool sphere_is_a, std::vector<LegacyContact> &contacts) {
+                            const bool sphere_is_a, std::vector<ContactManifold> &manifolds) {
     const SphereShape &sphere = sphere_shape(shape_kind, shapes, shape_index, sphere_id);
     const BoxShape &box = box_shape(shape_kind, shapes, shape_index, box_id);
 
@@ -178,19 +195,14 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
         r_b = -normal * sphere.radius;
     }
 
-    contacts.push_back(LegacyContact{
-        .a = sphere_is_a ? sphere_id : box_id,
-        .b = sphere_is_a ? box_id : sphere_id,
-        .normal = normal,
-        .penetration = penetration,
-        .r_a = r_a,
-        .r_b = r_b,
-    });
+    push_single_point_manifold(orientation, sphere_is_a ? sphere_id : box_id, sphere_is_a ? box_id : sphere_id,
+                               normal, penetration, r_a, r_b, manifolds);
 }
 
 void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                          std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
-                         std::span<const u32> shape_index, const u32 a, const u32 b, std::vector<LegacyContact> &contacts) {
+                         std::span<const u32> shape_index, const u32 a, const u32 b,
+                         std::vector<ContactManifold> &manifolds) {
     const BoxShape &box_a = box_shape(shape_kind, shapes, shape_index, a);
     const BoxShape &box_b = box_shape(shape_kind, shapes, shape_index, b);
 
@@ -302,19 +314,14 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
     const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
 
-    contacts.push_back(LegacyContact{
-        .a = a,
-        .b = b,
-        .normal = normal,
-        .penetration = best_overlap,
-        .r_a = point_a - center_a,
-        .r_b = point_b - center_b,
-    });
+    push_single_point_manifold(orientation, a, b, normal, best_overlap, point_a - center_a, point_b - center_b,
+                               manifolds);
 }
 
-void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const ShapeKind> shape_kind,
-                               std::span<const ShapeData> shapes, std::span<const u32> shape_index,
-                               std::span<const f32> inv_mass, const u32 id, std::vector<LegacyContact> &contacts) {
+void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
+                               std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
+                               std::span<const u32> shape_index, std::span<const f32> inv_mass, const u32 id,
+                               std::vector<ContactManifold> &manifolds) {
     if (inv_mass[id] == 0.0f) {
         return;
     }
@@ -326,20 +333,13 @@ void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const S
     const f32 penetration = sphere.radius - signed_distance;
     const Vec3 normal = -kGroundNormal;
     const Vec3 r_a = normal * sphere.radius;
-    contacts.push_back(LegacyContact{
-        .a = id,
-        .b = kInvalidBody,
-        .normal = normal,
-        .penetration = penetration,
-        .r_a = r_a,
-        .r_b = Vec3{},
-    });
+    push_single_point_manifold(orientation, id, kInvalidBody, normal, penetration, r_a, Vec3{}, manifolds);
 }
 
 void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                             std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                             std::span<const u32> shape_index, std::span<const f32> inv_mass, const u32 id,
-                            std::vector<LegacyContact> &contacts) {
+                            std::vector<ContactManifold> &manifolds) {
     if (inv_mass[id] == 0.0f) {
         return;
     }
@@ -359,14 +359,7 @@ void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat
     const f32 penetration = radius - signed_distance;
     const Vec3 normal = -kGroundNormal;
     const Vec3 contact = box_support_point(center, a0, a1, a2, box.half_extents, normal);
-    contacts.push_back(LegacyContact{
-        .a = id,
-        .b = kInvalidBody,
-        .normal = normal,
-        .penetration = penetration,
-        .r_a = contact - center,
-        .r_b = Vec3{},
-    });
+    push_single_point_manifold(orientation, id, kInvalidBody, normal, penetration, contact - center, Vec3{}, manifolds);
 }
 } // namespace javelin::detail
 
@@ -375,10 +368,10 @@ export namespace javelin {
 void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat> orientation,
                            std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                            std::span<const u32> shape_index, std::span<const f32> inv_mass,
-                           std::span<const BodyPair> pairs, std::vector<LegacyContact> &contacts) {
+                           std::span<const BodyPair> pairs, std::vector<ContactManifold> &manifolds) {
     ZoneScopedN("Physics narrow phase");
-    contacts.clear();
-    contacts.reserve(pairs.size() + position.size());
+    manifolds.clear();
+    manifolds.reserve(pairs.size() + position.size());
 
     for (const BodyPair pair : pairs) {
         const u32 a = pair.a;
@@ -389,25 +382,26 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
         const ShapeKind kind_a = shape_kind[a];
         const ShapeKind kind_b = shape_kind[b];
         if (kind_a == ShapeKind::sphere && kind_b == ShapeKind::sphere) {
-            detail::add_sphere_sphere_contact(position, shape_kind, shapes, shape_index, a, b, contacts);
+            detail::add_sphere_sphere_contact(position, shape_kind, orientation, shapes, shape_index, a, b, manifolds);
         } else if (kind_a == ShapeKind::sphere && kind_b == ShapeKind::box) {
             detail::add_sphere_box_contact(position, orientation, shape_kind, shapes, shape_index, a, b, true,
-                                           contacts);
+                                           manifolds);
         } else if (kind_a == ShapeKind::box && kind_b == ShapeKind::sphere) {
             detail::add_sphere_box_contact(position, orientation, shape_kind, shapes, shape_index, b, a, false,
-                                           contacts);
+                                           manifolds);
         } else if (kind_a == ShapeKind::box && kind_b == ShapeKind::box) {
-            detail::add_box_box_contact(position, orientation, shape_kind, shapes, shape_index, a, b, contacts);
+            detail::add_box_box_contact(position, orientation, shape_kind, shapes, shape_index, a, b, manifolds);
         }
     }
 
     const u32 count = static_cast<u32>(position.size());
     for (u32 i = 0; i < count; ++i) {
         if (shape_kind[i] == ShapeKind::sphere) {
-            detail::add_sphere_ground_contact(position, shape_kind, shapes, shape_index, inv_mass, i, contacts);
+            detail::add_sphere_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, i,
+                                              manifolds);
         } else if (shape_kind[i] == ShapeKind::box) {
             detail::add_box_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, i,
-                                           contacts);
+                                           manifolds);
         }
     }
 }

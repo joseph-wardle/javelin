@@ -154,7 +154,9 @@ struct PhysicsSystem final {
                         run_broad_phase_queries_(dynamic_ids);
                         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
                         narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes,
-                                              view.shape_index, view.inv_mass, candidate_pairs_, legacy_contacts_);
+                                              view.shape_index, view.inv_mass, candidate_pairs_, next_manifolds_);
+                        manifolds_.swap(next_manifolds_);
+                        build_legacy_contacts_from_manifolds_(view.orientation);
                         TracyPlot("physics_contacts", static_cast<i64>(legacy_contacts_.size()));
                         solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
                                        view.inv_inertia, view.orientation, legacy_contacts_, restitution, friction);
@@ -211,7 +213,7 @@ struct PhysicsSystem final {
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
-    static constexpr u32 kLegacyContactReserveFactor = 4;
+    static constexpr u32 kLegacyContactReserveFactor = kManifoldReserveFactor * kMaxManifoldPoints;
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
@@ -273,6 +275,33 @@ struct PhysicsSystem final {
                 std::terminate();
             }
 #endif
+        }
+    }
+
+    void build_legacy_contacts_from_manifolds_(std::span<const Quat> orientation) {
+        legacy_contacts_.clear();
+        for (const ContactManifold &manifold : manifolds_) {
+#ifndef NDEBUG
+            if (manifold.point_count > kMaxManifoldPoints) {
+                log::error(physics, "Invalid manifold point_count={} (a={} b={})", manifold.point_count, manifold.a,
+                           manifold.b);
+                std::terminate();
+            }
+#endif
+            const bool has_b = manifold.b != kInvalidBody;
+            for (u32 i = 0; i < manifold.point_count; ++i) {
+                const ContactPoint &point = manifold.points[i];
+                const Vec3 r_a = rotate(orientation[manifold.a], point.local_anchor_a);
+                const Vec3 r_b = has_b ? rotate(orientation[manifold.b], point.local_anchor_b) : Vec3{};
+                legacy_contacts_.push_back(LegacyContact{
+                    .a = manifold.a,
+                    .b = manifold.b,
+                    .normal = manifold.normal,
+                    .penetration = std::max(-point.separation, 0.0f),
+                    .r_a = r_a,
+                    .r_b = r_b,
+                });
+            }
         }
     }
 
