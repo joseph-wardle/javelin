@@ -13,6 +13,20 @@ struct BodyPair final {
     u32 b{};
 };
 
+[[nodiscard]] inline constexpr BodyPair canonical_body_pair(const u32 a, const u32 b) noexcept {
+    if (a <= b) {
+        return BodyPair{.a = a, .b = b};
+    }
+    return BodyPair{.a = b, .b = a};
+}
+
+[[nodiscard]] inline constexpr u64 body_pair_key(const u32 a, const u32 b) noexcept {
+    const BodyPair pair = canonical_body_pair(a, b);
+    return (static_cast<u64>(pair.a) << 32u) | static_cast<u64>(pair.b);
+}
+
+[[nodiscard]] inline constexpr u64 body_pair_key(const BodyPair pair) noexcept { return body_pair_key(pair.a, pair.b); }
+
 inline constexpr u32 kMaxManifoldPoints = 4;
 inline constexpr u32 kInvalidContactFeature = std::numeric_limits<u32>::max();
 
@@ -44,6 +58,24 @@ struct ContactManifold final {
     u32 point_count{};
     std::array<ContactPoint, kMaxManifoldPoints> points{};
 };
+
+inline void canonicalize_manifold_orientation(ContactManifold &manifold) noexcept {
+    if (manifold.a <= manifold.b) {
+        return;
+    }
+
+    std::swap(manifold.a, manifold.b);
+    manifold.normal = -manifold.normal;
+
+#ifndef NDEBUG
+    if (manifold.point_count > kMaxManifoldPoints) {
+        std::terminate();
+    }
+#endif
+    for (u32 i = 0; i < manifold.point_count; ++i) {
+        std::swap(manifold.points[i].local_anchor_a, manifold.points[i].local_anchor_b);
+    }
+}
 
 // Transitional single-point contact representation used by the legacy solver path.
 // Kept separate from ContactManifold to avoid type ambiguity during migration.
