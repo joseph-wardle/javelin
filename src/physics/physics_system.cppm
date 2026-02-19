@@ -79,12 +79,15 @@ struct PhysicsSystem final {
                         if (reset_requested_.exchange(false, std::memory_order_acq_rel)) {
                             scene_->reset_simulation();
                             static_dirty_ = true;
+                            clear_manifold_state_();
                         }
 
                         if (count != last_count_) {
                             static_dirty_ = true;
+                            clear_manifold_state_();
                         }
                         ensure_capacity_(count);
+                        prepare_manifold_lookup_();
 
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
@@ -151,10 +154,10 @@ struct PhysicsSystem final {
                         run_broad_phase_queries_(dynamic_ids);
                         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
                         narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes,
-                                              view.shape_index, view.inv_mass, candidate_pairs_, contacts_);
-                        TracyPlot("physics_contacts", static_cast<i64>(contacts_.size()));
+                                              view.shape_index, view.inv_mass, candidate_pairs_, legacy_contacts_);
+                        TracyPlot("physics_contacts", static_cast<i64>(legacy_contacts_.size()));
                         solve_contacts(view.position, view.velocity, view.angular_velocity, view.inv_mass,
-                                       view.inv_inertia, view.orientation, contacts_, restitution, friction);
+                                       view.inv_inertia, view.orientation, legacy_contacts_, restitution, friction);
                         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
                         publish_poses(view.poses, view.position, view.orientation, count);
                     }
@@ -207,11 +210,16 @@ struct PhysicsSystem final {
     u32 capacity_{0};
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
-    static constexpr u32 kContactReserveFactor = 4;
+    static constexpr u32 kManifoldReserveFactor = 4;
+    static constexpr u32 kLegacyContactReserveFactor = 4;
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
-    std::vector<LegacyContact> contacts_{};
+    std::vector<ContactManifold> manifolds_{};
+    std::vector<ContactManifold> next_manifolds_{};
+    std::unordered_map<u64, u32> manifold_lookup_{};
+    // Transitional single-point contacts for the legacy narrow-phase/solver path.
+    std::vector<LegacyContact> legacy_contacts_{};
     u32 broad_phase_worker_count_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<std::thread> broad_phase_threads_{};
@@ -239,8 +247,33 @@ struct PhysicsSystem final {
         static_ids_.reserve(count);
         dynamic_ids_.reserve(count);
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
-        contacts_.reserve(static_cast<usize>(count) * kContactReserveFactor);
+        const usize manifold_reserve = static_cast<usize>(count) * kManifoldReserveFactor;
+        manifolds_.reserve(manifold_reserve);
+        next_manifolds_.reserve(manifold_reserve);
+        manifold_lookup_.reserve(manifold_reserve);
+        legacy_contacts_.reserve(static_cast<usize>(count) * kLegacyContactReserveFactor);
         ensure_broad_phase_workers_(count);
+    }
+
+    void clear_manifold_state_() {
+        manifolds_.clear();
+        next_manifolds_.clear();
+        manifold_lookup_.clear();
+    }
+
+    void prepare_manifold_lookup_() {
+        next_manifolds_.clear();
+        manifold_lookup_.clear();
+        for (u32 i = 0; i < manifolds_.size(); ++i) {
+            const ContactManifold &manifold = manifolds_[i];
+            const auto [_, inserted] = manifold_lookup_.emplace(body_pair_key(manifold.a, manifold.b), i);
+#ifndef NDEBUG
+            if (!inserted) {
+                log::error(physics, "Duplicate manifold pair key (a={} b={})", manifold.a, manifold.b);
+                std::terminate();
+            }
+#endif
+        }
     }
 
     void ensure_broad_phase_workers_(const u32 count) {
