@@ -19,6 +19,8 @@ inline constexpr f32 kMinDistanceEpsSq = 1e-6f;
 inline constexpr f32 kAxisEpsSq = 1e-8f;
 inline constexpr f32 kAxisAbsEps = 1e-6f;
 inline constexpr u32 kBoxFaceFeatureTag = 1u << 8u;
+inline constexpr u32 kBoxGroundVertexFeatureTag = 1u << 9u;
+inline constexpr f32 kReductionEps = 1e-6f;
 
 [[nodiscard]] inline const SphereShape &sphere_shape(std::span<const ShapeKind> shape_kind,
                                                      std::span<const ShapeData> shapes,
@@ -82,6 +84,10 @@ inline constexpr u32 kBoxFaceFeatureTag = 1u << 8u;
 
 [[nodiscard]] inline u32 box_face_feature_id(const u32 axis, const bool positive, const bool inside_fallback) noexcept {
     return kBoxFaceFeatureTag | axis | (positive ? (1u << 2u) : 0u) | (inside_fallback ? (1u << 3u) : 0u);
+}
+
+[[nodiscard]] inline u32 box_ground_vertex_feature_id(const u32 vertex_index) noexcept {
+    return kBoxGroundVertexFeatureTag | vertex_index;
 }
 
 [[nodiscard]] inline Vec3 world_offset_to_local_anchor(const Quat q, const Vec3 offset_world) noexcept {
@@ -382,18 +388,156 @@ void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat
     const Vec3 a0 = rot.col(0);
     const Vec3 a1 = rot.col(1);
     const Vec3 a2 = rot.col(2);
+    struct CandidatePoint final {
+        Vec3 r_a_world{};
+        f32 penetration{};
+        u32 vertex_index{};
+    };
 
-    const f32 radius = std::fabs(a0.y) * box.half_extents.x + std::fabs(a1.y) * box.half_extents.y +
-                       std::fabs(a2.y) * box.half_extents.z;
-    const f32 signed_distance = center.y - kGroundOffset;
-    if (signed_distance >= radius) {
+    std::array<CandidatePoint, 8> candidates{};
+    u32 candidate_count = 0;
+    for (u32 vertex_index = 0; vertex_index < 8; ++vertex_index) {
+        const f32 sx = (vertex_index & 0x1u) ? 1.0f : -1.0f;
+        const f32 sy = (vertex_index & 0x2u) ? 1.0f : -1.0f;
+        const f32 sz = (vertex_index & 0x4u) ? 1.0f : -1.0f;
+        const Vec3 local_vertex{sx * box.half_extents.x, sy * box.half_extents.y, sz * box.half_extents.z};
+        const Vec3 r_a_world = a0 * local_vertex.x + a1 * local_vertex.y + a2 * local_vertex.z;
+        const Vec3 world_vertex = center + r_a_world;
+        const f32 signed_distance = world_vertex.y - kGroundOffset;
+        if (signed_distance >= 0.0f) {
+            continue;
+        }
+        candidates[candidate_count++] = CandidatePoint{
+            .r_a_world = r_a_world,
+            .penetration = -signed_distance,
+            .vertex_index = vertex_index,
+        };
+    }
+
+    if (candidate_count == 0u) {
         return;
     }
-    const f32 penetration = radius - signed_distance;
-    const Vec3 normal = -kGroundNormal;
-    const Vec3 contact = box_support_point(center, a0, a1, a2, box.half_extents, normal);
-    push_single_point_manifold(orientation, id, kInvalidBody, normal, penetration, 0u, contact - center, Vec3{},
-                               manifolds);
+
+    auto penetration_greater = [&](const u32 lhs, const u32 rhs) {
+        const f32 diff = candidates[lhs].penetration - candidates[rhs].penetration;
+        if (std::fabs(diff) > kReductionEps) {
+            return diff > 0.0f;
+        }
+        return candidates[lhs].vertex_index < candidates[rhs].vertex_index;
+    };
+
+    u32 deepest = 0u;
+    for (u32 i = 1; i < candidate_count; ++i) {
+        if (penetration_greater(i, deepest)) {
+            deepest = i;
+        }
+    }
+
+    auto spread_score = [&](const std::array<u32, 4> selected) {
+        f32 best_area2 = 0.0f;
+        for (u32 i = 0; i < 4; ++i) {
+            for (u32 j = i + 1; j < 4; ++j) {
+                for (u32 k = j + 1; k < 4; ++k) {
+                    const Vec3 &a = candidates[selected[i]].r_a_world;
+                    const Vec3 &b = candidates[selected[j]].r_a_world;
+                    const Vec3 &c = candidates[selected[k]].r_a_world;
+                    const f32 abx = b.x - a.x;
+                    const f32 abz = b.z - a.z;
+                    const f32 acx = c.x - a.x;
+                    const f32 acz = c.z - a.z;
+                    const f32 area2 = std::fabs(abx * acz - abz * acx);
+                    best_area2 = std::max(best_area2, area2);
+                }
+            }
+        }
+        return best_area2;
+    };
+
+    std::array<u32, kMaxManifoldPoints> selected{};
+    u32 selected_count = 0u;
+    selected[selected_count++] = deepest;
+
+    if (candidate_count <= kMaxManifoldPoints) {
+        for (u32 i = 0; i < candidate_count; ++i) {
+            if (i == deepest) {
+                continue;
+            }
+            selected[selected_count++] = i;
+        }
+    } else {
+        std::array<u32, 7> remaining{};
+        u32 remaining_count = 0u;
+        for (u32 i = 0; i < candidate_count; ++i) {
+            if (i == deepest) {
+                continue;
+            }
+            remaining[remaining_count++] = i;
+        }
+
+        std::array<u32, 3> best_extra{remaining[0], remaining[1], remaining[2]};
+        f32 best_score = -1.0f;
+        bool have_best = false;
+
+        for (u32 i = 0; i + 2 < remaining_count; ++i) {
+            for (u32 j = i + 1; j + 1 < remaining_count; ++j) {
+                for (u32 k = j + 1; k < remaining_count; ++k) {
+                    const std::array<u32, 3> extra{remaining[i], remaining[j], remaining[k]};
+                    const std::array<u32, 4> combo{deepest, extra[0], extra[1], extra[2]};
+                    const f32 score = spread_score(combo);
+
+                    bool better = false;
+                    if (!have_best || score > best_score + kReductionEps) {
+                        better = true;
+                    } else if (std::fabs(score - best_score) <= kReductionEps) {
+                        const std::array<u32, 3> best_ids{
+                            candidates[best_extra[0]].vertex_index,
+                            candidates[best_extra[1]].vertex_index,
+                            candidates[best_extra[2]].vertex_index,
+                        };
+                        const std::array<u32, 3> ids{
+                            candidates[extra[0]].vertex_index,
+                            candidates[extra[1]].vertex_index,
+                            candidates[extra[2]].vertex_index,
+                        };
+                        better = ids < best_ids;
+                    }
+
+                    if (better) {
+                        best_extra = extra;
+                        best_score = score;
+                        have_best = true;
+                    }
+                }
+            }
+        }
+
+        selected[selected_count++] = best_extra[0];
+        selected[selected_count++] = best_extra[1];
+        selected[selected_count++] = best_extra[2];
+    }
+
+    std::sort(selected.begin(), selected.begin() + selected_count, [&](const u32 lhs, const u32 rhs) {
+        return penetration_greater(lhs, rhs);
+    });
+
+    ContactManifold manifold{
+        .a = id,
+        .b = kInvalidBody,
+        .normal = -kGroundNormal,
+        .point_count = selected_count,
+    };
+    for (u32 i = 0; i < selected_count; ++i) {
+        const CandidatePoint &candidate = candidates[selected[i]];
+        ContactPoint point{};
+        point.local_anchor_a = world_offset_to_local_anchor(orientation[id], candidate.r_a_world);
+        point.local_anchor_b = Vec3{};
+        point.separation = -candidate.penetration;
+        point.feature_id = box_ground_vertex_feature_id(candidate.vertex_index);
+        manifold.points[i] = point;
+    }
+
+    canonicalize_manifold_orientation(manifold);
+    manifolds.push_back(manifold);
 }
 } // namespace javelin::detail
 
