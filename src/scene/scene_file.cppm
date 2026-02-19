@@ -227,6 +227,81 @@ template <class Number>
     return true;
 }
 
+[[nodiscard]] constexpr f32 canonicalize_signed_zero(const f32 value) noexcept {
+    return (value == 0.0f) ? 0.0f : value;
+}
+
+[[nodiscard]] inline Quat canonicalize_quaternion_for_text(Quat q) noexcept {
+    if (!q.try_normalize()) {
+        return Quat::identity();
+    }
+
+    // q and -q represent the same orientation. Canonicalize sign for stable diffs.
+    const bool flip = (q.w < 0.0f) || (q.w == 0.0f && (q.z < 0.0f || (q.z == 0.0f && (q.y < 0.0f ||
+                                                                                      (q.y == 0.0f && q.x < 0.0f)))));
+    if (flip) {
+        q.x = -q.x;
+        q.y = -q.y;
+        q.z = -q.z;
+        q.w = -q.w;
+    }
+    return q;
+}
+
+[[nodiscard]] inline std::vector<usize> sorted_indices_by_id(const std::vector<SceneFileShape> &items) {
+    std::vector<usize> indices(items.size());
+    std::iota(indices.begin(), indices.end(), static_cast<usize>(0));
+    std::stable_sort(indices.begin(), indices.end(),
+                     [&items](const usize a, const usize b) { return items[a].id < items[b].id; });
+    return indices;
+}
+
+[[nodiscard]] inline std::vector<usize> sorted_indices_by_id(const std::vector<SceneFileBody> &items) {
+    std::vector<usize> indices(items.size());
+    std::iota(indices.begin(), indices.end(), static_cast<usize>(0));
+    std::stable_sort(indices.begin(), indices.end(),
+                     [&items](const usize a, const usize b) { return items[a].id < items[b].id; });
+    return indices;
+}
+
+inline void append_token(std::string &line, const std::string_view token) {
+    if (!line.empty()) {
+        line.push_back(' ');
+    }
+    line.append(token);
+}
+
+inline void append_key_value(std::string &line, const std::string_view key, const std::string_view value) {
+    if (!line.empty()) {
+        line.push_back(' ');
+    }
+    line.append(key);
+    line.push_back('=');
+    line.append(value);
+}
+
+inline void append_key_value_u32(std::string &line, const std::string_view key, const u32 value) {
+    std::array<char, 16> buffer{};
+    const auto [ptr, ec] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+    if (ec != std::errc{}) {
+        append_key_value(line, key, std::to_string(value));
+        return;
+    }
+    append_key_value(line, key, std::string_view{buffer.data(), static_cast<usize>(ptr - buffer.data())});
+}
+
+inline void append_key_value_f32(std::string &line, const std::string_view key, const f32 value) {
+    const f32 canon = canonicalize_signed_zero(value);
+    std::array<char, 64> buffer{};
+    const auto [ptr, ec] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), canon,
+                                         std::chars_format::general, std::numeric_limits<f32>::max_digits10);
+    if (ec != std::errc{}) {
+        append_key_value(line, key, std::format("{:.9g}", canon));
+        return;
+    }
+    append_key_value(line, key, std::string_view{buffer.data(), static_cast<usize>(ptr - buffer.data())});
+}
+
 struct ParsedSceneHeader final {
     u32 version{};
     std::string units{};
@@ -956,12 +1031,121 @@ struct SceneFile final {
     }
 
     [[nodiscard]] std::expected<void, SceneFileError> save(const std::filesystem::path &path,
-                                                           const SceneFileSaveOptions & /*options*/ = {}) const {
-        return std::unexpected(SceneFileError{
-            .path = path,
-            .line = 0u,
-            .message = "SceneFile::save is not implemented yet",
-        });
+                                                           const SceneFileSaveOptions &options = {}) const {
+        auto error = [&path](std::string message) -> std::expected<void, SceneFileError> {
+            return std::unexpected(SceneFileError{
+                .path = path,
+                .line = 0u,
+                .message = std::move(message),
+            });
+        };
+
+        if (options.validate_before_write) {
+            auto valid = validate(path);
+            if (!valid) {
+                return std::unexpected(valid.error());
+            }
+        }
+
+        if (const std::filesystem::path parent = path.parent_path(); !parent.empty()) {
+            std::error_code ec{};
+            std::filesystem::create_directories(parent, ec);
+            if (ec) {
+                return error(std::format("Unable to create parent directory '{}': {}", parent.string(), ec.message()));
+            }
+        }
+
+        std::string out_text{};
+        out_text.reserve(256 + shapes.size() * 64 + bodies.size() * 220);
+        out_text.append("# javelin scene file (.jvscene)\n");
+        out_text.append("# schema=v1 units=m one-record-per-line key=value\n");
+
+        std::string line{};
+        line.reserve(256);
+
+        line.clear();
+        detail::append_token(line, "scene");
+        detail::append_key_value_u32(line, "version", version);
+        detail::append_key_value(line, "units", units);
+        out_text.append(line);
+        out_text.push_back('\n');
+
+        const std::vector<usize> sorted_shape_indices = detail::sorted_indices_by_id(shapes);
+        if (!sorted_shape_indices.empty()) {
+            out_text.push_back('\n');
+            out_text.append("# shapes\n");
+            for (const usize idx : sorted_shape_indices) {
+                const SceneFileShape &shape = shapes[idx];
+                line.clear();
+                detail::append_token(line, "shape");
+                detail::append_key_value(line, "id", shape.id);
+                detail::append_key_value(line, "kind", to_string(shape.shape.kind));
+                switch (shape.shape.kind) {
+                case ShapeKind::sphere:
+                    detail::append_key_value_f32(line, "r", shape_sphere(shape.shape).radius);
+                    break;
+                case ShapeKind::box: {
+                    const Vec3 half_extents = shape_box(shape.shape).half_extents;
+                    detail::append_key_value_f32(line, "hx", half_extents.x);
+                    detail::append_key_value_f32(line, "hy", half_extents.y);
+                    detail::append_key_value_f32(line, "hz", half_extents.z);
+                } break;
+                }
+                out_text.append(line);
+                out_text.push_back('\n');
+            }
+        }
+
+        const std::vector<usize> sorted_body_indices = detail::sorted_indices_by_id(bodies);
+        if (!sorted_body_indices.empty()) {
+            out_text.push_back('\n');
+            out_text.append("# bodies\n");
+            for (const usize idx : sorted_body_indices) {
+                const SceneFileBody &body = bodies[idx];
+                line.clear();
+                detail::append_token(line, "body");
+                detail::append_key_value(line, "id", body.id);
+                detail::append_key_value(line, "shape", body.shape_id);
+                detail::append_key_value(line, "motion", to_string(body.motion));
+                detail::append_key_value_u32(line, "material", body.material.value);
+                detail::append_key_value_u32(line, "mesh", body.mesh.value);
+
+                detail::append_key_value_f32(line, "px", body.position.x);
+                detail::append_key_value_f32(line, "py", body.position.y);
+                detail::append_key_value_f32(line, "pz", body.position.z);
+
+                const Quat orientation = detail::canonicalize_quaternion_for_text(body.orientation);
+                detail::append_key_value_f32(line, "ox", orientation.x);
+                detail::append_key_value_f32(line, "oy", orientation.y);
+                detail::append_key_value_f32(line, "oz", orientation.z);
+                detail::append_key_value_f32(line, "ow", orientation.w);
+
+                detail::append_key_value_f32(line, "vx", body.velocity.x);
+                detail::append_key_value_f32(line, "vy", body.velocity.y);
+                detail::append_key_value_f32(line, "vz", body.velocity.z);
+                detail::append_key_value_f32(line, "wx", body.angular_velocity.x);
+                detail::append_key_value_f32(line, "wy", body.angular_velocity.y);
+                detail::append_key_value_f32(line, "wz", body.angular_velocity.z);
+
+                out_text.append(line);
+                out_text.push_back('\n');
+            }
+        }
+
+        std::ofstream file{path, std::ios::binary | std::ios::trunc};
+        if (!file.is_open()) {
+            return error("Unable to open scene file for writing");
+        }
+        file.write(out_text.data(), static_cast<std::streamsize>(out_text.size()));
+        if (!file) {
+            return error("I/O error while writing scene file");
+        }
+        file.flush();
+        if (!file) {
+            return error("I/O error while finalizing scene file write");
+        }
+
+        return {};
     }
 };
 
