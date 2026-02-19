@@ -57,6 +57,21 @@ run preset=default_preset *args: (build preset)
         exit 1
     fi
 
+bench name preset=default_preset *args: (build preset)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    target="javelin_bench_{{ name }}"
+    bin_a="{{ build_root }}/{{ preset }}/bench/$target"
+    bin_b="{{ build_root }}/{{ preset }}/$target"
+    if [[ -x "$bin_a" ]]; then
+        "$bin_a" {{ args }}
+    elif [[ -x "$bin_b" ]]; then
+        "$bin_b" {{ args }}
+    else
+        echo "Benchmark binary not found. Build target '$target' first." >&2
+        exit 1
+    fi
+
 clean preset=default_preset:
     rm -rf "{{ build_root }}/{{ preset }}"
 

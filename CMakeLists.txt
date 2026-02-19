@@ -15,6 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPERIMENTAL_CXX_MODULE_DYNDEP 1)
 
 option(JAVELIN_BUILD_EXAMPLES "Build example executables." ON)
+option(JAVELIN_BUILD_BENCH    "Build benchmark executables." ON)
 option(JAVELIN_ENABLE_TESTS   "Build unit/integration tests."  OFF)
 option(JAVELIN_ENABLE_TRACY   "Enable Tracy instrumentation."  ON)
 
@@ -27,4 +28,8 @@ add_subdirectory(src)
 
 if(JAVELIN_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(JAVELIN_BUILD_BENCH)
+    add_subdirectory(bench)
 endif()

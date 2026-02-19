@@ -281,11 +281,11 @@ struct Scene final {
 
         out.publish_poses_from_sim();
         log::info(scene, "Loaded {} bodies (spheres={}, boxes={})", out.count_, sphere_count, box_count);
-        log::info(scene, "Test scene params: sphere_radius=[{}..{}], cube_half=[{}..{}], height=[{}..{}], pile_radius={}",
-                  detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max,
-                  detail::kSpawnSettings.box_half_min, detail::kSpawnSettings.box_half_max,
-                  detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
-                  detail::kSpawnSettings.pile_radius);
+        log::info(
+            scene, "Test scene params: sphere_radius=[{}..{}], cube_half=[{}..{}], height=[{}..{}], pile_radius={}",
+            detail::kSpawnSettings.radius_min, detail::kSpawnSettings.radius_max, detail::kSpawnSettings.box_half_min,
+            detail::kSpawnSettings.box_half_max, detail::kSpawnSettings.height_min, detail::kSpawnSettings.height_max,
+            detail::kSpawnSettings.pile_radius);
         return out;
     }
 
