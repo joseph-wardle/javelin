@@ -18,6 +18,7 @@ inline constexpr f32 kGroundOffset = 0.0f;
 inline constexpr f32 kMinDistanceEpsSq = 1e-6f;
 inline constexpr f32 kAxisEpsSq = 1e-8f;
 inline constexpr f32 kAxisAbsEps = 1e-6f;
+inline constexpr u32 kBoxFaceFeatureTag = 1u << 8u;
 
 [[nodiscard]] inline const SphereShape &sphere_shape(std::span<const ShapeKind> shape_kind,
                                                      std::span<const ShapeData> shapes,
@@ -64,6 +65,23 @@ inline constexpr f32 kAxisAbsEps = 1e-6f;
     const f32 s1 = (dot(dir, a1) >= 0.0f) ? half_extents.y : -half_extents.y;
     const f32 s2 = (dot(dir, a2) >= 0.0f) ? half_extents.z : -half_extents.z;
     return center + a0 * s0 + a1 * s1 + a2 * s2;
+}
+
+[[nodiscard]] inline u32 dominant_axis_abs(const Vec3 v) noexcept {
+    const f32 ax = std::fabs(v.x);
+    const f32 ay = std::fabs(v.y);
+    const f32 az = std::fabs(v.z);
+    if (ax >= ay && ax >= az) {
+        return 0u;
+    }
+    if (ay >= az) {
+        return 1u;
+    }
+    return 2u;
+}
+
+[[nodiscard]] inline u32 box_face_feature_id(const u32 axis, const bool positive, const bool inside_fallback) noexcept {
+    return kBoxFaceFeatureTag | axis | (positive ? (1u << 2u) : 0u) | (inside_fallback ? (1u << 3u) : 0u);
 }
 
 [[nodiscard]] inline Vec3 world_offset_to_local_anchor(const Quat q, const Vec3 offset_world) noexcept {
@@ -155,11 +173,18 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
     Vec3 normal_local = Vec3::unit_x();
     Vec3 contact_local = clamped;
     f32 penetration = 0.0f;
+    u32 feature_axis = 0u;
+    bool feature_positive = true;
+    bool inside_fallback = false;
     if (dist2 > kMinDistanceEpsSq) {
         const f32 dist = std::sqrt(dist2);
         normal_local = diff / dist;
         penetration = sphere.radius - dist;
+        feature_axis = dominant_axis_abs(normal_local);
+        const f32 axis_value = (feature_axis == 0u) ? normal_local.x : (feature_axis == 1u) ? normal_local.y : normal_local.z;
+        feature_positive = axis_value >= 0.0f;
     } else {
+        inside_fallback = true;
         const f32 dx = he.x - std::fabs(local.x);
         const f32 dy = he.y - std::fabs(local.y);
         const f32 dz = he.z - std::fabs(local.z);
@@ -168,18 +193,25 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
             normal_local = Vec3{sign, 0.0f, 0.0f};
             contact_local = Vec3{sign * he.x, local.y, local.z};
             penetration = sphere.radius + dx;
+            feature_axis = 0u;
+            feature_positive = sign > 0.0f;
         } else if (dy <= dz) {
             const f32 sign = (local.y >= 0.0f) ? 1.0f : -1.0f;
             normal_local = Vec3{0.0f, sign, 0.0f};
             contact_local = Vec3{local.x, sign * he.y, local.z};
             penetration = sphere.radius + dy;
+            feature_axis = 1u;
+            feature_positive = sign > 0.0f;
         } else {
             const f32 sign = (local.z >= 0.0f) ? 1.0f : -1.0f;
             normal_local = Vec3{0.0f, 0.0f, sign};
             contact_local = Vec3{local.x, local.y, sign * he.z};
             penetration = sphere.radius + dz;
+            feature_axis = 2u;
+            feature_positive = sign > 0.0f;
         }
     }
+    const u32 feature_id = box_face_feature_id(feature_axis, feature_positive, inside_fallback);
 
     const Vec3 normal_world = a0 * normal_local.x + a1 * normal_local.y + a2 * normal_local.z;
     const Vec3 contact_world = center_b + a0 * contact_local.x + a1 * contact_local.y + a2 * contact_local.z;
@@ -197,7 +229,7 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
     }
 
     push_single_point_manifold(orientation, sphere_is_a ? sphere_id : box_id, sphere_is_a ? box_id : sphere_id, normal,
-                               penetration, 0u, r_a, r_b, manifolds);
+                               penetration, feature_id, r_a, r_b, manifolds);
 }
 
 void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
