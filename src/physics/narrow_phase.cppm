@@ -21,6 +21,7 @@ inline constexpr f32 kAxisAbsEps = 1e-6f;
 inline constexpr u32 kBoxFaceFeatureTag = 1u << 8u;
 inline constexpr u32 kBoxGroundVertexFeatureTag = 1u << 9u;
 inline constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
+inline constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
 inline constexpr f32 kReductionEps = 1e-6f;
 inline constexpr f32 kAxisHysteresisAbs = 0.02f;
 
@@ -323,6 +324,107 @@ find_axis_candidate(const std::array<BoxAxisCandidate, 3> &face_axes_a, const st
     return key;
 }
 
+[[nodiscard]] inline Vec3 box_local_vertex(const Vec3 half_extents, const u32 vertex_index) noexcept {
+    return Vec3{
+        (vertex_index & 0x1u) ? half_extents.x : -half_extents.x,
+        (vertex_index & 0x2u) ? half_extents.y : -half_extents.y,
+        (vertex_index & 0x4u) ? half_extents.z : -half_extents.z,
+    };
+}
+
+[[nodiscard]] inline std::array<u8, 4> box_face_vertex_indices(const u32 axis, const bool positive) noexcept {
+    // Vertex index bits: x=bit0, y=bit1, z=bit2.
+    static constexpr std::array<std::array<u8, 4>, 6> kFaceVerts{{
+        {{0u, 4u, 6u, 2u}}, // -X
+        {{1u, 3u, 7u, 5u}}, // +X
+        {{0u, 1u, 5u, 4u}}, // -Y
+        {{2u, 6u, 7u, 3u}}, // +Y
+        {{0u, 2u, 3u, 1u}}, // -Z
+        {{4u, 5u, 7u, 6u}}, // +Z
+    }};
+    return kFaceVerts[axis * 2u + (positive ? 1u : 0u)];
+}
+
+struct ClipVertex final {
+    Vec3 point_world{};
+    f32 u{};
+    f32 v{};
+    u8 id0{};
+    u8 id1{};
+};
+
+[[nodiscard]] inline u32 clip_polygon_axis(std::span<const ClipVertex> input, const bool use_u, const f32 boundary,
+                                           const bool keep_less_equal, std::span<ClipVertex> output) {
+    const auto coord = [use_u](const ClipVertex &vertex) noexcept { return use_u ? vertex.u : vertex.v; };
+    const auto inside = [boundary, keep_less_equal](const f32 value) noexcept {
+        if (keep_less_equal) {
+            return value <= boundary + kReductionEps;
+        }
+        return value >= boundary - kReductionEps;
+    };
+
+    const u32 count = static_cast<u32>(input.size());
+    if (count == 0u) {
+        return 0u;
+    }
+
+    u32 out_count = 0u;
+    ClipVertex s = input[count - 1u];
+    f32 cs = coord(s);
+    bool s_inside = inside(cs);
+    for (u32 i = 0; i < count; ++i) {
+        const ClipVertex e = input[i];
+        const f32 ce = coord(e);
+        const bool e_inside = inside(ce);
+
+        if (s_inside != e_inside) {
+            const f32 denom = ce - cs;
+            f32 t = (std::fabs(denom) > kReductionEps) ? (boundary - cs) / denom : 0.0f;
+            t = std::clamp(t, 0.0f, 1.0f);
+
+            ClipVertex intersection{};
+            intersection.point_world = lerp(s.point_world, e.point_world, t);
+            intersection.u = s.u + (e.u - s.u) * t;
+            intersection.v = s.v + (e.v - s.v) * t;
+            intersection.id0 = std::min(std::min(s.id0, s.id1), std::min(e.id0, e.id1));
+            intersection.id1 = std::max(std::max(s.id0, s.id1), std::max(e.id0, e.id1));
+#ifndef NDEBUG
+            if (out_count >= output.size()) {
+                log::error(physics, "Clip polygon overflow out_count={} capacity={}", out_count, output.size());
+                std::terminate();
+            }
+#endif
+            output[out_count++] = intersection;
+        }
+
+        if (e_inside) {
+#ifndef NDEBUG
+            if (out_count >= output.size()) {
+                log::error(physics, "Clip polygon overflow out_count={} capacity={}", out_count, output.size());
+                std::terminate();
+            }
+#endif
+            output[out_count++] = e;
+        }
+
+        s = e;
+        cs = ce;
+        s_inside = e_inside;
+    }
+    return out_count;
+}
+
+[[nodiscard]] inline u32 box_face_face_feature_id(const u8 ref_axis, const bool ref_positive, const bool ref_is_a,
+                                                  const u8 incident_axis, const bool incident_positive, const u8 id0,
+                                                  const u8 id1) noexcept {
+    const u8 a = std::min(id0, id1);
+    const u8 b = std::max(id0, id1);
+    return kBoxFaceFaceFeatureTag | (static_cast<u32>(ref_axis) & 0x3u) | (ref_positive ? (1u << 2u) : 0u) |
+           (ref_is_a ? (1u << 3u) : 0u) | ((static_cast<u32>(incident_axis) & 0x3u) << 4u) |
+           (incident_positive ? (1u << 6u) : 0u) | ((static_cast<u32>(a & 0x7u)) << 7u) |
+           ((static_cast<u32>(b & 0x7u)) << 10u);
+}
+
 void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
                          std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                          std::span<const u32> shape_index, const u32 a, const u32 b,
@@ -471,11 +573,255 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         normal = -normal;
     }
 
-    const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
-    const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
+    if (best_axis.key.type == BoxAxisType::edge_edge) {
+        const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
+        const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
+        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, box_axis_feature_id(best_axis.key),
+                                   point_a - center_a, point_b - center_b, manifolds);
+        return;
+    }
 
-    push_single_point_manifold(orientation, a, b, normal, best_axis.depth, box_axis_feature_id(best_axis.key),
-                               point_a - center_a, point_b - center_b, manifolds);
+    const std::array<Vec3, 3> axes_a{a0, a1, a2};
+    const std::array<Vec3, 3> axes_b{b0, b1, b2};
+    const bool ref_is_a = best_axis.key.type == BoxAxisType::face_a;
+    const std::array<Vec3, 3> &ref_axes = ref_is_a ? axes_a : axes_b;
+    const std::array<Vec3, 3> &incident_axes = ref_is_a ? axes_b : axes_a;
+    const Vec3 ref_center = ref_is_a ? center_a : center_b;
+    const Vec3 incident_center = ref_is_a ? center_b : center_a;
+    const Vec3 ref_he = ref_is_a ? he_a : he_b;
+    const Vec3 incident_he = ref_is_a ? he_b : he_a;
+
+    const u32 ref_axis = best_axis.key.i;
+    const Vec3 ref_axis_vec = ref_axes[ref_axis];
+    const Vec3 ref_to_incident_normal = ref_is_a ? normal : -normal;
+    const bool ref_positive = dot(ref_axis_vec, ref_to_incident_normal) >= 0.0f;
+    const Vec3 ref_face_center =
+        ref_center + ref_axis_vec * (ref_positive ? ref_he[ref_axis] : -ref_he[ref_axis]);
+    const u32 ref_u_axis = (ref_axis + 1u) % 3u;
+    const u32 ref_v_axis = (ref_axis + 2u) % 3u;
+    const Vec3 ref_u = ref_axes[ref_u_axis];
+    const Vec3 ref_v = ref_axes[ref_v_axis];
+    const f32 ref_u_extent = ref_he[ref_u_axis];
+    const f32 ref_v_extent = ref_he[ref_v_axis];
+
+    u8 incident_axis = 0u;
+    bool incident_positive = false;
+    f32 best_incident_dot = std::numeric_limits<f32>::max();
+    for (u8 axis = 0u; axis < 3u; ++axis) {
+        for (u8 sign_i = 0u; sign_i < 2u; ++sign_i) {
+            const bool positive = sign_i != 0u;
+            const Vec3 incident_normal = incident_axes[axis] * (positive ? 1.0f : -1.0f);
+            const f32 dot_value = dot(incident_normal, ref_to_incident_normal);
+            const bool better = dot_value < best_incident_dot - kReductionEps ||
+                                (std::fabs(dot_value - best_incident_dot) <= kReductionEps &&
+                                 (axis < incident_axis || (axis == incident_axis && positive < incident_positive)));
+            if (better) {
+                best_incident_dot = dot_value;
+                incident_axis = axis;
+                incident_positive = positive;
+            }
+        }
+    }
+
+    std::array<ClipVertex, 8> clip_a{};
+    std::array<ClipVertex, 8> clip_b{};
+    const std::array<u8, 4> incident_face_indices = box_face_vertex_indices(incident_axis, incident_positive);
+    u32 clip_count = 4u;
+    for (u32 i = 0; i < clip_count; ++i) {
+        const u8 vertex_index = incident_face_indices[i];
+        const Vec3 local_vertex = box_local_vertex(incident_he, vertex_index);
+        const Vec3 point_world = incident_center + incident_axes[0] * local_vertex.x + incident_axes[1] * local_vertex.y +
+                                 incident_axes[2] * local_vertex.z;
+        const Vec3 relative = point_world - ref_face_center;
+        clip_a[i] = ClipVertex{
+            .point_world = point_world,
+            .u = dot(relative, ref_u),
+            .v = dot(relative, ref_v),
+            .id0 = vertex_index,
+            .id1 = vertex_index,
+        };
+    }
+
+    clip_count =
+        clip_polygon_axis(std::span<const ClipVertex>{clip_a.data(), clip_count}, true, ref_u_extent, true, clip_b);
+    clip_count =
+        clip_polygon_axis(std::span<const ClipVertex>{clip_b.data(), clip_count}, true, -ref_u_extent, false, clip_a);
+    clip_count =
+        clip_polygon_axis(std::span<const ClipVertex>{clip_a.data(), clip_count}, false, ref_v_extent, true, clip_b);
+    clip_count =
+        clip_polygon_axis(std::span<const ClipVertex>{clip_b.data(), clip_count}, false, -ref_v_extent, false, clip_a);
+
+    struct FaceContactCandidate final {
+        Vec3 r_a_world{};
+        Vec3 r_b_world{};
+        f32 separation{};
+        f32 penetration{};
+        f32 u{};
+        f32 v{};
+        u32 feature_id{};
+    };
+
+    std::array<FaceContactCandidate, 8> candidates{};
+    u32 candidate_count = 0u;
+    for (u32 i = 0; i < clip_count; ++i) {
+        const ClipVertex &clip_vertex = clip_a[i];
+        const f32 separation =
+            ref_is_a ? dot(clip_vertex.point_world - ref_face_center, normal)
+                     : dot(ref_face_center - clip_vertex.point_world, normal);
+        if (separation > kAxisAbsEps) {
+            continue;
+        }
+
+        Vec3 point_a_world{};
+        Vec3 point_b_world{};
+        if (ref_is_a) {
+            point_b_world = clip_vertex.point_world;
+            point_a_world = point_b_world - normal * separation;
+        } else {
+            point_a_world = clip_vertex.point_world;
+            point_b_world = point_a_world + normal * separation;
+        }
+
+#ifndef NDEBUG
+        if (candidate_count >= candidates.size()) {
+            log::error(physics, "Box-box face clipping overflow candidate_count={}", candidate_count);
+            std::terminate();
+        }
+#endif
+        candidates[candidate_count++] = FaceContactCandidate{
+            .r_a_world = point_a_world - center_a,
+            .r_b_world = point_b_world - center_b,
+            .separation = separation,
+            .penetration = std::max(-separation, 0.0f),
+            .u = clip_vertex.u,
+            .v = clip_vertex.v,
+            .feature_id = box_face_face_feature_id(static_cast<u8>(ref_axis), ref_positive, ref_is_a, incident_axis,
+                                                   incident_positive, clip_vertex.id0, clip_vertex.id1),
+        };
+    }
+
+    if (candidate_count == 0u) {
+        const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
+        const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
+        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, box_axis_feature_id(best_axis.key),
+                                   point_a - center_a, point_b - center_b, manifolds);
+        return;
+    }
+
+    auto candidate_deeper = [&](const u32 lhs, const u32 rhs) {
+        const f32 diff = candidates[lhs].penetration - candidates[rhs].penetration;
+        if (std::fabs(diff) > kReductionEps) {
+            return diff > 0.0f;
+        }
+        if (candidates[lhs].feature_id != candidates[rhs].feature_id) {
+            return candidates[lhs].feature_id < candidates[rhs].feature_id;
+        }
+        return lhs < rhs;
+    };
+
+    std::array<u32, kMaxManifoldPoints> selected{};
+    u32 selected_count = 0u;
+    if (candidate_count <= kMaxManifoldPoints) {
+        for (u32 i = 0; i < candidate_count; ++i) {
+            selected[selected_count++] = i;
+        }
+    } else {
+        u32 deepest = 0u;
+        for (u32 i = 1u; i < candidate_count; ++i) {
+            if (candidate_deeper(i, deepest)) {
+                deepest = i;
+            }
+        }
+
+        auto spread_score = [&](const std::array<u32, 4> pick) {
+            f32 best_area2 = 0.0f;
+            for (u32 i = 0; i < 4u; ++i) {
+                for (u32 j = i + 1u; j < 4u; ++j) {
+                    for (u32 k = j + 1u; k < 4u; ++k) {
+                        const f32 ab_u = candidates[pick[j]].u - candidates[pick[i]].u;
+                        const f32 ab_v = candidates[pick[j]].v - candidates[pick[i]].v;
+                        const f32 ac_u = candidates[pick[k]].u - candidates[pick[i]].u;
+                        const f32 ac_v = candidates[pick[k]].v - candidates[pick[i]].v;
+                        const f32 area2 = std::fabs(ab_u * ac_v - ab_v * ac_u);
+                        best_area2 = std::max(best_area2, area2);
+                    }
+                }
+            }
+            return best_area2;
+        };
+
+        std::array<u32, 7> remaining{};
+        u32 remaining_count = 0u;
+        for (u32 i = 0u; i < candidate_count; ++i) {
+            if (i == deepest) {
+                continue;
+            }
+            remaining[remaining_count++] = i;
+        }
+
+        std::array<u32, 3> best_extra{remaining[0], remaining[1], remaining[2]};
+        f32 best_score = -1.0f;
+        bool have_best = false;
+        for (u32 i = 0u; i + 2u < remaining_count; ++i) {
+            for (u32 j = i + 1u; j + 1u < remaining_count; ++j) {
+                for (u32 k = j + 1u; k < remaining_count; ++k) {
+                    const std::array<u32, 3> extra{remaining[i], remaining[j], remaining[k]};
+                    const std::array<u32, 4> combo{deepest, extra[0], extra[1], extra[2]};
+                    const f32 score = spread_score(combo);
+
+                    std::array<u32, 3> ids{
+                        candidates[extra[0]].feature_id,
+                        candidates[extra[1]].feature_id,
+                        candidates[extra[2]].feature_id,
+                    };
+                    std::sort(ids.begin(), ids.end());
+
+                    std::array<u32, 3> best_ids{
+                        candidates[best_extra[0]].feature_id,
+                        candidates[best_extra[1]].feature_id,
+                        candidates[best_extra[2]].feature_id,
+                    };
+                    std::sort(best_ids.begin(), best_ids.end());
+
+                    const bool better = !have_best || score > best_score + kReductionEps ||
+                                        (std::fabs(score - best_score) <= kReductionEps && ids < best_ids);
+                    if (better) {
+                        best_extra = extra;
+                        best_score = score;
+                        have_best = true;
+                    }
+                }
+            }
+        }
+
+        selected[selected_count++] = deepest;
+        selected[selected_count++] = best_extra[0];
+        selected[selected_count++] = best_extra[1];
+        selected[selected_count++] = best_extra[2];
+    }
+
+    std::sort(selected.begin(), selected.begin() + selected_count, [&](const u32 lhs, const u32 rhs) {
+        return candidate_deeper(lhs, rhs);
+    });
+
+    ContactManifold manifold{
+        .a = a,
+        .b = b,
+        .normal = normal,
+        .point_count = selected_count,
+    };
+    for (u32 i = 0u; i < selected_count; ++i) {
+        const FaceContactCandidate &candidate = candidates[selected[i]];
+        ContactPoint point{};
+        point.local_anchor_a = world_offset_to_local_anchor(orientation[a], candidate.r_a_world);
+        point.local_anchor_b = world_offset_to_local_anchor(orientation[b], candidate.r_b_world);
+        point.separation = candidate.separation;
+        point.feature_id = candidate.feature_id;
+        manifold.points[i] = point;
+    }
+
+    canonicalize_manifold_orientation(manifold);
+    manifolds.push_back(manifold);
 }
 
 void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
