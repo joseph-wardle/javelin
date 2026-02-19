@@ -233,7 +233,9 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
         normal_local = diff / dist;
         penetration = sphere.radius - dist;
         feature_axis = dominant_axis_abs(normal_local);
-        const f32 axis_value = (feature_axis == 0u) ? normal_local.x : (feature_axis == 1u) ? normal_local.y : normal_local.z;
+        const f32 axis_value = (feature_axis == 0u)   ? normal_local.x
+                               : (feature_axis == 1u) ? normal_local.y
+                                                      : normal_local.z;
         feature_positive = axis_value >= 0.0f;
     } else {
         inside_fallback = true;
@@ -306,7 +308,8 @@ struct BoxAxisCandidate final {
 }
 
 [[nodiscard]] inline const BoxAxisCandidate *
-find_axis_candidate(const std::array<BoxAxisCandidate, 3> &face_axes_a, const std::array<BoxAxisCandidate, 3> &face_axes_b,
+find_axis_candidate(const std::array<BoxAxisCandidate, 3> &face_axes_a,
+                    const std::array<BoxAxisCandidate, 3> &face_axes_b,
                     const std::array<std::array<BoxAxisCandidate, 3>, 3> &edge_axes, const BoxAxisKey key) noexcept {
     switch (key.type) {
     case BoxAxisType::face_a:
@@ -465,7 +468,7 @@ struct BoxSupportEdge final {
 }
 
 [[nodiscard]] inline std::pair<Vec3, Vec3> closest_points_on_segments(const Vec3 p0, const Vec3 p1, const Vec3 q0,
-                                                                       const Vec3 q1) noexcept {
+                                                                      const Vec3 q1) noexcept {
     const Vec3 d1 = p1 - p0;
     const Vec3 d2 = q1 - q0;
     const Vec3 r = p0 - q0;
@@ -562,7 +565,9 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         }
         face_axes_a[i] = BoxAxisCandidate{
             .key = BoxAxisKey{.type = BoxAxisType::face_a, .i = static_cast<u8>(i), .j = 0u},
-            .axis = (i == 0) ? a0 : (i == 1) ? a1 : a2,
+            .axis = (i == 0)   ? a0
+                    : (i == 1) ? a1
+                               : a2,
             .depth = (ra + rb) - dist,
             .valid = true,
         };
@@ -578,7 +583,9 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         }
         face_axes_b[j] = BoxAxisCandidate{
             .key = BoxAxisKey{.type = BoxAxisType::face_b, .i = static_cast<u8>(j), .j = 0u},
-            .axis = (j == 0) ? b0 : (j == 1) ? b1 : b2,
+            .axis = (j == 0)   ? b0
+                    : (j == 1) ? b1
+                               : b2,
             .depth = (ra + rb) - dist,
             .valid = true,
         };
@@ -664,8 +671,8 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         const auto [point_a, point_b] =
             closest_points_on_segments(edge_a.p0_world, edge_a.p1_world, edge_b.p0_world, edge_b.p1_world);
         const u32 feature_id = box_edge_edge_feature_id(best_axis.key, edge_a.edge_code, edge_b.edge_code);
-        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, feature_id,
-                                   point_a - center_a, point_b - center_b, manifolds);
+        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, feature_id, point_a - center_a,
+                                   point_b - center_b, manifolds);
         return;
     }
 
@@ -681,8 +688,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 ref_axis_vec = ref_axes[ref_axis];
     const Vec3 ref_to_incident_normal = ref_is_a ? normal : -normal;
     const bool ref_positive = dot(ref_axis_vec, ref_to_incident_normal) >= 0.0f;
-    const Vec3 ref_face_center =
-        ref_center + ref_axis_vec * (ref_positive ? ref_he[ref_axis] : -ref_he[ref_axis]);
+    const Vec3 ref_face_center = ref_center + ref_axis_vec * (ref_positive ? ref_he[ref_axis] : -ref_he[ref_axis]);
     const u32 ref_u_axis = (ref_axis + 1u) % 3u;
     const u32 ref_v_axis = (ref_axis + 2u) % 3u;
     const Vec3 ref_u = ref_axes[ref_u_axis];
@@ -716,8 +722,8 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     for (u32 i = 0; i < clip_count; ++i) {
         const u8 vertex_index = incident_face_indices[i];
         const Vec3 local_vertex = box_local_vertex(incident_he, vertex_index);
-        const Vec3 point_world = incident_center + incident_axes[0] * local_vertex.x + incident_axes[1] * local_vertex.y +
-                                 incident_axes[2] * local_vertex.z;
+        const Vec3 point_world = incident_center + incident_axes[0] * local_vertex.x +
+                                 incident_axes[1] * local_vertex.y + incident_axes[2] * local_vertex.z;
         const Vec3 relative = point_world - ref_face_center;
         clip_a[i] = ClipVertex{
             .point_world = point_world,
@@ -751,9 +757,8 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     u32 candidate_count = 0u;
     for (u32 i = 0; i < clip_count; ++i) {
         const ClipVertex &clip_vertex = clip_a[i];
-        const f32 separation =
-            ref_is_a ? dot(clip_vertex.point_world - ref_face_center, normal)
-                     : dot(ref_face_center - clip_vertex.point_world, normal);
+        const f32 separation = ref_is_a ? dot(clip_vertex.point_world - ref_face_center, normal)
+                                        : dot(ref_face_center - clip_vertex.point_world, normal);
         if (separation > kAxisAbsEps) {
             continue;
         }
@@ -886,9 +891,8 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
         selected[selected_count++] = best_extra[2];
     }
 
-    std::sort(selected.begin(), selected.begin() + selected_count, [&](const u32 lhs, const u32 rhs) {
-        return candidate_deeper(lhs, rhs);
-    });
+    std::sort(selected.begin(), selected.begin() + selected_count,
+              [&](const u32 lhs, const u32 rhs) { return candidate_deeper(lhs, rhs); });
 
     ContactManifold manifold{
         .a = a,
@@ -1069,9 +1073,8 @@ void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat
         selected[selected_count++] = best_extra[2];
     }
 
-    std::sort(selected.begin(), selected.begin() + selected_count, [&](const u32 lhs, const u32 rhs) {
-        return penetration_greater(lhs, rhs);
-    });
+    std::sort(selected.begin(), selected.begin() + selected_count,
+              [&](const u32 lhs, const u32 rhs) { return penetration_greater(lhs, rhs); });
 
     ContactManifold manifold{
         .a = id,
@@ -1124,7 +1127,8 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
                                            manifolds);
         } else if (kind_a == ShapeKind::box && kind_b == ShapeKind::box) {
             const ContactManifold *previous_manifold = nullptr;
-            if (const auto it = previous_manifold_lookup.find(body_pair_key(a, b)); it != previous_manifold_lookup.end()) {
+            if (const auto it = previous_manifold_lookup.find(body_pair_key(a, b));
+                it != previous_manifold_lookup.end()) {
 #ifndef NDEBUG
                 if (it->second >= previous_manifolds.size()) {
                     log::error(physics, "Previous manifold lookup out of range (a={} b={} index={} size={})", a, b,

@@ -171,19 +171,6 @@ inline void canonicalize_manifold_orientation(ContactManifold &manifold) noexcep
     }
 }
 
-// Transitional single-point contact representation used by the legacy solver path.
-// Kept separate from ContactManifold to avoid type ambiguity during migration.
-struct LegacyContact final {
-    u32 a{};
-    u32 b{};
-    // Normal points from A to B.
-    Vec3 normal{};
-    f32 penetration{};
-    // Contact offsets in world space from each body's center.
-    Vec3 r_a{};
-    Vec3 r_b{};
-};
-
 inline constexpr u32 kInvalidBody = std::numeric_limits<u32>::max();
 
 } // namespace javelin

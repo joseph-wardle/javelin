@@ -5,6 +5,7 @@ module;
 export module javelin.physics.solve;
 
 import std;
+import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
@@ -112,8 +113,7 @@ struct SolverPoint final {
 
 inline void apply_impulse_at_point(const SolverPoint &point, const Vec3 impulse, std::span<Vec3> velocity,
                                    std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
-                                   std::span<const Vec3> inv_inertia_body,
-                                   std::span<const Quat> orientation) noexcept {
+                                   std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation) noexcept {
     velocity[point.a] -= impulse * inv_mass[point.a];
     angular_velocity[point.a] -=
         apply_inv_inertia(inv_inertia_body[point.a], orientation[point.a], cross(point.r_a, impulse));
@@ -127,15 +127,14 @@ inline void apply_impulse_at_point(const SolverPoint &point, const Vec3 impulse,
         apply_inv_inertia(inv_inertia_body[point.b], orientation[point.b], cross(point.r_b, impulse));
 }
 
-inline void warm_start_solver_point(const SolverPoint &solver_point, const ContactPoint &point, std::span<Vec3> velocity,
-                                    std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
-                                    std::span<const Vec3> inv_inertia_body,
+inline void warm_start_solver_point(const SolverPoint &solver_point, const ContactPoint &point,
+                                    std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
+                                    std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
                                     std::span<const Quat> orientation) noexcept {
     if (!has_warm_start_impulse(point)) {
         return;
     }
-    const Vec3 impulse = solver_point.normal * point.normal_impulse +
-                         solver_point.tangent_u * point.tangent_impulse_u +
+    const Vec3 impulse = solver_point.normal * point.normal_impulse + solver_point.tangent_u * point.tangent_impulse_u +
                          solver_point.tangent_v * point.tangent_impulse_v;
     apply_impulse_at_point(solver_point, impulse, velocity, angular_velocity, inv_mass, inv_inertia_body, orientation);
 }
@@ -161,9 +160,12 @@ void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, 
     const f32 friction_coeff = std::max(friction, 0.0f);
 
     usize point_count = 0;
-    for (const ContactManifold &manifold : manifolds) {
+    for (u32 manifold_index = 0; manifold_index < manifolds.size(); ++manifold_index) {
+        const ContactManifold &manifold = manifolds[manifold_index];
 #ifndef NDEBUG
         if (manifold.point_count > kMaxManifoldPoints) {
+            log::error(physics, "Solver manifold has invalid point_count={} (index={} a={} b={})", manifold.point_count,
+                       manifold_index, manifold.a, manifold.b);
             std::terminate();
         }
 #endif
@@ -185,7 +187,13 @@ void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, 
         }
         Vec3 normal = manifold.normal;
         if (!normal.try_normalize()) {
+#ifndef NDEBUG
+            log::error(physics, "Solver manifold has invalid normal (index={} a={} b={})", manifold_index, manifold.a,
+                       manifold.b);
+            std::terminate();
+#else
             continue;
+#endif
         }
         const auto [tangent_u, tangent_v] = detail::tangent_basis(normal);
         // Split-bias style distribution: manifold penetration correction is shared by all points.
@@ -214,10 +222,10 @@ void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, 
                 detail::axis_effective_mass_inverse(solver_point, inv_mass, inv_inertia_body, orientation, tangent_v);
 
             const f32 separation = point.separation + detail::kPenetrationSlop;
-            const f32 penetration_bias = (inv_dt > 0.0f)
-                                             ? (-detail::kPenetrationBiasFactor * inv_dt * std::min(separation, 0.0f) *
-                                                manifold_bias_share)
-                                             : 0.0f;
+            const f32 penetration_bias =
+                (inv_dt > 0.0f)
+                    ? (-detail::kPenetrationBiasFactor * inv_dt * std::min(separation, 0.0f) * manifold_bias_share)
+                    : 0.0f;
 
             const Vec3 relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
             const f32 normal_velocity = dot(relative_velocity, normal);

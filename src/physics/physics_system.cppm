@@ -388,10 +388,10 @@ struct PhysicsSystem final {
     }
 
     [[nodiscard]] bool point_match_exceeds_breaking_thresholds_(std::span<const Vec3> position,
-                                                                 std::span<const Quat> orientation,
-                                                                 const ContactManifold &manifold,
-                                                                 const ContactPoint &next_point,
-                                                                 const ContactPoint &previous_point) const noexcept {
+                                                                std::span<const Quat> orientation,
+                                                                const ContactManifold &manifold,
+                                                                const ContactPoint &next_point,
+                                                                const ContactPoint &previous_point) const noexcept {
         const u32 a = manifold.a;
         const Vec3 world_a_previous = position[a] + rotate(orientation[a], previous_point.local_anchor_a);
 
@@ -418,8 +418,7 @@ struct PhysicsSystem final {
     }
 
     void refresh_manifold_point_cache_(std::span<const Vec3> position, std::span<const Quat> orientation,
-                                       ContactManifold &next_manifold,
-                                       const ContactManifold &previous_manifold) const {
+                                       ContactManifold &next_manifold, const ContactManifold &previous_manifold) const {
 #ifndef NDEBUG
         if (next_manifold.point_count > kMaxManifoldPoints || previous_manifold.point_count > kMaxManifoldPoints) {
             log::error(physics, "Invalid manifold point_count during persistence refresh (next={} previous={})",
@@ -461,9 +460,9 @@ struct PhysicsSystem final {
                     continue;
                 }
 
-                const bool better = metric < best_metric - kPersistenceMatchEps ||
-                                    (std::fabs(metric - best_metric) <= kPersistenceMatchEps &&
-                                     previous_index < best_previous);
+                const bool better =
+                    metric < best_metric - kPersistenceMatchEps ||
+                    (std::fabs(metric - best_metric) <= kPersistenceMatchEps && previous_index < best_previous);
                 if (better) {
                     best_metric = metric;
                     best_previous = previous_index;
@@ -519,7 +518,8 @@ struct PhysicsSystem final {
             const ContactManifold &previous_manifold = manifolds_[it->second];
 #ifndef NDEBUG
             if (previous_manifold.a != next_manifold.a || previous_manifold.b != next_manifold.b) {
-                log::error(physics, "Manifold pair mismatch during persistence refresh (next=({}, {}) previous=({}, {}))",
+                log::error(physics,
+                           "Manifold pair mismatch during persistence refresh (next=({}, {}) previous=({}, {}))",
                            next_manifold.a, next_manifold.b, previous_manifold.a, previous_manifold.b);
                 std::terminate();
             }
