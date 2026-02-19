@@ -262,15 +262,30 @@ struct Scene final {
     }
 
     void reset_simulation() noexcept {
+        restore_simulation_from_initial_();
+        publish_poses_from_sim();
+    }
+
+  private:
+    void snapshot_initial_state_from_sim_() noexcept {
+        for (u32 i = 0; i < count_; ++i) {
+            initial_position_[i] = position_[i];
+            initial_velocity_[i] = velocity_[i];
+            initial_orientation_[i] = orientation_[i];
+            initial_angular_velocity_[i] = angular_velocity_[i];
+        }
+    }
+
+    void restore_simulation_from_initial_() noexcept {
         for (u32 i = 0; i < count_; ++i) {
             position_[i] = initial_position_[i];
             velocity_[i] = initial_velocity_[i];
             orientation_[i] = initial_orientation_[i];
             angular_velocity_[i] = initial_angular_velocity_[i];
         }
-        publish_poses_from_sim();
     }
 
+  public:
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
         log::info(scene, "Loading scene from disk: {}", scene_path.string());
 
@@ -329,11 +344,6 @@ struct Scene final {
             out.orientation_[idx] = body.orientation;
             out.angular_velocity_[idx] = body.angular_velocity;
 
-            out.initial_position_[idx] = body.position;
-            out.initial_velocity_[idx] = body.velocity;
-            out.initial_orientation_[idx] = body.orientation;
-            out.initial_angular_velocity_[idx] = body.angular_velocity;
-
             switch (kind) {
             case ShapeKind::sphere:
                 ++sphere_count;
@@ -349,6 +359,7 @@ struct Scene final {
             }
         }
 
+        out.snapshot_initial_state_from_sim_();
         out.publish_poses_from_sim();
         log::info(scene, "Loaded scene file version={} units={}", in.version, in.units);
         log::info(scene, "Loaded {} bodies (dynamic={}, static={}, spheres={}, boxes={})", out.count_, dynamic_count,
