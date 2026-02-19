@@ -1,3 +1,7 @@
+module;
+
+#include <tracy/Tracy.hpp>
+
 export module javelin.scene.scene_file;
 
 import std;
@@ -68,8 +72,8 @@ enum struct SceneFileBodyMotion : u8 {
     return std::nullopt;
 }
 
-[[nodiscard]] constexpr std::optional<SceneFileBodyMotion> parse_scene_file_body_motion(
-    const std::string_view token) noexcept {
+[[nodiscard]] constexpr std::optional<SceneFileBodyMotion>
+parse_scene_file_body_motion(const std::string_view token) noexcept {
     if (token == "dynamic") {
         return SceneFileBodyMotion::dynamic_body;
     }
@@ -142,9 +146,7 @@ inline constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
     return text;
 }
 
-[[nodiscard]] constexpr std::string_view trim(std::string_view text) noexcept {
-    return trim_right(trim_left(text));
-}
+[[nodiscard]] constexpr std::string_view trim(std::string_view text) noexcept { return trim_right(trim_left(text)); }
 
 [[nodiscard]] constexpr std::string_view strip_comment(std::string_view text) noexcept {
     const usize comment_pos = text.find('#');
@@ -237,8 +239,8 @@ template <class Number>
     }
 
     // q and -q represent the same orientation. Canonicalize sign for stable diffs.
-    const bool flip = (q.w < 0.0f) || (q.w == 0.0f && (q.z < 0.0f || (q.z == 0.0f && (q.y < 0.0f ||
-                                                                                      (q.y == 0.0f && q.x < 0.0f)))));
+    const bool flip =
+        (q.w < 0.0f) || (q.w == 0.0f && (q.z < 0.0f || (q.z == 0.0f && (q.y < 0.0f || (q.y == 0.0f && q.x < 0.0f)))));
     if (flip) {
         q.x = -q.x;
         q.y = -q.y;
@@ -307,8 +309,8 @@ struct ParsedSceneHeader final {
     std::string units{};
 };
 
-[[nodiscard]] inline std::expected<ParsedSceneHeader, std::string> parse_scene_header_record(
-    const std::string_view payload) {
+[[nodiscard]] inline std::expected<ParsedSceneHeader, std::string>
+parse_scene_header_record(const std::string_view payload) {
     ParsedSceneHeader out{};
     bool has_version = false;
     bool has_units = false;
@@ -400,8 +402,7 @@ struct ParsedSceneHeader final {
             has_kind = true;
             const auto parsed = parse_shape_kind(kv->value);
             if (!parsed) {
-                return std::unexpected(
-                    std::format("Invalid shape kind '{}' (expected sphere|box)", kv->value));
+                return std::unexpected(std::format("Invalid shape kind '{}' (expected sphere|box)", kv->value));
             }
             kind = *parsed;
             continue;
@@ -485,8 +486,7 @@ struct ParsedSceneHeader final {
         if (has_r) {
             return std::unexpected("Box shape does not allow key 'r'");
         }
-        if (!std::isfinite(hx) || !std::isfinite(hy) || !std::isfinite(hz) || hx <= 0.0f || hy <= 0.0f ||
-            hz <= 0.0f) {
+        if (!std::isfinite(hx) || !std::isfinite(hy) || !std::isfinite(hz) || hx <= 0.0f || hy <= 0.0f || hz <= 0.0f) {
             return std::unexpected(std::format("Invalid box half extents [{}, {}, {}]", hx, hy, hz));
         }
         out.shape = ShapeData::make_box(BoxShape{Vec3{hx, hy, hz}});
@@ -846,7 +846,8 @@ struct SceneFile final {
             return error(std::format("Unsupported scene file version {} (expected {})", version, kSceneFileVersion));
         }
         if (units != kSceneFileUnitsMeters) {
-            return error(std::format("Unsupported scene file units '{}' (expected '{}')", units, kSceneFileUnitsMeters));
+            return error(
+                std::format("Unsupported scene file units '{}' (expected '{}')", units, kSceneFileUnitsMeters));
         }
 
         std::unordered_set<std::string_view> shape_ids{};
@@ -911,8 +912,10 @@ struct SceneFile final {
         return {};
     }
 
-    [[nodiscard]] static std::expected<SceneFile, SceneFileError>
-    load(const std::filesystem::path &path, const SceneFileLoadOptions &options = {}) {
+    [[nodiscard]] static std::expected<SceneFile, SceneFileError> load(const std::filesystem::path &path,
+                                                                       const SceneFileLoadOptions &options = {}) {
+        ZoneScopedN("SceneFile load");
+
         auto error = [&path](const u32 line, std::string message) -> std::expected<SceneFile, SceneFileError> {
             return std::unexpected(SceneFileError{
                 .path = path,
@@ -961,7 +964,8 @@ struct SceneFile final {
             const std::string_view payload = cursor.rest;
             if (record == "scene") {
                 if (scene_line != 0u) {
-                    return error(line_no, std::format("Duplicate scene record (first declared on line {})", scene_line));
+                    return error(line_no,
+                                 std::format("Duplicate scene record (first declared on line {})", scene_line));
                 }
                 auto parsed = detail::parse_scene_header_record(payload);
                 if (!parsed) {
@@ -1027,11 +1031,16 @@ struct SceneFile final {
             }
         }
 
+        TracyPlot("scenefile_lines", static_cast<i64>(line_no));
+        TracyPlot("scenefile_shapes", static_cast<i64>(out.shapes.size()));
+        TracyPlot("scenefile_bodies", static_cast<i64>(out.bodies.size()));
         return out;
     }
 
     [[nodiscard]] std::expected<void, SceneFileError> save(const std::filesystem::path &path,
                                                            const SceneFileSaveOptions &options = {}) const {
+        ZoneScopedN("SceneFile save");
+
         auto error = [&path](std::string message) -> std::expected<void, SceneFileError> {
             return std::unexpected(SceneFileError{
                 .path = path,
@@ -1145,6 +1154,9 @@ struct SceneFile final {
             return error("I/O error while finalizing scene file write");
         }
 
+        TracyPlot("scenefile_write_bytes", static_cast<i64>(out_text.size()));
+        TracyPlot("scenefile_write_shapes", static_cast<i64>(shapes.size()));
+        TracyPlot("scenefile_write_bodies", static_cast<i64>(bodies.size()));
         return {};
     }
 };

@@ -1,3 +1,7 @@
+module;
+
+#include <tracy/Tracy.hpp>
+
 export module javelin.scene;
 
 import std;
@@ -265,12 +269,16 @@ struct Scene final {
     }
 
     void reset_simulation() noexcept {
+        ZoneScopedN("Scene reset simulation");
         restore_simulation_from_initial_();
         publish_poses_from_sim();
     }
 
-    [[nodiscard]] std::expected<void, SceneFileError> save_scene_to_disk(
-        std::filesystem::path scene_path, const SceneFileSaveOptions &save_options = {}) const {
+    [[nodiscard]] std::expected<void, SceneFileError>
+    save_scene_to_disk(std::filesystem::path scene_path, const SceneFileSaveOptions &save_options = {}) const {
+        ZoneScopedN("Scene save to disk");
+        log::info(scene, "Saving scene file: {}", scene_path.string());
+
         auto error = [&scene_path](std::string message) -> std::expected<void, SceneFileError> {
             return std::unexpected(SceneFileError{
                 .path = scene_path,
@@ -301,9 +309,8 @@ struct Scene final {
 
         for (u32 i = 0; i < count_; ++i) {
             if (shape_index_[i] >= shape_ids.size()) {
-                return error(
-                    std::format("Cannot export body {}: shape_index={} is out of range (shape_count={})", i,
-                                shape_index_[i], shape_ids.size()));
+                return error(std::format("Cannot export body {}: shape_index={} is out of range (shape_count={})", i,
+                                         shape_index_[i], shape_ids.size()));
             }
 
             std::string body_id{};
@@ -328,7 +335,14 @@ struct Scene final {
             });
         }
 
-        return out.save(scene_path, save_options);
+        auto save_result = out.save(scene_path, save_options);
+        if (!save_result) {
+            return std::unexpected(save_result.error());
+        }
+
+        log::info(scene, "Saved scene file '{}' (shapes={}, bodies={})", scene_path.string(), out.shapes.size(),
+                  out.bodies.size());
+        return {};
     }
 
   private:
@@ -352,7 +366,8 @@ struct Scene final {
 
   public:
     static Scene load_scene_from_disk(std::filesystem::path scene_path) {
-        log::info(scene, "Loading scene from disk: {}", scene_path.string());
+        ZoneScopedN("Scene load from disk");
+        log::info(scene, "Loading scene file: {}", scene_path.string());
 
         const auto file = SceneFile::load(scene_path);
         if (!file) {
@@ -430,9 +445,11 @@ struct Scene final {
 
         out.snapshot_initial_state_from_sim_();
         out.publish_poses_from_sim();
-        log::info(scene, "Loaded scene file version={} units={}", in.version, in.units);
-        log::info(scene, "Loaded {} bodies (dynamic={}, static={}, spheres={}, boxes={})", out.count_, dynamic_count,
-                  static_count, sphere_count, box_count);
+        log::info(scene,
+                  "Loaded scene file '{}' version={} units={} shapes={} bodies={} (dynamic={}, static={}, spheres={}, "
+                  "boxes={})",
+                  scene_path.string(), in.version, in.units, in.shapes.size(), out.count_, dynamic_count, static_count,
+                  sphere_count, box_count);
         return out;
     }
 
