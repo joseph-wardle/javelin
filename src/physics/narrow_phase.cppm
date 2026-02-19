@@ -71,7 +71,7 @@ inline constexpr f32 kAxisAbsEps = 1e-6f;
 }
 
 void push_single_point_manifold(std::span<const Quat> orientation, const u32 a, const u32 b, const Vec3 normal,
-                                const f32 penetration, const Vec3 r_a_world, const Vec3 r_b_world,
+                                const f32 penetration, const u32 feature_id, const Vec3 r_a_world, const Vec3 r_b_world,
                                 std::vector<ContactManifold> &manifolds) {
     ContactManifold manifold{
         .a = a,
@@ -83,7 +83,7 @@ void push_single_point_manifold(std::span<const Quat> orientation, const u32 a, 
     point.local_anchor_a = world_offset_to_local_anchor(orientation[a], r_a_world);
     point.local_anchor_b = (b != kInvalidBody) ? world_offset_to_local_anchor(orientation[b], r_b_world) : Vec3{};
     point.separation = -penetration;
-    point.feature_id = 0u;
+    point.feature_id = feature_id;
 
     canonicalize_manifold_orientation(manifold);
     manifolds.push_back(manifold);
@@ -117,7 +117,8 @@ void add_sphere_sphere_contact(std::span<const Vec3> position, std::span<const S
     const f32 penetration = radius_sum - dist;
     const Vec3 r_a = normal * sphere_a.radius;
     const Vec3 r_b = -normal * sphere_b.radius;
-    push_single_point_manifold(orientation, a, b, normal, penetration, r_a, r_b, manifolds);
+    // Sphere-sphere always uses one persistent point id.
+    push_single_point_manifold(orientation, a, b, normal, penetration, 0u, r_a, r_b, manifolds);
 }
 
 void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
@@ -195,8 +196,8 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
         r_b = -normal * sphere.radius;
     }
 
-    push_single_point_manifold(orientation, sphere_is_a ? sphere_id : box_id, sphere_is_a ? box_id : sphere_id,
-                               normal, penetration, r_a, r_b, manifolds);
+    push_single_point_manifold(orientation, sphere_is_a ? sphere_id : box_id, sphere_is_a ? box_id : sphere_id, normal,
+                               penetration, 0u, r_a, r_b, manifolds);
 }
 
 void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
@@ -314,7 +315,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
     const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
 
-    push_single_point_manifold(orientation, a, b, normal, best_overlap, point_a - center_a, point_b - center_b,
+    push_single_point_manifold(orientation, a, b, normal, best_overlap, 0u, point_a - center_a, point_b - center_b,
                                manifolds);
 }
 
@@ -333,7 +334,7 @@ void add_sphere_ground_contact(std::span<const Vec3> position, std::span<const Q
     const f32 penetration = sphere.radius - signed_distance;
     const Vec3 normal = -kGroundNormal;
     const Vec3 r_a = normal * sphere.radius;
-    push_single_point_manifold(orientation, id, kInvalidBody, normal, penetration, r_a, Vec3{}, manifolds);
+    push_single_point_manifold(orientation, id, kInvalidBody, normal, penetration, 0u, r_a, Vec3{}, manifolds);
 }
 
 void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat> orientation,
@@ -359,7 +360,8 @@ void add_box_ground_contact(std::span<const Vec3> position, std::span<const Quat
     const f32 penetration = radius - signed_distance;
     const Vec3 normal = -kGroundNormal;
     const Vec3 contact = box_support_point(center, a0, a1, a2, box.half_extents, normal);
-    push_single_point_manifold(orientation, id, kInvalidBody, normal, penetration, contact - center, Vec3{}, manifolds);
+    push_single_point_manifold(orientation, id, kInvalidBody, normal, penetration, 0u, contact - center, Vec3{},
+                               manifolds);
 }
 } // namespace javelin::detail
 
