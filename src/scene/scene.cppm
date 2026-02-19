@@ -8,7 +8,6 @@ import std;
 
 import javelin.core.logging;
 import javelin.core.types;
-import javelin.math.constants;
 import javelin.math.quat;
 import javelin.math.vec3;
 import javelin.scene.entity;
@@ -20,88 +19,16 @@ import javelin.scene.shapes;
 
 export namespace javelin {
 namespace detail {
-[[nodiscard]] constexpr u32 hash_u32(u32 x) noexcept {
-    x ^= x >> 16;
-    x *= 0x7feb352du;
-    x ^= x >> 15;
-    x *= 0x846ca68bu;
-    x ^= x >> 16;
-    return x;
-}
-
-[[nodiscard]] constexpr f32 hash_to_unit(u32 x) noexcept {
-    const u32 h = hash_u32(x);
-    return static_cast<f32>(h & 0x00FFFFFFu) / static_cast<f32>(0x01000000u);
-}
-
-struct SpawnSettings final {
-    u32 count{};
-    f32 pile_radius{};
-    f32 radius_min{};
-    f32 radius_max{};
-    f32 box_half_min{};
-    f32 box_half_max{};
-    f32 height_min{};
-    f32 height_max{};
-};
-
-inline constexpr SpawnSettings kSpawnSettings{
-    .count = 512,
-    .pile_radius = 2.5f,
-    .radius_min = 0.25f,
-    .radius_max = 0.6f,
-    .box_half_min = 0.2f,
-    .box_half_max = 0.6f,
-    .height_min = 6.0f,
-    .height_max = 300.0f,
-};
-
-[[nodiscard]] constexpr u32 spawn_count() noexcept { return kSpawnSettings.count; }
-
-[[nodiscard]] inline f32 spawn_radius(const u32 idx) noexcept {
-    const u32 seed = idx * 747796405u + 2891336453u;
-    const f32 rand_radius = hash_to_unit(seed);
-    return kSpawnSettings.radius_min + rand_radius * (kSpawnSettings.radius_max - kSpawnSettings.radius_min);
-}
-
-[[nodiscard]] inline Vec3 spawn_cube_half_extents(const u32 idx) noexcept {
-    const u32 seed = idx * 747796405u + 2891336453u;
-    const f32 r = hash_to_unit(seed ^ 0x1f123bb5u);
-    const f32 span = kSpawnSettings.box_half_max - kSpawnSettings.box_half_min;
-    const f32 half = kSpawnSettings.box_half_min + r * span;
-    return Vec3{half};
-}
-
-[[nodiscard]] inline ShapeKind spawn_shape_kind(const u32 idx) noexcept {
-    const u32 seed = idx * 747796405u + 2891336453u;
-    const f32 pick = hash_to_unit(seed ^ 0xc2b2ae35u);
-    return (pick < 0.5f) ? ShapeKind::sphere : ShapeKind::box;
-}
-
-[[nodiscard]] inline Vec3 spawn_position(const u32 idx) noexcept {
-    const u32 seed = idx * 747796405u + 2891336453u;
-    const f32 rand_height = hash_to_unit(seed ^ 0x9e3779b9u);
-    const f32 rand_r = hash_to_unit(seed ^ 0x85ebca6bu);
-    const f32 rand_angle = hash_to_unit(seed ^ 0xc2b2ae35u);
-
-    const f32 height =
-        kSpawnSettings.height_min + rand_height * (kSpawnSettings.height_max - kSpawnSettings.height_min);
-    const f32 radius = std::sqrt(rand_r) * kSpawnSettings.pile_radius;
-    const f32 angle = rand_angle * TWO_PI;
-    const f32 px = std::cos(angle) * radius;
-    const f32 pz = std::sin(angle) * radius;
-
-    return Vec3{px, height, pz};
-}
-
-[[nodiscard]] inline f32 spawn_inv_mass(const f32 radius) noexcept {
-    // Scene-file contract (v1): dynamic sphere mass uses unit density and r^3 proportional volume.
+[[nodiscard]] inline f32 dynamic_inv_mass_for_sphere(const f32 radius) noexcept {
+    // Scene-file contract (v1): dynamic sphere mass uses unit density and r^3
+    // proportional volume.
     const f32 mass = radius * radius * radius;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
-[[nodiscard]] inline f32 spawn_inv_mass_box(const Vec3 half_extents) noexcept {
-    // Scene-file contract (v1): dynamic box mass uses unit density and full box volume.
+[[nodiscard]] inline f32 dynamic_inv_mass_for_box(const Vec3 half_extents) noexcept {
+    // Scene-file contract (v1): dynamic box mass uses unit density and full box
+    // volume.
     const f32 mass = 8.0f * half_extents.x * half_extents.y * half_extents.z;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
@@ -156,9 +83,9 @@ inline constexpr SpawnSettings kSpawnSettings{
     }
     switch (shape.kind) {
     case ShapeKind::sphere:
-        return spawn_inv_mass(shape_sphere(shape).radius);
+        return dynamic_inv_mass_for_sphere(shape_sphere(shape).radius);
     case ShapeKind::box:
-        return spawn_inv_mass_box(shape_box(shape).half_extents);
+        return dynamic_inv_mass_for_box(shape_box(shape).half_extents);
     }
     return 0.0f;
 }
@@ -170,8 +97,9 @@ struct Scene final {
 
     Authored + serialized:
     - shape definitions (kind + shape parameters).
-    - per-body authored state: shape reference, material, mesh, initial position/orientation,
-      initial linear velocity, initial angular velocity, and motion intent (dynamic/static).
+    - per-body authored state: shape reference, material, mesh, initial
+    position/orientation, initial linear velocity, initial angular velocity, and
+    motion intent (dynamic/static).
 
     Derived at load/runtime (not serialized):
     - identity/liveness bookkeeping: generation_, alive_.
@@ -180,9 +108,12 @@ struct Scene final {
     - transient runtime state: capacity_, count_, pose channel buffers/timestamps.
 
     Notes:
-    - inv_mass_ and inv_inertia_ are always recomputed from authored shape + mobility policy.
-    - Render/physics consume the SoA runtime arrays; scene-file data is an authored source, not
-      the in-memory layout contract.
+    - body_motion_ is authored state and is preserved exactly on scene
+    save/export.
+    - inv_mass_ and inv_inertia_ are always recomputed from authored shape +
+    body_motion_.
+    - Render/physics consume the SoA runtime arrays; scene-file data is an
+    authored source, not the in-memory layout contract.
     */
     void reserve(u32 capacity) {
         capacity_ = capacity;
@@ -198,6 +129,7 @@ struct Scene final {
         shape_ids_.clear();
         shape_ids_.reserve(capacity_);
         body_ids_.resize(capacity_);
+        body_motion_.resize(capacity_, SceneFileBodyMotion::dynamic_body);
         material_.resize(capacity_);
         mesh_.resize(capacity_);
         inv_mass_.resize(capacity_, 1.0f);
@@ -309,8 +241,9 @@ struct Scene final {
 
         for (u32 i = 0; i < count_; ++i) {
             if (shape_index_[i] >= shape_ids.size()) {
-                return error(std::format("Cannot export body {}: shape_index={} is out of range (shape_count={})", i,
-                                         shape_index_[i], shape_ids.size()));
+                return error(std::format("Cannot export body {}: shape_index={} is out "
+                                         "of range (shape_count={})",
+                                         i, shape_index_[i], shape_ids.size()));
             }
 
             std::string body_id{};
@@ -320,12 +253,10 @@ struct Scene final {
                 body_id = std::format("body_{:05}", i);
             }
 
-            const SceneFileBodyMotion motion =
-                (inv_mass_[i] == 0.0f) ? SceneFileBodyMotion::static_body : SceneFileBodyMotion::dynamic_body;
             out.bodies.push_back(SceneFileBody{
                 .id = std::move(body_id),
                 .shape_id = shape_ids[shape_index_[i]],
-                .motion = motion,
+                .motion = body_motion_[i],
                 .material = material_[i],
                 .mesh = mesh_[i],
                 .position = initial_position_[i],
@@ -421,6 +352,7 @@ struct Scene final {
             out.inv_inertia_[idx] = detail::shape_inv_inertia(kind, shape, inv_mass);
 
             out.body_ids_[idx] = body.id;
+            out.body_motion_[idx] = body.motion;
             out.material_[idx] = body.material;
             out.mesh_[idx] = body.mesh;
             out.position_[idx] = body.position;
@@ -446,7 +378,8 @@ struct Scene final {
         out.snapshot_initial_state_from_sim_();
         out.publish_poses_from_sim();
         log::info(scene,
-                  "Loaded scene file '{}' version={} units={} shapes={} bodies={} (dynamic={}, static={}, spheres={}, "
+                  "Loaded scene file '{}' version={} units={} shapes={} bodies={} "
+                  "(dynamic={}, static={}, spheres={}, "
                   "boxes={})",
                   scene_path.string(), in.version, in.units, in.shapes.size(), out.count_, dynamic_count, static_count,
                   sphere_count, box_count);
@@ -462,7 +395,8 @@ struct Scene final {
     std::vector<u32> generation_{};
     std::vector<u8> alive_{};
 
-    // Runtime authored caches + indirection (derived from authored scene-file records).
+    // Runtime authored caches + indirection (derived from authored scene-file
+    // records).
     std::vector<ShapeKind> shape_kind_{};
     std::vector<u32> shape_index_{};
     std::vector<ShapeData> shapes_{};
@@ -471,7 +405,10 @@ struct Scene final {
     std::vector<std::string> shape_ids_{};
     std::vector<std::string> body_ids_{};
 
-    // Authored ids (serialized values).
+    // Authored motion intent (serialized values, preserved for round-trip export).
+    std::vector<SceneFileBodyMotion> body_motion_{};
+
+    // Authored render/material references (serialized values).
     std::vector<MaterialId> material_{};
     std::vector<MeshId> mesh_{};
 

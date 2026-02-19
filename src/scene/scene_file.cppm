@@ -24,9 +24,8 @@ Scene file text schema (v1, .jvscene):
   - scene version=<u32> units=m
   - shape id=<id> kind=sphere r=<f32>
   - shape id=<id> kind=box hx=<f32> hy=<f32> hz=<f32>
-  - body id=<id> shape=<shape_id> motion=<dynamic|static> material=<u32> mesh=<u32>
-         px=<f32> py=<f32> pz=<f32>
-         [ox=<f32> oy=<f32> oz=<f32> ow=<f32>]
+  - body id=<id> shape=<shape_id> motion=<dynamic|static> material=<u32>
+mesh=<u32> px=<f32> py=<f32> pz=<f32> [ox=<f32> oy=<f32> oz=<f32> ow=<f32>]
          [vx=<f32> vy=<f32> vz=<f32>]
          [wx=<f32> wy=<f32> wz=<f32>]
 - Defaults:
@@ -34,7 +33,10 @@ Scene file text schema (v1, .jvscene):
   - body.orientation=identity
   - body.velocity=(0,0,0), body.angular_velocity=(0,0,0)
   - body position (px/py/pz) is required.
-- The format is intentionally grep-friendly and parses line-by-line with no external dependencies.
+- The format is intentionally grep-friendly and parses line-by-line with no
+external dependencies.
+- Validation is strict by design: programmatic construction and text parsing are
+held to the same contract.
 */
 
 enum struct SceneFileBodyMotion : u8 {
@@ -238,7 +240,8 @@ template <class Number>
         return Quat::identity();
     }
 
-    // q and -q represent the same orientation. Canonicalize sign for stable diffs.
+    // q and -q represent the same orientation. Canonicalize sign for stable
+    // diffs.
     const bool flip =
         (q.w < 0.0f) || (q.w == 0.0f && (q.z < 0.0f || (q.z == 0.0f && (q.y < 0.0f || (q.y == 0.0f && q.x < 0.0f)))));
     if (flip) {
@@ -857,6 +860,9 @@ struct SceneFile final {
             if (shape.id.empty()) {
                 return error(std::format("shape[{}] has empty id", i));
             }
+            if (!detail::is_valid_identifier(shape.id)) {
+                return error(std::format("shape[{}] has invalid id '{}'", i, shape.id));
+            }
             if (!shape_ids.insert(shape.id).second) {
                 return error(std::format("Duplicate shape id '{}'", shape.id));
             }
@@ -886,11 +892,17 @@ struct SceneFile final {
             if (body.id.empty()) {
                 return error(std::format("body[{}] has empty id", i));
             }
+            if (!detail::is_valid_identifier(body.id)) {
+                return error(std::format("body[{}] has invalid id '{}'", i, body.id));
+            }
             if (!body_ids.insert(body.id).second) {
                 return error(std::format("Duplicate body id '{}'", body.id));
             }
             if (body.shape_id.empty()) {
                 return error(std::format("body '{}' has empty shape id", body.id));
+            }
+            if (!detail::is_valid_identifier(body.shape_id)) {
+                return error(std::format("body '{}' has invalid shape id '{}'", body.id, body.shape_id));
             }
             if (!shape_ids.contains(body.shape_id)) {
                 return error(std::format("body '{}' references unknown shape '{}'", body.id, body.shape_id));

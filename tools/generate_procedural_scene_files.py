@@ -9,6 +9,7 @@ Requested outputs:
 
 from __future__ import annotations
 
+import argparse
 import math
 from pathlib import Path
 
@@ -107,7 +108,9 @@ def write_scene_file(path: Path, count: int) -> None:
             else:
                 half = spawn_cube_half_extent(idx)
                 half_text = fmt_f32(half)
-                f.write(f"shape id={shape_id} kind=box hx={half_text} hy={half_text} hz={half_text}\n")
+                f.write(
+                    f"shape id={shape_id} kind=box hx={half_text} hy={half_text} hz={half_text}\n"
+                )
 
         f.write("\n")
         f.write("# bodies\n")
@@ -125,11 +128,41 @@ def write_scene_file(path: Path, count: int) -> None:
             )
 
 
+def parse_counts(text: str) -> list[int]:
+    out: list[int] = []
+    for token in text.split(","):
+        value = token.strip()
+        if not value:
+            continue
+        parsed = int(value)
+        if parsed <= 0:
+            raise ValueError(f"count must be positive, got {parsed}")
+        out.append(parsed)
+    if not out:
+        raise ValueError("expected at least one positive count")
+    return sorted(set(out))
+
+
 def main() -> None:
-    out_dir = Path("assets/scenes/procedural")
+    parser = argparse.ArgumentParser(
+        description="Generate deterministic procedural .jvscene files."
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="assets/scenes/procedural",
+        help="Output directory for generated scene files (default: assets/scenes/procedural)",
+    )
+    parser.add_argument(
+        "--counts",
+        default="",
+        help="Comma-separated body counts to generate (default: legacy set 16..4096 powers-of-two and 5000..15000 step 500)",
+    )
+    args = parser.parse_args()
+
+    out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    counts = scene_counts()
+    counts = parse_counts(args.counts) if args.counts else scene_counts()
     for count in counts:
         out_path = out_dir / f"pile_{count:05d}.jvscene"
         write_scene_file(out_path, count)
