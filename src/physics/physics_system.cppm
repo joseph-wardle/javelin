@@ -243,6 +243,7 @@ struct PhysicsSystem final {
         kPersistenceTangentialDriftBreakThreshold * kPersistenceTangentialDriftBreakThreshold;
     static constexpr f32 kPersistenceMatchEps = 1e-6f;
     static constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
+    static constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
@@ -338,6 +339,10 @@ struct PhysicsSystem final {
         if ((feature_id & kBoxAxisFeatureTag) == 0u) {
             return false;
         }
+        // Face-face point ids are not valid manifold axis ids.
+        if ((feature_id & kBoxFaceFaceFeatureTag) != 0u) {
+            return false;
+        }
         const u32 type = feature_id & 0x3u;
         if (type > 2u) {
             return false;
@@ -355,8 +360,8 @@ struct PhysicsSystem final {
         }
         BoxAxisKey previous_axis{};
         BoxAxisKey next_axis{};
-        if (!decode_box_axis_feature_id_(previous_manifold.points[0].feature_id, previous_axis) ||
-            !decode_box_axis_feature_id_(next_manifold.points[0].feature_id, next_axis)) {
+        if (!decode_box_axis_feature_id_(previous_manifold.manifold_feature_id, previous_axis) ||
+            !decode_box_axis_feature_id_(next_manifold.manifold_feature_id, next_axis)) {
             return false;
         }
         return previous_axis.type != next_axis.type || previous_axis.i != next_axis.i || previous_axis.j != next_axis.j;

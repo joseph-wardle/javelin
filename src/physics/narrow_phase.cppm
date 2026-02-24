@@ -116,6 +116,11 @@ struct BoxAxisKey final {
     if ((feature_id & kBoxAxisFeatureTag) == 0u) {
         return false;
     }
+    // Face-face point feature ids reuse lower payload bits and can set bit10;
+    // they are not manifold axis ids.
+    if ((feature_id & kBoxFaceFaceFeatureTag) != 0u) {
+        return false;
+    }
     const u32 type = feature_id & 0x3u;
     if (type > static_cast<u32>(BoxAxisType::edge_edge)) {
         return false;
@@ -141,11 +146,14 @@ struct BoxAxisKey final {
 }
 
 void push_single_point_manifold(std::span<const Quat> orientation, const u32 a, const u32 b, const Vec3 normal,
-                                const f32 penetration, const u32 feature_id, const Vec3 r_a_world, const Vec3 r_b_world,
-                                std::vector<ContactManifold> &manifolds) {
+                                const f32 penetration, const u32 point_feature_id, const Vec3 r_a_world,
+                                const Vec3 r_b_world,
+                                std::vector<ContactManifold> &manifolds,
+                                const u32 manifold_feature_id = kInvalidContactFeature) {
     ContactManifold manifold{
         .a = a,
         .b = b,
+        .manifold_feature_id = manifold_feature_id,
         .normal = normal,
         .point_count = 1u,
     };
@@ -153,7 +161,7 @@ void push_single_point_manifold(std::span<const Quat> orientation, const u32 a, 
     point.local_anchor_a = world_offset_to_local_anchor(orientation[a], r_a_world);
     point.local_anchor_b = (b != kInvalidBody) ? world_offset_to_local_anchor(orientation[b], r_b_world) : Vec3{};
     point.separation = -penetration;
-    point.feature_id = feature_id;
+    point.feature_id = point_feature_id;
 
     canonicalize_manifold_orientation(manifold);
     manifolds.push_back(manifold);
@@ -323,11 +331,11 @@ find_axis_candidate(const std::array<BoxAxisCandidate, 3> &face_axes_a,
 }
 
 [[nodiscard]] inline std::optional<BoxAxisKey> previous_box_axis_key(const ContactManifold *manifold) noexcept {
-    if (manifold == nullptr || manifold->point_count == 0u) {
+    if (manifold == nullptr) {
         return std::nullopt;
     }
     BoxAxisKey key{};
-    if (!decode_box_axis_feature_id(manifold->points[0].feature_id, key)) {
+    if (!decode_box_axis_feature_id(manifold->manifold_feature_id, key)) {
         return std::nullopt;
     }
     return key;
@@ -661,6 +669,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     if (dot(delta, normal) < 0.0f) {
         normal = -normal;
     }
+    const u32 axis_feature_id = box_axis_feature_id(best_axis.key);
 
     const std::array<Vec3, 3> axes_a{a0, a1, a2};
     const std::array<Vec3, 3> axes_b{b0, b1, b2};
@@ -672,7 +681,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
             closest_points_on_segments(edge_a.p0_world, edge_a.p1_world, edge_b.p0_world, edge_b.p1_world);
         const u32 feature_id = box_edge_edge_feature_id(best_axis.key, edge_a.edge_code, edge_b.edge_code);
         push_single_point_manifold(orientation, a, b, normal, best_axis.depth, feature_id, point_a - center_a,
-                                   point_b - center_b, manifolds);
+                                   point_b - center_b, manifolds, axis_feature_id);
         return;
     }
 
@@ -794,8 +803,8 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     if (candidate_count == 0u) {
         const Vec3 point_a = box_support_point(center_a, a0, a1, a2, he_a, normal);
         const Vec3 point_b = box_support_point(center_b, b0, b1, b2, he_b, -normal);
-        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, box_axis_feature_id(best_axis.key),
-                                   point_a - center_a, point_b - center_b, manifolds);
+        push_single_point_manifold(orientation, a, b, normal, best_axis.depth, axis_feature_id, point_a - center_a,
+                                   point_b - center_b, manifolds, axis_feature_id);
         return;
     }
 
@@ -897,6 +906,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     ContactManifold manifold{
         .a = a,
         .b = b,
+        .manifold_feature_id = axis_feature_id,
         .normal = normal,
         .point_count = selected_count,
     };
@@ -1126,20 +1136,21 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
             detail::add_sphere_box_contact(position, orientation, shape_kind, shapes, shape_index, b, a, false,
                                            manifolds);
         } else if (kind_a == ShapeKind::box && kind_b == ShapeKind::box) {
+            const BodyPair canonical_pair = canonical_body_pair(a, b);
             const ContactManifold *previous_manifold = nullptr;
-            if (const auto it = previous_manifold_lookup.find(body_pair_key(a, b));
+            if (const auto it = previous_manifold_lookup.find(body_pair_key(canonical_pair));
                 it != previous_manifold_lookup.end()) {
 #ifndef NDEBUG
                 if (it->second >= previous_manifolds.size()) {
-                    log::error(physics, "Previous manifold lookup out of range (a={} b={} index={} size={})", a, b,
-                               it->second, previous_manifolds.size());
+                    log::error(physics, "Previous manifold lookup out of range (a={} b={} index={} size={})",
+                               canonical_pair.a, canonical_pair.b, it->second, previous_manifolds.size());
                     std::terminate();
                 }
 #endif
                 previous_manifold = &previous_manifolds[it->second];
             }
-            detail::add_box_box_contact(position, orientation, shape_kind, shapes, shape_index, a, b, previous_manifold,
-                                        manifolds);
+            detail::add_box_box_contact(position, orientation, shape_kind, shapes, shape_index, canonical_pair.a,
+                                        canonical_pair.b, previous_manifold, manifolds);
         }
     }
 

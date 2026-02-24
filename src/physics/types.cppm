@@ -33,6 +33,7 @@ inline constexpr u32 kInvalidContactFeature = std::numeric_limits<u32>::max();
 // Contact manifold invariants:
 // - Normal always points from body a to body b.
 // - Pair keys are canonicalized as (min(a, b), max(a, b)).
+// - manifold_feature_id identifies manifold-level topology when available.
 // - points[] is stored in deterministic order.
 // - separation is signed along normal; penetration means separation < 0.
 struct ContactPoint final {
@@ -54,6 +55,9 @@ struct ContactPoint final {
 struct ContactManifold final {
     u32 a{};
     u32 b{};
+    // Stable manifold-level feature id (for example the selected SAT axis key).
+    // This is intentionally separate from point feature ids.
+    u32 manifold_feature_id{kInvalidContactFeature};
     // Normal points from A to B.
     Vec3 normal{};
     // Number of valid entries in points[].
