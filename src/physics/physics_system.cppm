@@ -23,6 +23,13 @@ import javelin.scene.physics_view;
 import javelin.scene.shapes;
 
 export namespace javelin {
+// Fixed-timestep physics driver.
+// Tick pipeline:
+// 1) update dynamic state (forces + bounds),
+// 2) generate candidate pairs (broad phase),
+// 3) build/refresh manifolds (narrow phase + persistence),
+// 4) solve constraints and integrate,
+// 5) publish authoritative transforms.
 struct PhysicsSystem final {
     void init(Scene &scene) noexcept { scene_ = &scene; }
 
@@ -91,9 +98,11 @@ struct PhysicsSystem final {
                             static_dirty_ = true;
                             clear_manifold_state_();
                         }
+                        // Stage 0: ensure frame scratch and previous-manifold lookup are ready.
                         ensure_capacity_(count);
                         prepare_manifold_lookup_();
 
+                        // Stage 1: external forces and per-body bounds for broad phase.
                         integrate_gravity_velocity(view.velocity, view.inv_mass, gravity, dt);
                         f32 max_angular_speed_sq = 0.0f;
                         for (u32 i = 0; i < count; ++i) {
@@ -150,12 +159,15 @@ struct PhysicsSystem final {
                             static_dirty_ = false;
                         }
 
+                        // Stage 2: broad phase candidate generation.
                         const std::span<const u32> dynamic_ids{dynamic_ids_.data(), dynamic_ids_.size()};
                         // Mutating phase: update dynamic BVH before read-only queries.
                         broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
                         // Read-only phase: query broad phase pairs.
                         run_broad_phase_queries_(dynamic_ids);
                         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
+
+                        // Stage 3: narrow phase manifolds + warm-start persistence refresh.
                         narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes,
                                               view.shape_index, view.inv_mass, candidate_pairs_, manifolds_,
                                               manifold_lookup_, next_manifolds_);
@@ -182,6 +194,8 @@ struct PhysicsSystem final {
                         TracyPlot("physics_dropped_points", static_cast<i64>(persistence_stats.dropped_point_count));
                         TracyPlot("physics_axis_flip_count", static_cast<i64>(persistence_stats.axis_flip_count));
                         TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
+
+                        // Stage 4: solve constraints, damp, integrate, and publish transforms.
                         solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
                                                  view.orientation, manifolds_, dt, restitution, friction);
                         solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
@@ -216,6 +230,7 @@ struct PhysicsSystem final {
     }
 
   private:
+    // Per-worker broad phase storage: scratch query buffers and local pair output.
     struct BroadPhaseWorker final {
         BroadPhaseScratch scratch{};
         std::vector<BodyPair> pairs{};
@@ -226,6 +241,7 @@ struct PhysicsSystem final {
         }
     };
 
+    // Immutable snapshot for one broad-phase dispatch.
     struct BroadPhaseJob final {
         std::span<const u32> dynamic_ids{};
         u32 dynamic_count{};
@@ -245,6 +261,7 @@ struct PhysicsSystem final {
     bool static_dirty_{true};
     u32 last_count_{0};
     u32 capacity_{0};
+    // Reserve factors are capacity planning heuristics for amortized O(1) growth.
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
@@ -264,8 +281,10 @@ struct PhysicsSystem final {
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
+    // Double-buffered manifold storage: current frame and next-frame write target.
     std::vector<ContactManifold> manifolds_{};
     std::vector<ContactManifold> next_manifolds_{};
+    // Maps canonical body pair -> index in manifolds_ for persistence lookup.
     std::unordered_map<u64, u32> manifold_lookup_{};
     u32 broad_phase_worker_count_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
@@ -281,6 +300,7 @@ struct PhysicsSystem final {
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
+    // Byte mask indexed by body id; set when body participates in any active contact this tick.
     std::vector<u8> contact_activity_mask_{};
 
     struct PersistenceRefreshStats final {
@@ -324,6 +344,8 @@ struct PhysicsSystem final {
         manifold_lookup_.clear();
     }
 
+    // Builds lookup for previous-frame manifolds keyed by canonical body pair.
+    // Precondition: manifolds_ contains canonicalized pair ids.
     void prepare_manifold_lookup_() {
         next_manifolds_.clear();
         manifold_lookup_.clear();
@@ -381,6 +403,7 @@ struct PhysicsSystem final {
         return lhs.a == rhs.a && lhs.b == rhs.b;
     }
 
+    // Canonicalizes pair order and removes duplicates to keep narrow phase deterministic.
     void normalize_and_sort_candidate_pairs_() {
         if (candidate_pairs_.empty()) {
             return;
@@ -485,13 +508,13 @@ struct PhysicsSystem final {
     }
 
     [[nodiscard]] static f32 local_anchor_match_distance_sq_(const ContactPoint &lhs, const ContactPoint &rhs,
-                                                             const bool has_b) noexcept {
-        const f32 d_a = (lhs.local_anchor_a - rhs.local_anchor_a).length_sq();
-        if (!has_b) {
-            return d_a;
+                                                             const bool manifold_has_body_b) noexcept {
+        const f32 anchor_delta_a_sq = (lhs.local_anchor_a - rhs.local_anchor_a).length_sq();
+        if (!manifold_has_body_b) {
+            return anchor_delta_a_sq;
         }
-        const f32 d_b = (lhs.local_anchor_b - rhs.local_anchor_b).length_sq();
-        return std::max(d_a, d_b);
+        const f32 anchor_delta_b_sq = (lhs.local_anchor_b - rhs.local_anchor_b).length_sq();
+        return std::max(anchor_delta_a_sq, anchor_delta_b_sq);
     }
 
     static void reset_point_cache_(ContactPoint &point) noexcept {
@@ -507,6 +530,7 @@ struct PhysicsSystem final {
         dst.persisted = true;
     }
 
+    // Drops cached impulses when anchor drift exceeds thresholds in the current manifold frame.
     [[nodiscard]] bool should_drop_persisted_point_(std::span<const Vec3> position, std::span<const Quat> orientation,
                                                     const ContactManifold &manifold, const ContactPoint &next_point,
                                                     const ContactPoint &previous_point) const noexcept {
@@ -557,7 +581,7 @@ struct PhysicsSystem final {
             std::terminate();
         }
 #endif
-        const bool has_b = next_manifold.b != kInvalidBody;
+        const bool manifold_has_body_b = next_manifold.b != kInvalidBody;
         std::array<bool, kMaxManifoldPoints> previous_used{};
 
         for (u32 i = 0; i < next_manifold.point_count; ++i) {
@@ -586,7 +610,7 @@ struct PhysicsSystem final {
                     }
                 }
 
-                const f32 metric = local_anchor_match_distance_sq_(next_point, previous_point, has_b);
+                const f32 metric = local_anchor_match_distance_sq_(next_point, previous_point, manifold_has_body_b);
                 if (metric > kPersistenceAnchorThresholdSq) {
                     continue;
                 }
@@ -624,6 +648,8 @@ struct PhysicsSystem final {
         }
     }
 
+    // Refreshes per-point warm-start caches by matching next_manifolds_ against manifolds_.
+    // Matching order is deterministic and stats are exposed for diagnostics.
     [[nodiscard]] PersistenceRefreshStats refresh_manifold_persistence_(std::span<const Vec3> position,
                                                                         std::span<const Quat> orientation) {
         PersistenceRefreshStats stats{
@@ -758,6 +784,7 @@ struct PhysicsSystem final {
         if (worker_index >= job.worker_count) {
             return;
         }
+        // Worker owns one contiguous chunk of dynamic ids.
         const u32 begin = worker_index * job.chunk_size;
         if (begin >= job.dynamic_count) {
             broad_phase_workers_[worker_index].pairs.clear();

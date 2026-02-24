@@ -8,6 +8,10 @@ import javelin.math.vec3;
 
 export namespace javelin {
 
+// AABB helpers are intentionally pure value operations:
+// - no side effects, no allocations, no hidden frame state.
+// - bounds are axis-aligned in world space.
+// - overlap/containment tests are inclusive on min/max faces.
 struct Aabb final {
     Vec3 min{};
     Vec3 max{};

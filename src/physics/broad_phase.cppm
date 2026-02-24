@@ -13,6 +13,11 @@ import javelin.physics.types;
 
 export namespace javelin {
 
+// Broad phase contract:
+// - input bounds are world-space AABBs for the current frame.
+// - output pairs are potential overlaps only; narrow phase confirms contacts.
+// - ordering inside each chunk follows dynamic id order; global canonicalization
+//   and de-duplication are performed by PhysicsSystem.
 struct BroadPhaseScratch final {
     std::vector<u32> query_hits{};
     std::vector<u32> query_stack{};
