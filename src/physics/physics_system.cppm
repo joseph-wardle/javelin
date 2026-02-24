@@ -29,6 +29,9 @@ struct PhysicsSystem final {
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
     void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
     void set_friction(const f32 friction) noexcept { friction_.store(friction, std::memory_order_relaxed); }
+    void set_linear_damping(const f32 damping) noexcept {
+        linear_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
+    }
     void set_angular_damping(const f32 damping) noexcept {
         angular_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
     }
@@ -37,6 +40,7 @@ struct PhysicsSystem final {
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 linear_damping() const noexcept { return linear_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 angular_damping() const noexcept { return angular_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
 
@@ -50,8 +54,8 @@ struct PhysicsSystem final {
         }
 
         log::info(physics, "Starting physics system");
-        log::info(physics, "Params gravity={} restitution={} friction={} angular_damping={}", gravity(), restitution(),
-                  friction(), angular_damping());
+        log::info(physics, "Params gravity={} restitution={} friction={} linear_damping={} angular_damping={}",
+                  gravity(), restitution(), friction(), linear_damping(), angular_damping());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -74,6 +78,7 @@ struct PhysicsSystem final {
                         const f32 gravity = gravity_.load(std::memory_order_relaxed);
                         const f32 restitution = restitution_.load(std::memory_order_relaxed);
                         const f32 friction = friction_.load(std::memory_order_relaxed);
+                        const f32 linear_damping = linear_damping_.load(std::memory_order_relaxed);
                         const f32 angular_damping = angular_damping_.load(std::memory_order_relaxed);
 
                         if (reset_requested_.exchange(false, std::memory_order_acq_rel)) {
@@ -181,7 +186,13 @@ struct PhysicsSystem final {
                                        view.orientation, manifolds_, dt, restitution, friction);
                         solve_contact_positions(view.position, view.orientation, view.inv_mass, view.inv_inertia,
                                                 std::span<const ContactManifold>{manifolds_});
+                        build_contact_activity_mask_(count, std::span<const ContactManifold>{manifolds_});
+                        apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
                         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
+                        settle_resting_contact_velocities(
+                            view.velocity, view.angular_velocity, view.inv_mass,
+                            std::span<const u8>{contact_activity_mask_.data(), static_cast<usize>(count)},
+                            kRestingLinearSpeedThreshold, kRestingAngularSpeedThreshold);
                         integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
                         integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
                         publish_poses(view.poses, view.position, view.orientation, count);
@@ -227,6 +238,7 @@ struct PhysicsSystem final {
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
     std::atomic<f32> friction_{0.2f};
+    std::atomic<f32> linear_damping_{0.1f};
     std::atomic<f32> angular_damping_{0.4f};
     std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
@@ -236,6 +248,8 @@ struct PhysicsSystem final {
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
+    static constexpr f32 kRestingLinearSpeedThreshold = 0.05f;
+    static constexpr f32 kRestingAngularSpeedThreshold = 0.1f;
     // Persistence thresholds in world-space meters.
     // A cached point is dropped when either threshold is exceeded.
     static constexpr f32 kPersistenceAnchorThreshold = 0.03f;
@@ -267,6 +281,7 @@ struct PhysicsSystem final {
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
+    std::vector<u8> contact_activity_mask_{};
 
     struct PersistenceRefreshStats final {
         u32 previous_point_count{};
@@ -294,6 +309,7 @@ struct PhysicsSystem final {
         bounds_cache_.reserve(count);
         static_ids_.reserve(count);
         dynamic_ids_.reserve(count);
+        contact_activity_mask_.reserve(count);
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
         const usize manifold_reserve = static_cast<usize>(count) * kManifoldReserveFactor;
         manifolds_.reserve(manifold_reserve);
@@ -321,6 +337,30 @@ struct PhysicsSystem final {
                 std::terminate();
             }
 #endif
+        }
+    }
+
+    void build_contact_activity_mask_(const u32 body_count, std::span<const ContactManifold> manifolds) {
+        if (contact_activity_mask_.size() < body_count) {
+            contact_activity_mask_.resize(body_count);
+        }
+        std::fill_n(contact_activity_mask_.begin(), body_count, static_cast<u8>(0u));
+
+        for (const ContactManifold &manifold : manifolds) {
+            if (manifold.point_count == 0u) {
+                continue;
+            }
+#ifndef NDEBUG
+            if (manifold.a >= body_count || (manifold.b != kInvalidBody && manifold.b >= body_count)) {
+                log::error(physics, "Contact activity mask manifold id out of range (a={} b={} count={})", manifold.a,
+                           manifold.b, body_count);
+                std::terminate();
+            }
+#endif
+            contact_activity_mask_[manifold.a] = 1u;
+            if (manifold.b != kInvalidBody) {
+                contact_activity_mask_[manifold.b] = 1u;
+            }
         }
     }
 
