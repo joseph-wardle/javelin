@@ -11,6 +11,10 @@ import javelin.physics.aabb;
 
 export namespace javelin {
 
+// Dynamic BVH contract:
+// - stores broad-phase bounds for dynamic bodies only.
+// - leaf bounds are fattened to reduce remove/insert churn on small motions.
+// - update/query are allocation-free once capacity is reserved.
 struct DynamicBvh final {
     struct Node final {
         Aabb bounds{};
@@ -100,23 +104,23 @@ struct DynamicBvh final {
         stack.push_back(root_);
 
         while (!stack.empty()) {
-            const u32 idx = stack.back();
+            const u32 node_index = stack.back();
             stack.pop_back();
 
-            const Node &n = nodes[idx];
-            if (!overlaps(n.bounds, aabb)) {
+            const Node &node = nodes[node_index];
+            if (!overlaps(node.bounds, aabb)) {
                 continue;
             }
 
-            const u32 left = n.left;
+            const u32 left = node.left;
             if (left == kInvalidNode) {
-                out.push_back(n.body_id);
+                out.push_back(node.body_id);
                 continue;
             }
 
             // Internal node: both children are valid.
             stack.push_back(left);
-            stack.push_back(n.right);
+            stack.push_back(node.right);
         }
     }
 
@@ -125,6 +129,7 @@ struct DynamicBvh final {
 
   private:
     static constexpr u32 kInvalidNode = std::numeric_limits<u32>::max();
+    // Extra margin around dynamic leaves to avoid frequent tree updates for jitter-level motion.
     static constexpr f32 kFatMargin = 0.1f;
 
     [[nodiscard]] static Aabb fatten_(const Aabb aabb) noexcept { return inflate(aabb, Vec3{kFatMargin}); }
@@ -160,6 +165,7 @@ struct DynamicBvh final {
     }
 
     u32 find_best_sibling_(const Aabb leaf_bounds) const {
+        // Greedy descent using merged surface area cost.
         u32 index = root_;
         while (!is_leaf_(nodes_[index])) {
             const u32 left = nodes_[index].left;
@@ -235,6 +241,7 @@ struct DynamicBvh final {
     }
 
     void fix_upwards_(u32 node) {
+        // Refit merged bounds to the root after local topology changes.
         while (node != kInvalidNode) {
             Node &n = nodes_[node];
             n.bounds = merge(nodes_[n.left].bounds, nodes_[n.right].bounds);

@@ -12,6 +12,11 @@ import javelin.math.vec3;
 import javelin.physics.types;
 
 namespace javelin::detail {
+// Solver contract:
+// - manifold normals/anchors are authored by narrow phase in canonical orientation.
+// - this module performs iterative projected Gauss-Seidel in velocity space,
+//   then a positional correction pass for residual penetration.
+// - only dynamic bodies (inv_mass > 0) are moved by impulses/corrections.
 // 3D manifold stacks converge more slowly than single-point contacts.
 inline constexpr u32 kSolverIterations = 16;
 inline constexpr u32 kPositionSolverIterations = 4;
@@ -41,6 +46,7 @@ inline constexpr f32 kRestitutionVelocityThreshold = 1.0f;
     return to_world_space(q, scaled);
 }
 
+// Per-contact-point pre-step data reused across solver iterations.
 struct SolverPoint final {
     u32 manifold_index{};
     u32 point_index{};
@@ -208,14 +214,26 @@ inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoin
 
 export namespace javelin {
 
-void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
-                    std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
-                    std::span<ContactManifold> manifolds, const f32 dt, const f32 restitution, const f32 friction) {
+void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                              std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
+                              std::span<ContactManifold> manifolds, const f32 dt, const f32 restitution,
+                              const f32 friction) {
     ZoneScopedN("Physics solve");
+#ifndef NDEBUG
+    if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
+        velocity.size() != inv_inertia_body.size() || velocity.size() != orientation.size()) {
+        log::error(physics,
+                   "Velocity solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} orientation={})",
+                   velocity.size(), angular_velocity.size(), inv_mass.size(), inv_inertia_body.size(),
+                   orientation.size());
+        std::terminate();
+    }
+#endif
     if (manifolds.empty()) {
         return;
     }
 
+    const u32 body_count = static_cast<u32>(velocity.size());
     const f32 inv_dt = (dt > detail::kDtEps) ? (1.0f / dt) : 0.0f;
     const f32 restitution_coeff = std::clamp(restitution, 0.0f, 1.0f);
     const f32 friction_coeff = std::max(friction, 0.0f);
@@ -227,6 +245,11 @@ void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, 
         if (manifold.point_count > kMaxManifoldPoints) {
             log::error(physics, "Solver manifold has invalid point_count={} (index={} a={} b={})", manifold.point_count,
                        manifold_index, manifold.a, manifold.b);
+            std::terminate();
+        }
+        if (manifold.a >= body_count || (manifold.b != kInvalidBody && manifold.b >= body_count)) {
+            log::error(physics, "Solver manifold body id out of range (index={} a={} b={} count={})", manifold_index,
+                       manifold.a, manifold.b, body_count);
             std::terminate();
         }
 #endif
@@ -350,13 +373,23 @@ void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, 
     }
 }
 
-void solve_contact_positions(std::span<Vec3> position, std::span<Quat> orientation, std::span<const f32> inv_mass,
-                             std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds) {
+void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orientation, std::span<const f32> inv_mass,
+                               std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds) {
     ZoneScopedN("Physics solve positions");
+#ifndef NDEBUG
+    if (position.size() != orientation.size() || position.size() != inv_mass.size() ||
+        position.size() != inv_inertia_body.size()) {
+        log::error(physics,
+                   "Position solver span size mismatch (position={} orientation={} inv_mass={} inv_inertia={})",
+                   position.size(), orientation.size(), inv_mass.size(), inv_inertia_body.size());
+        std::terminate();
+    }
+#endif
     if (manifolds.empty()) {
         return;
     }
 
+    const u32 body_count = static_cast<u32>(position.size());
     for (u32 iteration = 0; iteration < detail::kPositionSolverIterations; ++iteration) {
         bool any_correction = false;
 
@@ -364,6 +397,13 @@ void solve_contact_positions(std::span<Vec3> position, std::span<Quat> orientati
             if (manifold.point_count == 0u) {
                 continue;
             }
+#ifndef NDEBUG
+            if (manifold.a >= body_count || (manifold.b != kInvalidBody && manifold.b >= body_count)) {
+                log::error(physics, "Position solver manifold body id out of range (a={} b={} count={})", manifold.a,
+                           manifold.b, body_count);
+                std::terminate();
+            }
+#endif
 
             Vec3 normal = manifold.normal;
             if (!normal.try_normalize()) {
@@ -376,19 +416,19 @@ void solve_contact_positions(std::span<Vec3> position, std::span<Quat> orientati
             }
 
             const u32 a = manifold.a;
-            const bool has_b = manifold.b != kInvalidBody;
-            const u32 b = has_b ? manifold.b : kInvalidBody;
+            const bool has_body_b = manifold.b != kInvalidBody;
+            const u32 b = has_body_b ? manifold.b : kInvalidBody;
 
             for (u32 point_index = 0; point_index < manifold.point_count; ++point_index) {
-                const ContactPoint &point = manifold.points[point_index];
-                const Vec3 r_a = rotate(orientation[a], point.local_anchor_a);
+                const ContactPoint &contact_point = manifold.points[point_index];
+                const Vec3 r_a = rotate(orientation[a], contact_point.local_anchor_a);
                 const Vec3 world_a = position[a] + r_a;
 
                 Vec3 r_b{};
                 Vec3 world_b{};
                 f32 separation = 0.0f;
-                if (has_b) {
-                    r_b = rotate(orientation[b], point.local_anchor_b);
+                if (has_body_b) {
+                    r_b = rotate(orientation[b], contact_point.local_anchor_b);
                     world_b = position[b] + r_b;
                     separation = dot(world_b - world_a, normal);
                 } else {
@@ -418,7 +458,7 @@ void solve_contact_positions(std::span<Vec3> position, std::span<Quat> orientati
                     detail::apply_inv_inertia(inv_inertia_body[a], orientation[a], cross(r_a, correction));
                 detail::apply_orientation_correction(orientation[a], -angular_correction_a);
 
-                if (has_b) {
+                if (has_body_b) {
                     position[b] += correction * inv_mass[b];
                     const Vec3 angular_correction_b =
                         detail::apply_inv_inertia(inv_inertia_body[b], orientation[b], cross(r_b, correction));

@@ -8,11 +8,14 @@ import javelin.math.vec3;
 
 export namespace javelin {
 
+// Canonical representation for unordered body interactions.
+// All pair-based maps/sets use this ordering to avoid duplicate keys.
 struct BodyPair final {
     u32 a{};
     u32 b{};
 };
 
+// Normalizes an unordered pair into deterministic ascending id order.
 [[nodiscard]] inline constexpr BodyPair canonical_body_pair(const u32 a, const u32 b) noexcept {
     if (a <= b) {
         return BodyPair{.a = a, .b = b};
@@ -20,6 +23,7 @@ struct BodyPair final {
     return BodyPair{.a = b, .b = a};
 }
 
+// Packs a canonical body pair into one 64-bit key for hash tables.
 [[nodiscard]] inline constexpr u64 body_pair_key(const u32 a, const u32 b) noexcept {
     const BodyPair pair = canonical_body_pair(a, b);
     return (static_cast<u64>(pair.a) << 32u) | static_cast<u64>(pair.b);
@@ -70,6 +74,11 @@ struct ContactManifold final {
     return (bits & 0x80000000u) ? ~bits : (bits ^ 0x80000000u);
 }
 
+// Deterministic manifold point ordering for warm-start matching:
+// 1) valid point feature id (when present on both points),
+// 2) local anchors on body A then B,
+// 3) separation,
+// 4) stable index fallback.
 inline void sort_manifold_points(ContactManifold &manifold) noexcept {
 #ifndef NDEBUG
     if (manifold.point_count > kMaxManifoldPoints) {
@@ -157,6 +166,8 @@ inline void sort_manifold_points(ContactManifold &manifold) noexcept {
     }
 }
 
+// Re-orients manifold storage to canonical body order (a <= b).
+// When swapping bodies, normal and local anchors are flipped accordingly.
 inline void canonicalize_manifold_orientation(ContactManifold &manifold) noexcept {
     if (manifold.a <= manifold.b) {
         return;

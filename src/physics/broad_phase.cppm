@@ -13,6 +13,11 @@ import javelin.physics.types;
 
 export namespace javelin {
 
+// Broad phase contract:
+// - input bounds are world-space AABBs for the current frame.
+// - output pairs are potential overlaps only; narrow phase confirms contacts.
+// - ordering inside each chunk follows dynamic id order; global canonicalization
+//   and de-duplication are performed by PhysicsSystem.
 struct BroadPhaseScratch final {
     std::vector<u32> query_hits{};
     std::vector<u32> query_stack{};
@@ -71,9 +76,9 @@ void broad_phase_chunk(std::span<const u32> dynamic_ids, const DynamicBvh &dynam
 }
 
 // Main entrypoint for broad phase pair generation.
-void broad_phase_sphere_pairs(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh,
-                              const StaticBvh &static_bvh, std::span<const Aabb> bounds_cache,
-                              std::vector<BodyPair> &pairs, BroadPhaseScratch &scratch) {
+void broad_phase_generate_pairs(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh,
+                                const StaticBvh &static_bvh, std::span<const Aabb> bounds_cache,
+                                std::vector<BodyPair> &pairs, BroadPhaseScratch &scratch) {
     broad_phase_chunk(dynamic_ids, dynamic_bvh, static_bvh, bounds_cache, pairs, scratch);
 }
 
