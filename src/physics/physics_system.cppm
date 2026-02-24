@@ -90,8 +90,6 @@ struct PhysicsSystem final {
                         prepare_manifold_lookup_();
 
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
-                        integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
-                        integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
                         f32 max_angular_speed_sq = 0.0f;
                         for (u32 i = 0; i < count; ++i) {
                             max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
@@ -180,7 +178,11 @@ struct PhysicsSystem final {
                         TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
                         solve_contacts(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
                                        view.orientation, manifolds_, dt, restitution, friction);
+                        solve_contact_positions(view.position, view.orientation, view.inv_mass, view.inv_inertia,
+                                                std::span<const ContactManifold>{manifolds_});
                         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
+                        integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
+                        integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
                         publish_poses(view.poses, view.position, view.orientation, count);
                     }
                 }
@@ -235,10 +237,10 @@ struct PhysicsSystem final {
     static constexpr u32 kManifoldReserveFactor = 4;
     // Persistence thresholds in world-space meters.
     // A cached point is dropped when either threshold is exceeded.
-    static constexpr f32 kPersistenceAnchorThreshold = 0.05f;
+    static constexpr f32 kPersistenceAnchorThreshold = 0.03f;
     static constexpr f32 kPersistenceAnchorThresholdSq = kPersistenceAnchorThreshold * kPersistenceAnchorThreshold;
-    static constexpr f32 kPersistenceNormalBreakThreshold = 0.03f;
-    static constexpr f32 kPersistenceTangentialDriftBreakThreshold = 0.05f;
+    static constexpr f32 kPersistenceNormalBreakThreshold = 0.015f;
+    static constexpr f32 kPersistenceTangentialDriftBreakThreshold = 0.025f;
     static constexpr f32 kPersistenceTangentialDriftBreakThresholdSq =
         kPersistenceTangentialDriftBreakThreshold * kPersistenceTangentialDriftBreakThreshold;
     static constexpr f32 kPersistenceMatchEps = 1e-6f;
@@ -379,15 +381,13 @@ struct PhysicsSystem final {
 
     static void reset_point_cache_(ContactPoint &point) noexcept {
         point.normal_impulse = 0.0f;
-        point.tangent_impulse_u = 0.0f;
-        point.tangent_impulse_v = 0.0f;
+        point.tangent_impulse = Vec3{};
         point.persisted = false;
     }
 
     static void copy_point_cache_(ContactPoint &dst, const ContactPoint &src) noexcept {
         dst.normal_impulse = src.normal_impulse;
-        dst.tangent_impulse_u = src.tangent_impulse_u;
-        dst.tangent_impulse_v = src.tangent_impulse_v;
+        dst.tangent_impulse = src.tangent_impulse;
         // This point was matched to a previous-frame point.
         dst.persisted = true;
     }
@@ -399,27 +399,39 @@ struct PhysicsSystem final {
                                                                 const ContactPoint &previous_point) const noexcept {
         const u32 a = manifold.a;
         const Vec3 world_a_previous = position[a] + rotate(orientation[a], previous_point.local_anchor_a);
+        const Vec3 world_a_next = position[a] + rotate(orientation[a], next_point.local_anchor_a);
 
         f32 normal_separation = 0.0f;
+        f32 normal_drift = 0.0f;
         Vec3 tangential_delta{};
         if (manifold.b != kInvalidBody) {
             const u32 b = manifold.b;
             const Vec3 world_b_previous = position[b] + rotate(orientation[b], previous_point.local_anchor_b);
-            const Vec3 delta = world_b_previous - world_a_previous;
-            normal_separation = dot(delta, manifold.normal);
-            tangential_delta = delta - manifold.normal * normal_separation;
+            const Vec3 world_b_next = position[b] + rotate(orientation[b], next_point.local_anchor_b);
+            const Vec3 delta_previous = world_b_previous - world_a_previous;
+            const Vec3 delta_next = world_b_next - world_a_next;
+
+            const f32 normal_previous = dot(delta_previous, manifold.normal);
+            const f32 normal_next = dot(delta_next, manifold.normal);
+            normal_separation = normal_next;
+            normal_drift = std::fabs(normal_next - normal_previous);
+
+            const Vec3 tangential_previous = delta_previous - manifold.normal * normal_previous;
+            const Vec3 tangential_next = delta_next - manifold.normal * normal_next;
+            tangential_delta = tangential_next - tangential_previous;
         } else {
-            const Vec3 world_a_next = position[a] + rotate(orientation[a], next_point.local_anchor_a);
             const Vec3 delta = world_a_previous - world_a_next;
             const f32 normal_component = dot(delta, manifold.normal);
             normal_separation = std::fabs(normal_component);
+            normal_drift = std::fabs(normal_component);
             tangential_delta = delta - manifold.normal * normal_component;
         }
 
         const bool normal_break_exceeded = normal_separation > kPersistenceNormalBreakThreshold;
+        const bool normal_drift_exceeded = normal_drift > kPersistenceNormalBreakThreshold;
         const bool tangential_drift_exceeded =
             tangential_delta.length_sq() > kPersistenceTangentialDriftBreakThresholdSq;
-        return normal_break_exceeded || tangential_drift_exceeded;
+        return normal_break_exceeded || normal_drift_exceeded || tangential_drift_exceeded;
     }
 
     void refresh_manifold_point_cache_(std::span<const Vec3> position, std::span<const Quat> orientation,
@@ -461,7 +473,7 @@ struct PhysicsSystem final {
                 }
 
                 const f32 metric = local_anchor_match_distance_sq_(next_point, previous_point, has_b);
-                if (!match_feature_first && metric > kPersistenceAnchorThresholdSq) {
+                if (metric > kPersistenceAnchorThresholdSq) {
                     continue;
                 }
 

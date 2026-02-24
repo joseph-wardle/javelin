@@ -147,8 +147,7 @@ struct BoxAxisKey final {
 
 void push_single_point_manifold(std::span<const Quat> orientation, const u32 a, const u32 b, const Vec3 normal,
                                 const f32 penetration, const u32 point_feature_id, const Vec3 r_a_world,
-                                const Vec3 r_b_world,
-                                std::vector<ContactManifold> &manifolds,
+                                const Vec3 r_b_world, std::vector<ContactManifold> &manifolds,
                                 const u32 manifold_feature_id = kInvalidContactFeature) {
     ContactManifold manifold{
         .a = a,
@@ -433,13 +432,23 @@ struct ClipVertex final {
 
 [[nodiscard]] inline u32 box_face_face_feature_id(const u8 ref_axis, const bool ref_positive, const bool ref_is_a,
                                                   const u8 incident_axis, const bool incident_positive, const u8 id0,
-                                                  const u8 id1) noexcept {
+                                                  const u8 id1, const u8 quantized_u, const u8 quantized_v) noexcept {
     const u8 a = std::min(id0, id1);
     const u8 b = std::max(id0, id1);
     return kBoxFaceFaceFeatureTag | (static_cast<u32>(ref_axis) & 0x3u) | (ref_positive ? (1u << 2u) : 0u) |
            (ref_is_a ? (1u << 3u) : 0u) | ((static_cast<u32>(incident_axis) & 0x3u) << 4u) |
            (incident_positive ? (1u << 6u) : 0u) | ((static_cast<u32>(a & 0x7u)) << 7u) |
-           ((static_cast<u32>(b & 0x7u)) << 10u);
+           ((static_cast<u32>(b & 0x7u)) << 10u) | ((static_cast<u32>(quantized_u) & 0x3Fu) << 14u) |
+           ((static_cast<u32>(quantized_v) & 0x3Fu) << 20u);
+}
+
+[[nodiscard]] inline u8 quantize_face_coordinate(const f32 value, const f32 extent) noexcept {
+    if (extent <= kReductionEps) {
+        return 0u;
+    }
+    const f32 normalized = std::clamp((value / extent) * 0.5f + 0.5f, 0.0f, 1.0f);
+    const f32 scaled = normalized * 63.0f;
+    return static_cast<u8>(std::lround(scaled));
 }
 
 struct BoxSupportEdge final {
@@ -796,8 +805,33 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
             .u = clip_vertex.u,
             .v = clip_vertex.v,
             .feature_id = box_face_face_feature_id(static_cast<u8>(ref_axis), ref_positive, ref_is_a, incident_axis,
-                                                   incident_positive, clip_vertex.id0, clip_vertex.id1),
+                                                   incident_positive, clip_vertex.id0, clip_vertex.id1,
+                                                   quantize_face_coordinate(clip_vertex.u, ref_u_extent),
+                                                   quantize_face_coordinate(clip_vertex.v, ref_v_extent)),
         };
+    }
+
+    if (candidate_count > 1u) {
+        u32 unique_count = 0u;
+        for (u32 i = 0u; i < candidate_count; ++i) {
+            const FaceContactCandidate candidate = candidates[i];
+            bool merged = false;
+            for (u32 unique_index = 0u; unique_index < unique_count; ++unique_index) {
+                FaceContactCandidate &existing = candidates[unique_index];
+                if (existing.feature_id != candidate.feature_id) {
+                    continue;
+                }
+                if (candidate.penetration > existing.penetration + kReductionEps) {
+                    existing = candidate;
+                }
+                merged = true;
+                break;
+            }
+            if (!merged) {
+                candidates[unique_count++] = candidate;
+            }
+        }
+        candidate_count = unique_count;
     }
 
     if (candidate_count == 0u) {

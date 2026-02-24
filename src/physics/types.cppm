@@ -44,8 +44,8 @@ struct ContactPoint final {
     f32 separation{};
     // Warm-start impulse cache for sequential impulse solve.
     f32 normal_impulse{};
-    f32 tangent_impulse_u{};
-    f32 tangent_impulse_v{};
+    // World-space accumulated friction impulse.
+    Vec3 tangent_impulse{};
     // True when this point reuses cached state from a previous frame.
     bool persisted{};
     // Stable identifier used to match points across frames.
