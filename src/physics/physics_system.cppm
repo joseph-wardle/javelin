@@ -29,6 +29,9 @@ struct PhysicsSystem final {
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
     void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
     void set_friction(const f32 friction) noexcept { friction_.store(friction, std::memory_order_relaxed); }
+    void set_linear_damping(const f32 damping) noexcept {
+        linear_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
+    }
     void set_angular_damping(const f32 damping) noexcept {
         angular_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
     }
@@ -37,6 +40,7 @@ struct PhysicsSystem final {
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
+    [[nodiscard]] f32 linear_damping() const noexcept { return linear_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 angular_damping() const noexcept { return angular_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
 
@@ -50,8 +54,8 @@ struct PhysicsSystem final {
         }
 
         log::info(physics, "Starting physics system");
-        log::info(physics, "Params gravity={} restitution={} friction={} angular_damping={}", gravity(), restitution(),
-                  friction(), angular_damping());
+        log::info(physics, "Params gravity={} restitution={} friction={} linear_damping={} angular_damping={}",
+                  gravity(), restitution(), friction(), linear_damping(), angular_damping());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -74,6 +78,7 @@ struct PhysicsSystem final {
                         const f32 gravity = gravity_.load(std::memory_order_relaxed);
                         const f32 restitution = restitution_.load(std::memory_order_relaxed);
                         const f32 friction = friction_.load(std::memory_order_relaxed);
+                        const f32 linear_damping = linear_damping_.load(std::memory_order_relaxed);
                         const f32 angular_damping = angular_damping_.load(std::memory_order_relaxed);
 
                         if (reset_requested_.exchange(false, std::memory_order_acq_rel)) {
@@ -90,8 +95,6 @@ struct PhysicsSystem final {
                         prepare_manifold_lookup_();
 
                         accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
-                        integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
-                        integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
                         f32 max_angular_speed_sq = 0.0f;
                         for (u32 i = 0; i < count; ++i) {
                             max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
@@ -157,6 +160,7 @@ struct PhysicsSystem final {
                                               view.shape_index, view.inv_mass, candidate_pairs_, manifolds_,
                                               manifold_lookup_, next_manifolds_);
                         sort_manifold_points_(next_manifolds_);
+                        sort_manifolds_(next_manifolds_);
                         const PersistenceRefreshStats persistence_stats =
                             refresh_manifold_persistence_(view.position, view.orientation);
                         manifolds_.swap(next_manifolds_);
@@ -180,7 +184,17 @@ struct PhysicsSystem final {
                         TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
                         solve_contacts(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
                                        view.orientation, manifolds_, dt, restitution, friction);
+                        solve_contact_positions(view.position, view.orientation, view.inv_mass, view.inv_inertia,
+                                                std::span<const ContactManifold>{manifolds_});
+                        build_contact_activity_mask_(count, std::span<const ContactManifold>{manifolds_});
+                        apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
                         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
+                        settle_resting_contact_velocities(
+                            view.velocity, view.angular_velocity, view.inv_mass,
+                            std::span<const u8>{contact_activity_mask_.data(), static_cast<usize>(count)},
+                            kRestingLinearSpeedThreshold, kRestingAngularSpeedThreshold);
+                        integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
+                        integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
                         publish_poses(view.poses, view.position, view.orientation, count);
                     }
                 }
@@ -224,6 +238,7 @@ struct PhysicsSystem final {
     std::atomic<f32> gravity_{-9.8f};
     std::atomic<f32> restitution_{0.3f};
     std::atomic<f32> friction_{0.2f};
+    std::atomic<f32> linear_damping_{0.1f};
     std::atomic<f32> angular_damping_{0.4f};
     std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
@@ -233,16 +248,19 @@ struct PhysicsSystem final {
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
+    static constexpr f32 kRestingLinearSpeedThreshold = 0.05f;
+    static constexpr f32 kRestingAngularSpeedThreshold = 0.1f;
     // Persistence thresholds in world-space meters.
     // A cached point is dropped when either threshold is exceeded.
-    static constexpr f32 kPersistenceAnchorThreshold = 0.05f;
+    static constexpr f32 kPersistenceAnchorThreshold = 0.03f;
     static constexpr f32 kPersistenceAnchorThresholdSq = kPersistenceAnchorThreshold * kPersistenceAnchorThreshold;
-    static constexpr f32 kPersistenceNormalBreakThreshold = 0.03f;
-    static constexpr f32 kPersistenceTangentialDriftBreakThreshold = 0.05f;
+    static constexpr f32 kPersistenceNormalBreakThreshold = 0.015f;
+    static constexpr f32 kPersistenceTangentialDriftBreakThreshold = 0.025f;
     static constexpr f32 kPersistenceTangentialDriftBreakThresholdSq =
         kPersistenceTangentialDriftBreakThreshold * kPersistenceTangentialDriftBreakThreshold;
     static constexpr f32 kPersistenceMatchEps = 1e-6f;
     static constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
+    static constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
@@ -263,6 +281,7 @@ struct PhysicsSystem final {
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
+    std::vector<u8> contact_activity_mask_{};
 
     struct PersistenceRefreshStats final {
         u32 previous_point_count{};
@@ -290,6 +309,7 @@ struct PhysicsSystem final {
         bounds_cache_.reserve(count);
         static_ids_.reserve(count);
         dynamic_ids_.reserve(count);
+        contact_activity_mask_.reserve(count);
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
         const usize manifold_reserve = static_cast<usize>(count) * kManifoldReserveFactor;
         manifolds_.reserve(manifold_reserve);
@@ -320,10 +340,108 @@ struct PhysicsSystem final {
         }
     }
 
+    void build_contact_activity_mask_(const u32 body_count, std::span<const ContactManifold> manifolds) {
+        if (contact_activity_mask_.size() < body_count) {
+            contact_activity_mask_.resize(body_count);
+        }
+        std::fill_n(contact_activity_mask_.begin(), body_count, static_cast<u8>(0u));
+
+        for (const ContactManifold &manifold : manifolds) {
+            if (manifold.point_count == 0u) {
+                continue;
+            }
+#ifndef NDEBUG
+            if (manifold.a >= body_count || (manifold.b != kInvalidBody && manifold.b >= body_count)) {
+                log::error(physics, "Contact activity mask manifold id out of range (a={} b={} count={})", manifold.a,
+                           manifold.b, body_count);
+                std::terminate();
+            }
+#endif
+            contact_activity_mask_[manifold.a] = 1u;
+            if (manifold.b != kInvalidBody) {
+                contact_activity_mask_[manifold.b] = 1u;
+            }
+        }
+    }
+
     void sort_manifold_points_(std::vector<ContactManifold> &manifolds) {
         for (ContactManifold &manifold : manifolds) {
             sort_manifold_points(manifold);
         }
+    }
+
+    [[nodiscard]] static bool body_pair_less_(const BodyPair lhs, const BodyPair rhs) noexcept {
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        return lhs.b < rhs.b;
+    }
+
+    [[nodiscard]] static bool body_pair_equal_(const BodyPair lhs, const BodyPair rhs) noexcept {
+        return lhs.a == rhs.a && lhs.b == rhs.b;
+    }
+
+    void normalize_and_sort_candidate_pairs_() {
+        if (candidate_pairs_.empty()) {
+            return;
+        }
+
+        for (BodyPair &pair : candidate_pairs_) {
+            pair = canonical_body_pair(pair.a, pair.b);
+        }
+
+        std::sort(candidate_pairs_.begin(), candidate_pairs_.end(), body_pair_less_);
+        const auto unique_end = std::unique(candidate_pairs_.begin(), candidate_pairs_.end(), body_pair_equal_);
+        candidate_pairs_.erase(unique_end, candidate_pairs_.end());
+    }
+
+    [[nodiscard]] static bool manifold_less_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        if (lhs.b != rhs.b) {
+            return lhs.b < rhs.b;
+        }
+        if (lhs.manifold_feature_id != rhs.manifold_feature_id) {
+            return lhs.manifold_feature_id < rhs.manifold_feature_id;
+        }
+        if (lhs.point_count != rhs.point_count) {
+            return lhs.point_count < rhs.point_count;
+        }
+
+        const u32 point_count = std::min(lhs.point_count, rhs.point_count);
+        for (u32 i = 0; i < point_count; ++i) {
+            const u32 lhs_feature = lhs.points[i].feature_id;
+            const u32 rhs_feature = rhs.points[i].feature_id;
+            if (lhs_feature != rhs_feature) {
+                return lhs_feature < rhs_feature;
+            }
+        }
+
+        const u32 lhs_nx = ordered_float_key(lhs.normal.x);
+        const u32 rhs_nx = ordered_float_key(rhs.normal.x);
+        if (lhs_nx != rhs_nx) {
+            return lhs_nx < rhs_nx;
+        }
+        const u32 lhs_ny = ordered_float_key(lhs.normal.y);
+        const u32 rhs_ny = ordered_float_key(rhs.normal.y);
+        if (lhs_ny != rhs_ny) {
+            return lhs_ny < rhs_ny;
+        }
+        const u32 lhs_nz = ordered_float_key(lhs.normal.z);
+        const u32 rhs_nz = ordered_float_key(rhs.normal.z);
+        if (lhs_nz != rhs_nz) {
+            return lhs_nz < rhs_nz;
+        }
+
+        return false;
+    }
+
+    void sort_manifolds_(std::vector<ContactManifold> &manifolds) {
+        if (manifolds.size() <= 1u) {
+            return;
+        }
+        std::sort(manifolds.begin(), manifolds.end(), manifold_less_);
     }
 
     [[nodiscard]] static u32 contact_point_count_(std::span<const ContactManifold> manifolds) noexcept {
@@ -336,6 +454,10 @@ struct PhysicsSystem final {
 
     [[nodiscard]] static bool decode_box_axis_feature_id_(const u32 feature_id, BoxAxisKey &out) noexcept {
         if ((feature_id & kBoxAxisFeatureTag) == 0u) {
+            return false;
+        }
+        // Face-face point ids are not valid manifold axis ids.
+        if ((feature_id & kBoxFaceFaceFeatureTag) != 0u) {
             return false;
         }
         const u32 type = feature_id & 0x3u;
@@ -355,8 +477,8 @@ struct PhysicsSystem final {
         }
         BoxAxisKey previous_axis{};
         BoxAxisKey next_axis{};
-        if (!decode_box_axis_feature_id_(previous_manifold.points[0].feature_id, previous_axis) ||
-            !decode_box_axis_feature_id_(next_manifold.points[0].feature_id, next_axis)) {
+        if (!decode_box_axis_feature_id_(previous_manifold.manifold_feature_id, previous_axis) ||
+            !decode_box_axis_feature_id_(next_manifold.manifold_feature_id, next_axis)) {
             return false;
         }
         return previous_axis.type != next_axis.type || previous_axis.i != next_axis.i || previous_axis.j != next_axis.j;
@@ -374,15 +496,13 @@ struct PhysicsSystem final {
 
     static void reset_point_cache_(ContactPoint &point) noexcept {
         point.normal_impulse = 0.0f;
-        point.tangent_impulse_u = 0.0f;
-        point.tangent_impulse_v = 0.0f;
+        point.tangent_impulse = Vec3{};
         point.persisted = false;
     }
 
     static void copy_point_cache_(ContactPoint &dst, const ContactPoint &src) noexcept {
         dst.normal_impulse = src.normal_impulse;
-        dst.tangent_impulse_u = src.tangent_impulse_u;
-        dst.tangent_impulse_v = src.tangent_impulse_v;
+        dst.tangent_impulse = src.tangent_impulse;
         // This point was matched to a previous-frame point.
         dst.persisted = true;
     }
@@ -394,27 +514,39 @@ struct PhysicsSystem final {
                                                                 const ContactPoint &previous_point) const noexcept {
         const u32 a = manifold.a;
         const Vec3 world_a_previous = position[a] + rotate(orientation[a], previous_point.local_anchor_a);
+        const Vec3 world_a_next = position[a] + rotate(orientation[a], next_point.local_anchor_a);
 
         f32 normal_separation = 0.0f;
+        f32 normal_drift = 0.0f;
         Vec3 tangential_delta{};
         if (manifold.b != kInvalidBody) {
             const u32 b = manifold.b;
             const Vec3 world_b_previous = position[b] + rotate(orientation[b], previous_point.local_anchor_b);
-            const Vec3 delta = world_b_previous - world_a_previous;
-            normal_separation = dot(delta, manifold.normal);
-            tangential_delta = delta - manifold.normal * normal_separation;
+            const Vec3 world_b_next = position[b] + rotate(orientation[b], next_point.local_anchor_b);
+            const Vec3 delta_previous = world_b_previous - world_a_previous;
+            const Vec3 delta_next = world_b_next - world_a_next;
+
+            const f32 normal_previous = dot(delta_previous, manifold.normal);
+            const f32 normal_next = dot(delta_next, manifold.normal);
+            normal_separation = normal_next;
+            normal_drift = std::fabs(normal_next - normal_previous);
+
+            const Vec3 tangential_previous = delta_previous - manifold.normal * normal_previous;
+            const Vec3 tangential_next = delta_next - manifold.normal * normal_next;
+            tangential_delta = tangential_next - tangential_previous;
         } else {
-            const Vec3 world_a_next = position[a] + rotate(orientation[a], next_point.local_anchor_a);
             const Vec3 delta = world_a_previous - world_a_next;
             const f32 normal_component = dot(delta, manifold.normal);
             normal_separation = std::fabs(normal_component);
+            normal_drift = std::fabs(normal_component);
             tangential_delta = delta - manifold.normal * normal_component;
         }
 
         const bool normal_break_exceeded = normal_separation > kPersistenceNormalBreakThreshold;
+        const bool normal_drift_exceeded = normal_drift > kPersistenceNormalBreakThreshold;
         const bool tangential_drift_exceeded =
             tangential_delta.length_sq() > kPersistenceTangentialDriftBreakThresholdSq;
-        return normal_break_exceeded || tangential_drift_exceeded;
+        return normal_break_exceeded || normal_drift_exceeded || tangential_drift_exceeded;
     }
 
     void refresh_manifold_point_cache_(std::span<const Vec3> position, std::span<const Quat> orientation,
@@ -456,7 +588,7 @@ struct PhysicsSystem final {
                 }
 
                 const f32 metric = local_anchor_match_distance_sq_(next_point, previous_point, has_b);
-                if (!match_feature_first && metric > kPersistenceAnchorThresholdSq) {
+                if (metric > kPersistenceAnchorThresholdSq) {
                     continue;
                 }
 
@@ -617,6 +749,7 @@ struct PhysicsSystem final {
                 std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
             }
         }
+        normalize_and_sort_candidate_pairs_();
 
 #if defined(JAVELIN_BROAD_PHASE_VALIDATE)
         validate_broad_phase_pairs_(dynamic_ids);
