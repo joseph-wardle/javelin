@@ -42,7 +42,41 @@ struct PhysicsSystem final {
     void set_angular_damping(const f32 damping) noexcept {
         angular_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
     }
-    void request_reset() noexcept { reset_requested_.store(true, std::memory_order_release); }
+    // Thread-safe control request consumed by the physics thread.
+    // Reset is serviced even while simulation is paused.
+    void request_reset() noexcept {
+        reset_requested_.store(true, std::memory_order_release);
+        simulation_control_cv_.notify_one();
+    }
+    // Pauses/resumes continuous fixed-rate ticking.
+    // Resuming clears queued manual-step budget.
+    void set_simulation_paused(const bool paused) noexcept {
+        const bool previous = simulation_paused_.exchange(paused, std::memory_order_acq_rel);
+        if (!paused) {
+            pending_step_budget_.store(0u, std::memory_order_release);
+        }
+        if (previous != paused || paused) {
+            simulation_control_cv_.notify_one();
+        }
+    }
+    // Queues manual fixed ticks while paused.
+    // No-op when simulation is running.
+    void request_simulation_steps(const u32 count = 1u) noexcept {
+        if (count == 0u || !simulation_paused_.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        u32 pending = pending_step_budget_.load(std::memory_order_relaxed);
+        for (;;) {
+            const u32 remaining_capacity = std::numeric_limits<u32>::max() - pending;
+            const u32 next = pending + std::min(count, remaining_capacity);
+            if (pending_step_budget_.compare_exchange_weak(pending, next, std::memory_order_acq_rel,
+                                                           std::memory_order_relaxed)) {
+                break;
+            }
+        }
+        simulation_control_cv_.notify_one();
+    }
 
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
@@ -50,6 +84,15 @@ struct PhysicsSystem final {
     [[nodiscard]] f32 linear_damping() const noexcept { return linear_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 angular_damping() const noexcept { return angular_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
+    [[nodiscard]] bool simulation_paused() const noexcept {
+        return simulation_paused_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] u32 pending_simulation_steps() const noexcept {
+        return pending_step_budget_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] u64 completed_simulation_steps() const noexcept {
+        return completed_sim_step_count_.load(std::memory_order_relaxed);
+    }
 
     void start() {
         if (thread_.joinable()) {
@@ -66,150 +109,46 @@ struct PhysicsSystem final {
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
-            constexpr auto delta_time =
-                std::chrono::duration_cast<SteadyClock::duration>(std::chrono::duration<f64>(1.0 / 60.0));
-            FixedRateTicker ticker{delta_time};
+            constexpr auto fixed_step_interval =
+                std::chrono::duration_cast<SteadyClock::duration>(std::chrono::duration<f64>(kFixedStepDtSeconds));
+            FixedRateTicker ticker{fixed_step_interval};
+            bool ticker_needs_resync = false;
 
             while (!stop_token.stop_requested()) {
-                const auto t = ticker.wait_next(stop_token);
-                const double dt_ms = t.interval_ms;
-                last_tick_dt_ms_.store(static_cast<f32>(dt_ms), std::memory_order_relaxed);
-                TracyPlot("physics_dt_ms", dt_ms);
+                double tick_dt_ms = 0.0;
+                if (simulation_paused_.load(std::memory_order_acquire)) {
+                    // Paused mode: service resets and consume explicit step budget only.
+                    ticker_needs_resync = true;
+                    static_cast<void>(apply_pending_reset_());
+
+                    if (consume_pending_step_()) {
+                        tick_dt_ms = kFixedStepDtMilliseconds;
+                    } else {
+                        if (!wait_for_simulation_control_event_(stop_token)) {
+                            break;
+                        }
+                        continue;
+                    }
+                } else {
+                    // Running mode: resume phase-locked ticker after any pause interval.
+                    if (ticker_needs_resync) {
+                        ticker = FixedRateTicker{fixed_step_interval};
+                        ticker_needs_resync = false;
+                    }
+                    const auto timing = ticker.wait_next(stop_token);
+                    if (stop_token.stop_requested()) {
+                        break;
+                    }
+                    tick_dt_ms = timing.interval_ms;
+                }
+
+                last_tick_dt_ms_.store(static_cast<f32>(tick_dt_ms), std::memory_order_relaxed);
+                TracyPlot("physics_dt_ms", tick_dt_ms);
 
                 {
                     ZoneScopedN("Physics tick");
-                    if (scene_ != nullptr) {
-                        PhysicsView view = scene_->physics_view();
-                        const u32 count = view.count;
-                        const f32 dt = 1.0f / 60.0f;
-                        const f32 gravity = gravity_.load(std::memory_order_relaxed);
-                        const f32 restitution = restitution_.load(std::memory_order_relaxed);
-                        const f32 friction = friction_.load(std::memory_order_relaxed);
-                        const f32 linear_damping = linear_damping_.load(std::memory_order_relaxed);
-                        const f32 angular_damping = angular_damping_.load(std::memory_order_relaxed);
-
-                        if (reset_requested_.exchange(false, std::memory_order_acq_rel)) {
-                            scene_->reset_simulation();
-                            static_dirty_ = true;
-                            clear_manifold_state_();
-                        }
-
-                        if (count != last_count_) {
-                            static_dirty_ = true;
-                            clear_manifold_state_();
-                        }
-                        // Stage 0: ensure frame scratch and previous-manifold lookup are ready.
-                        ensure_capacity_(count);
-                        prepare_manifold_lookup_();
-
-                        // Stage 1: external forces and per-body bounds for broad phase.
-                        integrate_gravity_velocity(view.velocity, view.inv_mass, gravity, dt);
-                        f32 max_angular_speed_sq = 0.0f;
-                        for (u32 i = 0; i < count; ++i) {
-                            max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
-                        }
-                        TracyPlot("physics_max_angular_speed", std::sqrt(max_angular_speed_sq));
-                        bounds_cache_.resize(count);
-                        for (u32 i = 0; i < count; ++i) {
-#ifndef NDEBUG
-                            if (view.shape_index[i] >= view.shapes.size()) {
-                                log::error(physics, "Shape index out of range (id={} shape_id={})", i,
-                                           view.shape_index[i]);
-                                std::terminate();
-                            }
-#endif
-                            const ShapeData &shape = view.shapes[view.shape_index[i]];
-                            switch (view.shape_kind[i]) {
-                            case ShapeKind::sphere: {
-#ifndef NDEBUG
-                                if (shape.kind != ShapeKind::sphere) {
-                                    log::error(physics, "Shape kind mismatch (id={})", i);
-                                    std::terminate();
-                                }
-#endif
-                                const SphereShape &sphere = shape_sphere(shape);
-                                bounds_cache_[i] = Aabb::from_sphere(view.position[i], sphere.radius);
-                            } break;
-                            case ShapeKind::box: {
-#ifndef NDEBUG
-                                if (shape.kind != ShapeKind::box) {
-                                    log::error(physics, "Shape kind mismatch (id={})", i);
-                                    std::terminate();
-                                }
-#endif
-                                const BoxShape &box = shape_box(shape);
-                                const Mat3 rot = to_mat3(view.orientation[i]);
-                                const Vec3 c0 = rot.col(0);
-                                const Vec3 c1 = rot.col(1);
-                                const Vec3 c2 = rot.col(2);
-                                const Vec3 abs0{std::fabs(c0.x), std::fabs(c0.y), std::fabs(c0.z)};
-                                const Vec3 abs1{std::fabs(c1.x), std::fabs(c1.y), std::fabs(c1.z)};
-                                const Vec3 abs2{std::fabs(c2.x), std::fabs(c2.y), std::fabs(c2.z)};
-                                const Vec3 extents =
-                                    abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
-                                const Vec3 center = view.position[i];
-                                bounds_cache_[i] = Aabb{center - extents, center + extents};
-                            } break;
-                            }
-                        }
-
-                        if (static_dirty_) {
-                            rebuild_body_sets_(view);
-                            last_count_ = count;
-                            static_dirty_ = false;
-                        }
-
-                        // Stage 2: broad phase candidate generation.
-                        const std::span<const u32> dynamic_ids{dynamic_ids_.data(), dynamic_ids_.size()};
-                        // Mutating phase: update dynamic BVH before read-only queries.
-                        broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
-                        // Read-only phase: query broad phase pairs.
-                        run_broad_phase_queries_(dynamic_ids);
-                        TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
-
-                        // Stage 3: narrow phase manifolds + warm-start persistence refresh.
-                        narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes,
-                                              view.shape_index, view.inv_mass, candidate_pairs_, manifolds_,
-                                              manifold_lookup_, next_manifolds_);
-                        sort_manifold_points_(next_manifolds_);
-                        sort_manifolds_(next_manifolds_);
-                        const PersistenceRefreshStats persistence_stats =
-                            refresh_manifold_persistence_(view.position, view.orientation);
-                        manifolds_.swap(next_manifolds_);
-                        const u32 manifold_count = static_cast<u32>(manifolds_.size());
-                        const u32 contact_point_count = contact_point_count_(manifolds_);
-                        const f32 avg_points_per_manifold =
-                            (manifold_count > 0u)
-                                ? (static_cast<f32>(contact_point_count) / static_cast<f32>(manifold_count))
-                                : 0.0f;
-                        const f32 warm_start_match_rate =
-                            (persistence_stats.next_point_count > 0u)
-                                ? (static_cast<f32>(persistence_stats.matched_point_count) /
-                                   static_cast<f32>(persistence_stats.next_point_count))
-                                : 0.0f;
-                        TracyPlot("physics_manifolds", static_cast<i64>(manifold_count));
-                        TracyPlot("physics_contact_points", static_cast<i64>(contact_point_count));
-                        TracyPlot("physics_avg_points_per_manifold", avg_points_per_manifold);
-                        TracyPlot("physics_warm_start_match_rate", warm_start_match_rate);
-                        TracyPlot("physics_dropped_points", static_cast<i64>(persistence_stats.dropped_point_count));
-                        TracyPlot("physics_axis_flip_count", static_cast<i64>(persistence_stats.axis_flip_count));
-                        TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
-
-                        // Stage 4: solve constraints, damp, integrate, and publish transforms.
-                        solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
-                                                 view.orientation, manifolds_, dt, restitution, friction);
-                        solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
-                                                  std::span<const ContactManifold>{manifolds_});
-                        mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
-                        apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
-                        apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
-                        settle_resting_contact_velocities(
-                            view.velocity, view.angular_velocity, view.inv_mass,
-                            std::span<const u8>{contact_activity_mask_.data(), static_cast<usize>(count)},
-                            kRestingLinearSpeedThreshold, kRestingAngularSpeedThreshold);
-                        integrate_positions(view.position, view.velocity, view.inv_mass, dt);
-                        integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
-                        publish_poses(view.poses, view.position, view.orientation, count);
+                    if (simulate_one_fixed_tick_()) {
+                        completed_sim_step_count_.fetch_add(1u, std::memory_order_relaxed);
                     }
                 }
 
@@ -225,6 +164,7 @@ struct PhysicsSystem final {
         }
         log::info(physics, "Stopping physics system");
         thread_.request_stop();
+        simulation_control_cv_.notify_all();
         thread_.join();
         stop_broad_phase_workers_();
     }
@@ -258,9 +198,20 @@ struct PhysicsSystem final {
     std::atomic<f32> angular_damping_{0.4f};
     std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
+    // Simulation control state:
+    // - paused gate controls continuous ticking.
+    // - pending_step_budget executes fixed ticks while paused.
+    // - completed_sim_step_count is a monotonic diagnostic counter.
+    std::atomic<bool> simulation_paused_{false};
+    std::atomic<u32> pending_step_budget_{0u};
+    std::atomic<u64> completed_sim_step_count_{0u};
+    std::mutex simulation_control_mutex_{};
+    std::condition_variable simulation_control_cv_{};
     bool static_dirty_{true};
     u32 last_count_{0};
     u32 capacity_{0};
+    static constexpr f32 kFixedStepDtSeconds = 1.0f / 60.0f;
+    static constexpr double kFixedStepDtMilliseconds = 1000.0 / 60.0;
     // Reserve factors are capacity planning heuristics for amortized O(1) growth.
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
@@ -317,6 +268,168 @@ struct PhysicsSystem final {
         u8 i{};
         u8 j{};
     };
+
+    [[nodiscard]] bool wait_for_simulation_control_event_(const std::stop_token &stop_token) {
+        std::unique_lock lock(simulation_control_mutex_);
+        simulation_control_cv_.wait(lock, [&] {
+            return stop_token.stop_requested() || !simulation_paused_.load(std::memory_order_acquire) ||
+                   pending_step_budget_.load(std::memory_order_acquire) > 0u ||
+                   reset_requested_.load(std::memory_order_acquire);
+        });
+        return !stop_token.stop_requested();
+    }
+
+    [[nodiscard]] bool consume_pending_step_() noexcept {
+        u32 pending = pending_step_budget_.load(std::memory_order_relaxed);
+        while (pending > 0u) {
+            if (pending_step_budget_.compare_exchange_weak(pending, pending - 1u, std::memory_order_acq_rel,
+                                                           std::memory_order_relaxed)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] bool apply_pending_reset_() noexcept {
+        if (!reset_requested_.exchange(false, std::memory_order_acq_rel)) {
+            return false;
+        }
+        if (scene_ != nullptr) {
+            scene_->reset_simulation();
+            static_dirty_ = true;
+            clear_manifold_state_();
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool simulate_one_fixed_tick_() {
+        if (scene_ == nullptr) {
+            return false;
+        }
+
+        static_cast<void>(apply_pending_reset_());
+
+        PhysicsView view = scene_->physics_view();
+        const u32 count = view.count;
+        const f32 dt = kFixedStepDtSeconds;
+        const f32 gravity = gravity_.load(std::memory_order_relaxed);
+        const f32 restitution = restitution_.load(std::memory_order_relaxed);
+        const f32 friction = friction_.load(std::memory_order_relaxed);
+        const f32 linear_damping = linear_damping_.load(std::memory_order_relaxed);
+        const f32 angular_damping = angular_damping_.load(std::memory_order_relaxed);
+
+        if (count != last_count_) {
+            static_dirty_ = true;
+            clear_manifold_state_();
+        }
+        // Stage 0: ensure frame scratch and previous-manifold lookup are ready.
+        ensure_capacity_(count);
+        prepare_manifold_lookup_();
+
+        // Stage 1: external forces and per-body bounds for broad phase.
+        integrate_gravity_velocity(view.velocity, view.inv_mass, gravity, dt);
+        f32 max_angular_speed_sq = 0.0f;
+        for (u32 i = 0; i < count; ++i) {
+            max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
+        }
+        TracyPlot("physics_max_angular_speed", std::sqrt(max_angular_speed_sq));
+        bounds_cache_.resize(count);
+        for (u32 i = 0; i < count; ++i) {
+#ifndef NDEBUG
+            if (view.shape_index[i] >= view.shapes.size()) {
+                log::error(physics, "Shape index out of range (id={} shape_id={})", i, view.shape_index[i]);
+                std::terminate();
+            }
+#endif
+            const ShapeData &shape = view.shapes[view.shape_index[i]];
+            switch (view.shape_kind[i]) {
+            case ShapeKind::sphere: {
+#ifndef NDEBUG
+                if (shape.kind != ShapeKind::sphere) {
+                    log::error(physics, "Shape kind mismatch (id={})", i);
+                    std::terminate();
+                }
+#endif
+                const SphereShape &sphere = shape_sphere(shape);
+                bounds_cache_[i] = Aabb::from_sphere(view.position[i], sphere.radius);
+            } break;
+            case ShapeKind::box: {
+#ifndef NDEBUG
+                if (shape.kind != ShapeKind::box) {
+                    log::error(physics, "Shape kind mismatch (id={})", i);
+                    std::terminate();
+                }
+#endif
+                const BoxShape &box = shape_box(shape);
+                const Mat3 rot = to_mat3(view.orientation[i]);
+                const Vec3 c0 = rot.col(0);
+                const Vec3 c1 = rot.col(1);
+                const Vec3 c2 = rot.col(2);
+                const Vec3 abs0{std::fabs(c0.x), std::fabs(c0.y), std::fabs(c0.z)};
+                const Vec3 abs1{std::fabs(c1.x), std::fabs(c1.y), std::fabs(c1.z)};
+                const Vec3 abs2{std::fabs(c2.x), std::fabs(c2.y), std::fabs(c2.z)};
+                const Vec3 extents = abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
+                const Vec3 center = view.position[i];
+                bounds_cache_[i] = Aabb{center - extents, center + extents};
+            } break;
+            }
+        }
+
+        if (static_dirty_) {
+            rebuild_body_sets_(view);
+            last_count_ = count;
+            static_dirty_ = false;
+        }
+
+        // Stage 2: broad phase candidate generation.
+        const std::span<const u32> dynamic_ids{dynamic_ids_.data(), dynamic_ids_.size()};
+        // Mutating phase: update dynamic BVH before read-only queries.
+        broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
+        // Read-only phase: query broad phase pairs.
+        run_broad_phase_queries_(dynamic_ids);
+        TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
+
+        // Stage 3: narrow phase manifolds + warm-start persistence refresh.
+        narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes, view.shape_index,
+                              view.inv_mass, candidate_pairs_, manifolds_, manifold_lookup_, next_manifolds_);
+        sort_manifold_points_(next_manifolds_);
+        sort_manifolds_(next_manifolds_);
+        const PersistenceRefreshStats persistence_stats = refresh_manifold_persistence_(view.position, view.orientation);
+        manifolds_.swap(next_manifolds_);
+        const u32 manifold_count = static_cast<u32>(manifolds_.size());
+        const u32 contact_point_count = contact_point_count_(manifolds_);
+        const f32 avg_points_per_manifold =
+            (manifold_count > 0u) ? (static_cast<f32>(contact_point_count) / static_cast<f32>(manifold_count)) : 0.0f;
+        const f32 warm_start_match_rate =
+            (persistence_stats.next_point_count > 0u)
+                ? (static_cast<f32>(persistence_stats.matched_point_count) /
+                   static_cast<f32>(persistence_stats.next_point_count))
+                : 0.0f;
+        TracyPlot("physics_manifolds", static_cast<i64>(manifold_count));
+        TracyPlot("physics_contact_points", static_cast<i64>(contact_point_count));
+        TracyPlot("physics_avg_points_per_manifold", avg_points_per_manifold);
+        TracyPlot("physics_warm_start_match_rate", warm_start_match_rate);
+        TracyPlot("physics_dropped_points", static_cast<i64>(persistence_stats.dropped_point_count));
+        TracyPlot("physics_axis_flip_count", static_cast<i64>(persistence_stats.axis_flip_count));
+        TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
+
+        // Stage 4: solve constraints, damp, integrate, and publish transforms.
+        solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia, view.orientation,
+                                 manifolds_, dt, restitution, friction);
+        solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
+                                  std::span<const ContactManifold>{manifolds_});
+        mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
+        apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
+        apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
+        settle_resting_contact_velocities(
+            view.velocity, view.angular_velocity, view.inv_mass,
+            std::span<const u8>{contact_activity_mask_.data(), static_cast<usize>(count)},
+            kRestingLinearSpeedThreshold, kRestingAngularSpeedThreshold);
+        integrate_positions(view.position, view.velocity, view.inv_mass, dt);
+        integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
+        publish_poses(view.poses, view.position, view.orientation, count);
+        return true;
+    }
 
     void ensure_capacity_(const u32 count) {
         if (count <= capacity_) {
