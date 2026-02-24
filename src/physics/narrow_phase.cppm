@@ -13,11 +13,17 @@ import javelin.physics.types;
 import javelin.scene.shapes;
 
 namespace javelin::detail {
+// Narrow phase contract:
+// - inputs are current-frame world transforms and broad-phase candidate pairs.
+// - outputs are contact manifolds with canonical pair orientation (a <= b).
+// - manifold normal always points from body a to body b after canonicalization.
+// - feature ids are stable, deterministic keys used for cross-frame cache matching.
 inline constexpr Vec3 kGroundNormal{0.0f, 1.0f, 0.0f};
 inline constexpr f32 kGroundOffset = 0.0f;
 inline constexpr f32 kMinDistanceEpsSq = 1e-6f;
 inline constexpr f32 kAxisEpsSq = 1e-8f;
 inline constexpr f32 kAxisAbsEps = 1e-6f;
+// Feature id tag bits (payload encoding is shape-pair specific).
 inline constexpr u32 kBoxFaceFeatureTag = 1u << 8u;
 inline constexpr u32 kBoxGroundVertexFeatureTag = 1u << 9u;
 inline constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
@@ -145,6 +151,8 @@ struct BoxAxisKey final {
     return rotate(inverse_unit(q), offset_world);
 }
 
+// Helper for one-point contacts. Used by sphere-sphere, sphere-box, edge-edge, and fallback paths.
+// Caller provides world-space anchor offsets relative to each center of mass.
 void push_single_point_manifold(std::span<const Quat> orientation, const u32 a, const u32 b, const Vec3 normal,
                                 const f32 penetration, const u32 point_feature_id, const Vec3 r_a_world,
                                 const Vec3 r_b_world, std::vector<ContactManifold> &manifolds,
@@ -205,40 +213,44 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
     const SphereShape &sphere = sphere_shape(shape_kind, shapes, shape_index, sphere_id);
     const BoxShape &box = box_shape(shape_kind, shapes, shape_index, box_id);
 
-    const Vec3 center_s = position[sphere_id];
-    const Vec3 center_b = position[box_id];
-    const Mat3 rot = to_mat3(orientation[box_id]);
-    const Vec3 a0 = rot.col(0);
-    const Vec3 a1 = rot.col(1);
-    const Vec3 a2 = rot.col(2);
+    const Vec3 sphere_center_world = position[sphere_id];
+    const Vec3 box_center_world = position[box_id];
+    const Mat3 box_rotation = to_mat3(orientation[box_id]);
+    const Vec3 box_axis_x = box_rotation.col(0);
+    const Vec3 box_axis_y = box_rotation.col(1);
+    const Vec3 box_axis_z = box_rotation.col(2);
 
-    const Vec3 delta = center_s - center_b;
-    const Vec3 local{dot(delta, a0), dot(delta, a1), dot(delta, a2)};
-
-    const Vec3 he = box.half_extents;
-    const Vec3 clamped{
-        std::clamp(local.x, -he.x, he.x),
-        std::clamp(local.y, -he.y, he.y),
-        std::clamp(local.z, -he.z, he.z),
+    const Vec3 sphere_center_from_box = sphere_center_world - box_center_world;
+    const Vec3 sphere_center_box_local{
+        dot(sphere_center_from_box, box_axis_x),
+        dot(sphere_center_from_box, box_axis_y),
+        dot(sphere_center_from_box, box_axis_z),
     };
 
-    const Vec3 diff = local - clamped;
-    const f32 dist2 = diff.length_sq();
+    const Vec3 box_half_extents = box.half_extents;
+    const Vec3 closest_point_local{
+        std::clamp(sphere_center_box_local.x, -box_half_extents.x, box_half_extents.x),
+        std::clamp(sphere_center_box_local.y, -box_half_extents.y, box_half_extents.y),
+        std::clamp(sphere_center_box_local.z, -box_half_extents.z, box_half_extents.z),
+    };
+
+    const Vec3 offset_local = sphere_center_box_local - closest_point_local;
+    const f32 distance_sq = offset_local.length_sq();
     const f32 radius2 = sphere.radius * sphere.radius;
-    if (dist2 > radius2) {
+    if (distance_sq > radius2) {
         return;
     }
 
     Vec3 normal_local = Vec3::unit_x();
-    Vec3 contact_local = clamped;
+    Vec3 contact_point_local = closest_point_local;
     f32 penetration = 0.0f;
     u32 feature_axis = 0u;
     bool feature_positive = true;
     bool inside_fallback = false;
-    if (dist2 > kMinDistanceEpsSq) {
-        const f32 dist = std::sqrt(dist2);
-        normal_local = diff / dist;
-        penetration = sphere.radius - dist;
+    if (distance_sq > kMinDistanceEpsSq) {
+        const f32 distance = std::sqrt(distance_sq);
+        normal_local = offset_local / distance;
+        penetration = sphere.radius - distance;
         feature_axis = dominant_axis_abs(normal_local);
         const f32 axis_value = (feature_axis == 0u)   ? normal_local.x
                                : (feature_axis == 1u) ? normal_local.y
@@ -246,51 +258,53 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
         feature_positive = axis_value >= 0.0f;
     } else {
         inside_fallback = true;
-        const f32 dx = he.x - std::fabs(local.x);
-        const f32 dy = he.y - std::fabs(local.y);
-        const f32 dz = he.z - std::fabs(local.z);
-        if (dx <= dy && dx <= dz) {
-            const f32 sign = (local.x >= 0.0f) ? 1.0f : -1.0f;
+        const f32 distance_to_x_face = box_half_extents.x - std::fabs(sphere_center_box_local.x);
+        const f32 distance_to_y_face = box_half_extents.y - std::fabs(sphere_center_box_local.y);
+        const f32 distance_to_z_face = box_half_extents.z - std::fabs(sphere_center_box_local.z);
+        if (distance_to_x_face <= distance_to_y_face && distance_to_x_face <= distance_to_z_face) {
+            const f32 sign = (sphere_center_box_local.x >= 0.0f) ? 1.0f : -1.0f;
             normal_local = Vec3{sign, 0.0f, 0.0f};
-            contact_local = Vec3{sign * he.x, local.y, local.z};
-            penetration = sphere.radius + dx;
+            contact_point_local = Vec3{sign * box_half_extents.x, sphere_center_box_local.y, sphere_center_box_local.z};
+            penetration = sphere.radius + distance_to_x_face;
             feature_axis = 0u;
             feature_positive = sign > 0.0f;
-        } else if (dy <= dz) {
-            const f32 sign = (local.y >= 0.0f) ? 1.0f : -1.0f;
+        } else if (distance_to_y_face <= distance_to_z_face) {
+            const f32 sign = (sphere_center_box_local.y >= 0.0f) ? 1.0f : -1.0f;
             normal_local = Vec3{0.0f, sign, 0.0f};
-            contact_local = Vec3{local.x, sign * he.y, local.z};
-            penetration = sphere.radius + dy;
+            contact_point_local = Vec3{sphere_center_box_local.x, sign * box_half_extents.y, sphere_center_box_local.z};
+            penetration = sphere.radius + distance_to_y_face;
             feature_axis = 1u;
             feature_positive = sign > 0.0f;
         } else {
-            const f32 sign = (local.z >= 0.0f) ? 1.0f : -1.0f;
+            const f32 sign = (sphere_center_box_local.z >= 0.0f) ? 1.0f : -1.0f;
             normal_local = Vec3{0.0f, 0.0f, sign};
-            contact_local = Vec3{local.x, local.y, sign * he.z};
-            penetration = sphere.radius + dz;
+            contact_point_local = Vec3{sphere_center_box_local.x, sphere_center_box_local.y, sign * box_half_extents.z};
+            penetration = sphere.radius + distance_to_z_face;
             feature_axis = 2u;
             feature_positive = sign > 0.0f;
         }
     }
     const u32 feature_id = box_face_feature_id(feature_axis, feature_positive, inside_fallback);
 
-    const Vec3 normal_world = a0 * normal_local.x + a1 * normal_local.y + a2 * normal_local.z;
-    const Vec3 contact_world = center_b + a0 * contact_local.x + a1 * contact_local.y + a2 * contact_local.z;
+    const Vec3 normal_world = box_axis_x * normal_local.x + box_axis_y * normal_local.y + box_axis_z * normal_local.z;
+    const Vec3 contact_point_world = box_center_world + box_axis_x * contact_point_local.x + box_axis_y * contact_point_local.y +
+                                     box_axis_z * contact_point_local.z;
 
-    Vec3 normal = normal_world;
-    Vec3 r_a{};
-    Vec3 r_b{};
+    Vec3 manifold_normal = normal_world;
+    Vec3 anchor_a_world_offset{};
+    Vec3 anchor_b_world_offset{};
     if (sphere_is_a) {
-        normal = -normal_world;
-        r_a = normal * sphere.radius;
-        r_b = contact_world - center_b;
+        manifold_normal = -normal_world;
+        anchor_a_world_offset = manifold_normal * sphere.radius;
+        anchor_b_world_offset = contact_point_world - box_center_world;
     } else {
-        r_a = contact_world - center_b;
-        r_b = -normal * sphere.radius;
+        anchor_a_world_offset = contact_point_world - box_center_world;
+        anchor_b_world_offset = -manifold_normal * sphere.radius;
     }
 
-    push_single_point_manifold(orientation, sphere_is_a ? sphere_id : box_id, sphere_is_a ? box_id : sphere_id, normal,
-                               penetration, feature_id, r_a, r_b, manifolds);
+    push_single_point_manifold(orientation, sphere_is_a ? sphere_id : box_id, sphere_is_a ? box_id : sphere_id,
+                               manifold_normal, penetration, feature_id, anchor_a_world_offset, anchor_b_world_offset,
+                               manifolds);
 }
 
 struct BoxAxisCandidate final {
@@ -548,6 +562,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 he_a = box_a.half_extents;
     const Vec3 he_b = box_b.half_extents;
 
+    // SAT frame preparation: pairwise axis dot products and center delta in A-space.
     f32 axis_dot_a_to_b[3][3];
     f32 axis_dot_a_to_b_abs[3][3];
     axis_dot_a_to_b[0][0] = dot(a0, b0);
@@ -651,6 +666,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     }
 
     BoxAxisCandidate best_axis{};
+    // Select minimum-penetration separating axis with deterministic tie-breaks.
     for (const BoxAxisCandidate &candidate : face_axes_a) {
         if (better_axis_candidate(candidate, best_axis)) {
             best_axis = candidate;
@@ -670,6 +686,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     }
 
     if (const std::optional<BoxAxisKey> previous_axis_key = previous_box_axis_key(previous_manifold)) {
+        // Axis hysteresis: prefer the previous valid axis when depths are similar.
         if (const BoxAxisCandidate *previous_axis =
                 find_axis_candidate(face_axes_a, face_axes_b, edge_axes, *previous_axis_key);
             previous_axis != nullptr && previous_axis->valid &&
@@ -688,6 +705,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const std::array<Vec3, 3> axes_b{b0, b1, b2};
 
     if (best_axis.key.type == BoxAxisType::edge_edge) {
+        // Edge-edge contact resolves to one support segment pair and one contact point.
         const BoxSupportEdge edge_a = box_support_edge(center_a, axes_a, he_a, best_axis.key.i, normal);
         const BoxSupportEdge edge_b = box_support_edge(center_b, axes_b, he_b, best_axis.key.j, -normal);
         const auto [point_a, point_b] =
@@ -765,6 +783,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     clip_count =
         clip_polygon_axis(std::span<const ClipVertex>{clip_b.data(), clip_count}, false, -ref_v_extent, false, clip_a);
 
+    // Face-face clipping produced candidate contact points in reference-face coordinates.
     struct FaceContactCandidate final {
         Vec3 r_a_world{};
         Vec3 r_b_world{};
@@ -816,6 +835,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     }
 
     if (candidate_count > 1u) {
+        // Merge duplicate feature ids and keep deepest representative for warm-start stability.
         u32 unique_count = 0u;
         for (u32 i = 0u; i < candidate_count; ++i) {
             const FaceContactCandidate candidate = candidates[i];
@@ -864,6 +884,7 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
             selected[selected_count++] = i;
         }
     } else {
+        // Reduction policy: keep deepest point and maximize spatial spread of the remaining three.
         u32 deepest = 0u;
         for (u32 i = 1u; i < candidate_count; ++i) {
             if (candidate_deeper(i, deepest)) {

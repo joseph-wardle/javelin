@@ -11,6 +11,10 @@ import javelin.physics.aabb;
 
 export namespace javelin {
 
+// Static BVH contract:
+// - stores broad-phase bounds for static bodies.
+// - rebuilt as a batch from sorted/unsorted body id input.
+// - query is allocation-free once stack/out are provided by caller.
 struct StaticBvh final {
     struct Node final {
         Aabb bounds{};
@@ -86,22 +90,24 @@ struct StaticBvh final {
         if (build_ids_.empty()) {
             return;
         }
+        // Full binary tree upper bound for N leaves is ~2N nodes.
         nodes_.reserve(build_ids_.size() * 2u);
         root_ = build_range_(std::span<u32>{build_ids_.data(), build_ids_.size()}, bounds);
     }
 
-    [[nodiscard]] static u32 choose_split_axis_(const Aabb bounds) noexcept {
-        const Vec3 s = size(bounds);
-        if (s.x >= s.y && s.x >= s.z) {
+    [[nodiscard]] static u32 choose_split_axis_(const Aabb node_bounds) noexcept {
+        const Vec3 axis_span = size(node_bounds);
+        if (axis_span.x >= axis_span.y && axis_span.x >= axis_span.z) {
             return 0;
         }
-        if (s.y >= s.z) {
+        if (axis_span.y >= axis_span.z) {
             return 1;
         }
         return 2;
     }
 
     u32 build_range_(std::span<u32> ids, std::span<const Aabb> bounds) {
+        // Bottom-up bound for the current id subset.
         Aabb node_bounds = bounds[ids[0]];
         for (usize i = 1; i < ids.size(); ++i) {
             node_bounds = merge(node_bounds, bounds[ids[i]]);
@@ -118,6 +124,7 @@ struct StaticBvh final {
             return node_index;
         }
 
+        // Median split by center coordinate along longest AABB axis.
         const u32 axis = choose_split_axis_(node_bounds);
         const usize mid_offset = ids.size() / 2;
         auto mid = ids.begin() + static_cast<isize>(mid_offset);
