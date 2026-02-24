@@ -548,25 +548,25 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     const Vec3 he_a = box_a.half_extents;
     const Vec3 he_b = box_b.half_extents;
 
-    f32 R[3][3];
-    f32 absR[3][3];
-    R[0][0] = dot(a0, b0);
-    R[0][1] = dot(a0, b1);
-    R[0][2] = dot(a0, b2);
-    R[1][0] = dot(a1, b0);
-    R[1][1] = dot(a1, b1);
-    R[1][2] = dot(a1, b2);
-    R[2][0] = dot(a2, b0);
-    R[2][1] = dot(a2, b1);
-    R[2][2] = dot(a2, b2);
+    f32 axis_dot_a_to_b[3][3];
+    f32 axis_dot_a_to_b_abs[3][3];
+    axis_dot_a_to_b[0][0] = dot(a0, b0);
+    axis_dot_a_to_b[0][1] = dot(a0, b1);
+    axis_dot_a_to_b[0][2] = dot(a0, b2);
+    axis_dot_a_to_b[1][0] = dot(a1, b0);
+    axis_dot_a_to_b[1][1] = dot(a1, b1);
+    axis_dot_a_to_b[1][2] = dot(a1, b2);
+    axis_dot_a_to_b[2][0] = dot(a2, b0);
+    axis_dot_a_to_b[2][1] = dot(a2, b1);
+    axis_dot_a_to_b[2][2] = dot(a2, b2);
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            absR[i][j] = std::fabs(R[i][j]) + kAxisAbsEps;
+            axis_dot_a_to_b_abs[i][j] = std::fabs(axis_dot_a_to_b[i][j]) + kAxisAbsEps;
         }
     }
 
     const Vec3 delta = center_b - center_a;
-    const f32 t[3]{dot(delta, a0), dot(delta, a1), dot(delta, a2)};
+    const f32 delta_in_a[3]{dot(delta, a0), dot(delta, a1), dot(delta, a2)};
 
     std::array<BoxAxisCandidate, 3> face_axes_a{};
     std::array<BoxAxisCandidate, 3> face_axes_b{};
@@ -575,8 +575,9 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
     // Axes: A0, A1, A2
     for (int i = 0; i < 3; ++i) {
         const f32 ra = he_a[i];
-        const f32 rb = he_b.x * absR[i][0] + he_b.y * absR[i][1] + he_b.z * absR[i][2];
-        const f32 dist = std::fabs(t[i]);
+        const f32 rb = he_b.x * axis_dot_a_to_b_abs[i][0] + he_b.y * axis_dot_a_to_b_abs[i][1] +
+                       he_b.z * axis_dot_a_to_b_abs[i][2];
+        const f32 dist = std::fabs(delta_in_a[i]);
         if (dist > ra + rb) {
             return;
         }
@@ -592,9 +593,11 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
 
     // Axes: B0, B1, B2
     for (int j = 0; j < 3; ++j) {
-        const f32 ra = he_a.x * absR[0][j] + he_a.y * absR[1][j] + he_a.z * absR[2][j];
+        const f32 ra = he_a.x * axis_dot_a_to_b_abs[0][j] + he_a.y * axis_dot_a_to_b_abs[1][j] +
+                       he_a.z * axis_dot_a_to_b_abs[2][j];
         const f32 rb = he_b[j];
-        const f32 dist = std::fabs(t[0] * R[0][j] + t[1] * R[1][j] + t[2] * R[2][j]);
+        const f32 dist = std::fabs(delta_in_a[0] * axis_dot_a_to_b[0][j] + delta_in_a[1] * axis_dot_a_to_b[1][j] +
+                                   delta_in_a[2] * axis_dot_a_to_b[2][j]);
         if (dist > ra + rb) {
             return;
         }
@@ -616,9 +619,10 @@ void add_box_box_contact(std::span<const Vec3> position, std::span<const Quat> o
             const int j1 = (j + 1) % 3;
             const int j2 = (j + 2) % 3;
 
-            const f32 ra = he_a[i1] * absR[i2][j] + he_a[i2] * absR[i1][j];
-            const f32 rb = he_b[j1] * absR[i][j2] + he_b[j2] * absR[i][j1];
-            const f32 dist = std::fabs(t[i2] * R[i1][j] - t[i1] * R[i2][j]);
+            const f32 ra = he_a[i1] * axis_dot_a_to_b_abs[i2][j] + he_a[i2] * axis_dot_a_to_b_abs[i1][j];
+            const f32 rb = he_b[j1] * axis_dot_a_to_b_abs[i][j2] + he_b[j2] * axis_dot_a_to_b_abs[i][j1];
+            const f32 dist =
+                std::fabs(delta_in_a[i2] * axis_dot_a_to_b[i1][j] - delta_in_a[i1] * axis_dot_a_to_b[i2][j]);
             if (dist > ra + rb) {
                 return;
             }

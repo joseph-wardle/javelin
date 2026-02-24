@@ -71,9 +71,9 @@ void broad_phase_chunk(std::span<const u32> dynamic_ids, const DynamicBvh &dynam
 }
 
 // Main entrypoint for broad phase pair generation.
-void broad_phase_sphere_pairs(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh,
-                              const StaticBvh &static_bvh, std::span<const Aabb> bounds_cache,
-                              std::vector<BodyPair> &pairs, BroadPhaseScratch &scratch) {
+void broad_phase_generate_pairs(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh,
+                                const StaticBvh &static_bvh, std::span<const Aabb> bounds_cache,
+                                std::vector<BodyPair> &pairs, BroadPhaseScratch &scratch) {
     broad_phase_chunk(dynamic_ids, dynamic_bvh, static_bvh, bounds_cache, pairs, scratch);
 }
 

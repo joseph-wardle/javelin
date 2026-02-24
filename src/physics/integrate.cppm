@@ -11,8 +11,8 @@ import javelin.math.vec3;
 
 export namespace javelin {
 
-void accumulate_forces(std::span<Vec3> velocity, std::span<const f32> inv_mass, const f32 gravity,
-                       const f32 dt) noexcept {
+void integrate_gravity_velocity(std::span<Vec3> velocity, std::span<const f32> inv_mass, const f32 gravity,
+                                const f32 dt) noexcept {
     ZoneScopedN("Physics accumulate forces");
     const u32 count = static_cast<u32>(velocity.size());
     for (u32 i = 0; i < count; ++i) {
@@ -68,8 +68,8 @@ void settle_resting_contact_velocities(std::span<Vec3> velocity, std::span<Vec3>
     }
 }
 
-void integrate_predicted_positions(std::span<Vec3> position, std::span<const Vec3> velocity,
-                                   std::span<const f32> inv_mass, const f32 dt) noexcept {
+void integrate_positions(std::span<Vec3> position, std::span<const Vec3> velocity, std::span<const f32> inv_mass,
+                         const f32 dt) noexcept {
     ZoneScopedN("Physics integrate positions");
     const u32 count = static_cast<u32>(position.size());
     for (u32 i = 0; i < count; ++i) {
@@ -80,8 +80,8 @@ void integrate_predicted_positions(std::span<Vec3> position, std::span<const Vec
     }
 }
 
-void integrate_predicted_orientations(std::span<Quat> orientation, std::span<const Vec3> angular_velocity,
-                                      std::span<const f32> inv_mass, const f32 dt) noexcept {
+void integrate_orientations(std::span<Quat> orientation, std::span<const Vec3> angular_velocity,
+                            std::span<const f32> inv_mass, const f32 dt) noexcept {
     ZoneScopedN("Physics integrate orientations");
     const u32 count = static_cast<u32>(orientation.size());
     for (u32 i = 0; i < count; ++i) {

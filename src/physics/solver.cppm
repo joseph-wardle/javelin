@@ -208,9 +208,10 @@ inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoin
 
 export namespace javelin {
 
-void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
-                    std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
-                    std::span<ContactManifold> manifolds, const f32 dt, const f32 restitution, const f32 friction) {
+void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                              std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
+                              std::span<ContactManifold> manifolds, const f32 dt, const f32 restitution,
+                              const f32 friction) {
     ZoneScopedN("Physics solve");
     if (manifolds.empty()) {
         return;
@@ -350,8 +351,8 @@ void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, 
     }
 }
 
-void solve_contact_positions(std::span<Vec3> position, std::span<Quat> orientation, std::span<const f32> inv_mass,
-                             std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds) {
+void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orientation, std::span<const f32> inv_mass,
+                               std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds) {
     ZoneScopedN("Physics solve positions");
     if (manifolds.empty()) {
         return;

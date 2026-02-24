@@ -94,7 +94,7 @@ struct PhysicsSystem final {
                         ensure_capacity_(count);
                         prepare_manifold_lookup_();
 
-                        accumulate_forces(view.velocity, view.inv_mass, gravity, dt);
+                        integrate_gravity_velocity(view.velocity, view.inv_mass, gravity, dt);
                         f32 max_angular_speed_sq = 0.0f;
                         for (u32 i = 0; i < count; ++i) {
                             max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
@@ -182,19 +182,19 @@ struct PhysicsSystem final {
                         TracyPlot("physics_dropped_points", static_cast<i64>(persistence_stats.dropped_point_count));
                         TracyPlot("physics_axis_flip_count", static_cast<i64>(persistence_stats.axis_flip_count));
                         TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
-                        solve_contacts(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
-                                       view.orientation, manifolds_, dt, restitution, friction);
-                        solve_contact_positions(view.position, view.orientation, view.inv_mass, view.inv_inertia,
-                                                std::span<const ContactManifold>{manifolds_});
-                        build_contact_activity_mask_(count, std::span<const ContactManifold>{manifolds_});
+                        solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
+                                                 view.orientation, manifolds_, dt, restitution, friction);
+                        solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
+                                                  std::span<const ContactManifold>{manifolds_});
+                        mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
                         apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
                         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
                         settle_resting_contact_velocities(
                             view.velocity, view.angular_velocity, view.inv_mass,
                             std::span<const u8>{contact_activity_mask_.data(), static_cast<usize>(count)},
                             kRestingLinearSpeedThreshold, kRestingAngularSpeedThreshold);
-                        integrate_predicted_positions(view.position, view.velocity, view.inv_mass, dt);
-                        integrate_predicted_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
+                        integrate_positions(view.position, view.velocity, view.inv_mass, dt);
+                        integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
                         publish_poses(view.poses, view.position, view.orientation, count);
                     }
                 }
@@ -340,7 +340,7 @@ struct PhysicsSystem final {
         }
     }
 
-    void build_contact_activity_mask_(const u32 body_count, std::span<const ContactManifold> manifolds) {
+    void mark_bodies_with_active_contacts_(const u32 body_count, std::span<const ContactManifold> manifolds) {
         if (contact_activity_mask_.size() < body_count) {
             contact_activity_mask_.resize(body_count);
         }
@@ -507,11 +507,9 @@ struct PhysicsSystem final {
         dst.persisted = true;
     }
 
-    [[nodiscard]] bool point_match_exceeds_breaking_thresholds_(std::span<const Vec3> position,
-                                                                std::span<const Quat> orientation,
-                                                                const ContactManifold &manifold,
-                                                                const ContactPoint &next_point,
-                                                                const ContactPoint &previous_point) const noexcept {
+    [[nodiscard]] bool should_drop_persisted_point_(std::span<const Vec3> position, std::span<const Quat> orientation,
+                                                    const ContactManifold &manifold, const ContactPoint &next_point,
+                                                    const ContactPoint &previous_point) const noexcept {
         const u32 a = manifold.a;
         const Vec3 world_a_previous = position[a] + rotate(orientation[a], previous_point.local_anchor_a);
         const Vec3 world_a_next = position[a] + rotate(orientation[a], next_point.local_anchor_a);
@@ -549,8 +547,9 @@ struct PhysicsSystem final {
         return normal_break_exceeded || normal_drift_exceeded || tangential_drift_exceeded;
     }
 
-    void refresh_manifold_point_cache_(std::span<const Vec3> position, std::span<const Quat> orientation,
-                                       ContactManifold &next_manifold, const ContactManifold &previous_manifold) const {
+    void match_and_transfer_point_cache_(std::span<const Vec3> position, std::span<const Quat> orientation,
+                                         ContactManifold &next_manifold,
+                                         const ContactManifold &previous_manifold) const {
 #ifndef NDEBUG
         if (next_manifold.point_count > kMaxManifoldPoints || previous_manifold.point_count > kMaxManifoldPoints) {
             log::error(physics, "Invalid manifold point_count during persistence refresh (next={} previous={})",
@@ -605,8 +604,7 @@ struct PhysicsSystem final {
                 return false;
             }
             const ContactPoint &previous_point = previous_manifold.points[best_previous];
-            if (point_match_exceeds_breaking_thresholds_(position, orientation, next_manifold, next_point,
-                                                         previous_point)) {
+            if (should_drop_persisted_point_(position, orientation, next_manifold, next_point, previous_point)) {
                 return false;
             }
 
@@ -659,7 +657,7 @@ struct PhysicsSystem final {
             if (manifold_axis_flipped_(previous_manifold, next_manifold)) {
                 ++stats.axis_flip_count;
             }
-            refresh_manifold_point_cache_(position, orientation, next_manifold, previous_manifold);
+            match_and_transfer_point_cache_(position, orientation, next_manifold, previous_manifold);
             for (u32 i = 0; i < next_manifold.point_count; ++i) {
                 stats.matched_point_count += next_manifold.points[i].persisted ? 1u : 0u;
             }
@@ -768,7 +766,7 @@ struct PhysicsSystem final {
         const u32 end = std::min(begin + job.chunk_size, job.dynamic_count);
         const std::span<const u32> chunk{job.dynamic_ids.data() + begin, end - begin};
         BroadPhaseWorker &worker = broad_phase_workers_[worker_index];
-        broad_phase_sphere_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.scratch);
+        broad_phase_generate_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.scratch);
     }
 
     void broad_phase_worker_loop_(const u32 worker_index) {
@@ -836,7 +834,7 @@ struct PhysicsSystem final {
         BroadPhaseWorker &worker = broad_phase_workers_[0];
         std::vector<BodyPair> expected{};
         expected.reserve(candidate_pairs_.size());
-        broad_phase_sphere_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, expected, worker.scratch);
+        broad_phase_generate_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, expected, worker.scratch);
 
         auto normalize = [](std::vector<BodyPair> &pairs) {
             std::sort(pairs.begin(), pairs.end(), [](const BodyPair &lhs, const BodyPair &rhs) {
