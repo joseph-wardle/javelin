@@ -397,6 +397,9 @@ struct RenderSystem final {
     usize physics_dt_cursor_ = 0;
     bool physics_dt_history_full_ = false;
     u32 physics_dt_sample_tick_ = 0;
+    // Cap interpolation span so a single step after a long pause does not blend slowly.
+    // Two fixed physics ticks keeps motion smooth without long wall-clock lag.
+    static constexpr u64 kMaxPoseInterpolationSpanNs = 2u * (1'000'000'000ull / 60u);
     // Last completed simulation step id that contributed a physics-dt history sample.
     // This avoids duplicating a single physics tick across many render frames.
     u64 last_physics_dt_sample_step_count_{0};
@@ -414,18 +417,20 @@ struct RenderSystem final {
             return 1.0f;
         }
 
-        const u64 span = poses.curr_time_ns - poses.prev_time_ns;
-        const u64 now = now_ns_();
-        const u64 render_time = (now > span) ? (now - span) : 0;
-
-        u64 sample_time = render_time;
-        if (sample_time < poses.prev_time_ns) {
-            sample_time = poses.prev_time_ns;
-        } else if (sample_time > poses.curr_time_ns) {
-            sample_time = poses.curr_time_ns;
+        const u64 raw_span = poses.curr_time_ns - poses.prev_time_ns;
+        const u64 interpolation_span = std::min(raw_span, kMaxPoseInterpolationSpanNs);
+        if (interpolation_span == 0u) {
+            return 1.0f;
         }
 
-        const f64 alpha = static_cast<f64>(sample_time - poses.prev_time_ns) / static_cast<f64>(span);
+        // Interpolate over a bounded window ending at the latest published pose.
+        // This avoids long blends when stepping after an extended pause.
+        const u64 interpolation_start_time = poses.curr_time_ns - interpolation_span;
+        const u64 now = now_ns_();
+        const u64 render_time = (now > interpolation_span) ? (now - interpolation_span) : 0u;
+        const u64 sample_time = std::clamp(render_time, interpolation_start_time, poses.curr_time_ns);
+        const f64 alpha =
+            static_cast<f64>(sample_time - interpolation_start_time) / static_cast<f64>(interpolation_span);
         return static_cast<f32>(alpha);
     }
 };
