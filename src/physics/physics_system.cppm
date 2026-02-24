@@ -155,6 +155,7 @@ struct PhysicsSystem final {
                                               view.shape_index, view.inv_mass, candidate_pairs_, manifolds_,
                                               manifold_lookup_, next_manifolds_);
                         sort_manifold_points_(next_manifolds_);
+                        sort_manifolds_(next_manifolds_);
                         const PersistenceRefreshStats persistence_stats =
                             refresh_manifold_persistence_(view.position, view.orientation);
                         manifolds_.swap(next_manifolds_);
@@ -327,6 +328,80 @@ struct PhysicsSystem final {
         for (ContactManifold &manifold : manifolds) {
             sort_manifold_points(manifold);
         }
+    }
+
+    [[nodiscard]] static bool body_pair_less_(const BodyPair lhs, const BodyPair rhs) noexcept {
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        return lhs.b < rhs.b;
+    }
+
+    [[nodiscard]] static bool body_pair_equal_(const BodyPair lhs, const BodyPair rhs) noexcept {
+        return lhs.a == rhs.a && lhs.b == rhs.b;
+    }
+
+    void normalize_and_sort_candidate_pairs_() {
+        if (candidate_pairs_.empty()) {
+            return;
+        }
+
+        for (BodyPair &pair : candidate_pairs_) {
+            pair = canonical_body_pair(pair.a, pair.b);
+        }
+
+        std::sort(candidate_pairs_.begin(), candidate_pairs_.end(), body_pair_less_);
+        const auto unique_end = std::unique(candidate_pairs_.begin(), candidate_pairs_.end(), body_pair_equal_);
+        candidate_pairs_.erase(unique_end, candidate_pairs_.end());
+    }
+
+    [[nodiscard]] static bool manifold_less_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        if (lhs.b != rhs.b) {
+            return lhs.b < rhs.b;
+        }
+        if (lhs.manifold_feature_id != rhs.manifold_feature_id) {
+            return lhs.manifold_feature_id < rhs.manifold_feature_id;
+        }
+        if (lhs.point_count != rhs.point_count) {
+            return lhs.point_count < rhs.point_count;
+        }
+
+        const u32 point_count = std::min(lhs.point_count, rhs.point_count);
+        for (u32 i = 0; i < point_count; ++i) {
+            const u32 lhs_feature = lhs.points[i].feature_id;
+            const u32 rhs_feature = rhs.points[i].feature_id;
+            if (lhs_feature != rhs_feature) {
+                return lhs_feature < rhs_feature;
+            }
+        }
+
+        const u32 lhs_nx = ordered_float_key(lhs.normal.x);
+        const u32 rhs_nx = ordered_float_key(rhs.normal.x);
+        if (lhs_nx != rhs_nx) {
+            return lhs_nx < rhs_nx;
+        }
+        const u32 lhs_ny = ordered_float_key(lhs.normal.y);
+        const u32 rhs_ny = ordered_float_key(rhs.normal.y);
+        if (lhs_ny != rhs_ny) {
+            return lhs_ny < rhs_ny;
+        }
+        const u32 lhs_nz = ordered_float_key(lhs.normal.z);
+        const u32 rhs_nz = ordered_float_key(rhs.normal.z);
+        if (lhs_nz != rhs_nz) {
+            return lhs_nz < rhs_nz;
+        }
+
+        return false;
+    }
+
+    void sort_manifolds_(std::vector<ContactManifold> &manifolds) {
+        if (manifolds.size() <= 1u) {
+            return;
+        }
+        std::sort(manifolds.begin(), manifolds.end(), manifold_less_);
     }
 
     [[nodiscard]] static u32 contact_point_count_(std::span<const ContactManifold> manifolds) noexcept {
@@ -634,6 +709,7 @@ struct PhysicsSystem final {
                 std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
             }
         }
+        normalize_and_sort_candidate_pairs_();
 
 #if defined(JAVELIN_BROAD_PHASE_VALIDATE)
         validate_broad_phase_pairs_(dynamic_ids);
