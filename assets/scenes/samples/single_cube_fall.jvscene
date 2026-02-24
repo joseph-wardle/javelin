@@ -1,0 +1,10 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# scene: one dynamic cube falling onto the implicit ground plane
+scene version=1 units=m
+
+# shapes
+shape id=cube kind=box hx=0.5 hy=0.5 hz=0.5
+
+# bodies
+body id=cube_fall shape=cube motion=dynamic material=0 mesh=0 px=0 py=8 pz=0

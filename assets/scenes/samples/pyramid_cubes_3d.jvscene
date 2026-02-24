@@ -1,0 +1,100 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# scene: 3d stepped pyramid of dynamic cubes
+scene version=1 units=m
+
+# shapes
+shape id=cube kind=box hx=0.45 hy=0.45 hz=0.45
+
+# bodies
+body id=pyr_000 shape=cube motion=dynamic material=3 mesh=0 px=-2.375 py=0.45 pz=-2.375
+body id=pyr_001 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=0.45 pz=-2.375
+body id=pyr_002 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=0.45 pz=-2.375
+body id=pyr_003 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=0.45 pz=-2.375
+body id=pyr_004 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=0.45 pz=-2.375
+body id=pyr_005 shape=cube motion=dynamic material=3 mesh=0 px=2.375 py=0.45 pz=-2.375
+body id=pyr_006 shape=cube motion=dynamic material=3 mesh=0 px=-2.375 py=0.45 pz=-1.425
+body id=pyr_007 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=0.45 pz=-1.425
+body id=pyr_008 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=0.45 pz=-1.425
+body id=pyr_009 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=0.45 pz=-1.425
+body id=pyr_010 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=0.45 pz=-1.425
+body id=pyr_011 shape=cube motion=dynamic material=3 mesh=0 px=2.375 py=0.45 pz=-1.425
+body id=pyr_012 shape=cube motion=dynamic material=3 mesh=0 px=-2.375 py=0.45 pz=-0.475
+body id=pyr_013 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=0.45 pz=-0.475
+body id=pyr_014 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=0.45 pz=-0.475
+body id=pyr_015 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=0.45 pz=-0.475
+body id=pyr_016 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=0.45 pz=-0.475
+body id=pyr_017 shape=cube motion=dynamic material=3 mesh=0 px=2.375 py=0.45 pz=-0.475
+body id=pyr_018 shape=cube motion=dynamic material=3 mesh=0 px=-2.375 py=0.45 pz=0.475
+body id=pyr_019 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=0.45 pz=0.475
+body id=pyr_020 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=0.45 pz=0.475
+body id=pyr_021 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=0.45 pz=0.475
+body id=pyr_022 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=0.45 pz=0.475
+body id=pyr_023 shape=cube motion=dynamic material=3 mesh=0 px=2.375 py=0.45 pz=0.475
+body id=pyr_024 shape=cube motion=dynamic material=3 mesh=0 px=-2.375 py=0.45 pz=1.425
+body id=pyr_025 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=0.45 pz=1.425
+body id=pyr_026 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=0.45 pz=1.425
+body id=pyr_027 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=0.45 pz=1.425
+body id=pyr_028 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=0.45 pz=1.425
+body id=pyr_029 shape=cube motion=dynamic material=3 mesh=0 px=2.375 py=0.45 pz=1.425
+body id=pyr_030 shape=cube motion=dynamic material=3 mesh=0 px=-2.375 py=0.45 pz=2.375
+body id=pyr_031 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=0.45 pz=2.375
+body id=pyr_032 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=0.45 pz=2.375
+body id=pyr_033 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=0.45 pz=2.375
+body id=pyr_034 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=0.45 pz=2.375
+body id=pyr_035 shape=cube motion=dynamic material=3 mesh=0 px=2.375 py=0.45 pz=2.375
+body id=pyr_036 shape=cube motion=dynamic material=3 mesh=0 px=-1.9 py=1.4 pz=-1.9
+body id=pyr_037 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=1.4 pz=-1.9
+body id=pyr_038 shape=cube motion=dynamic material=3 mesh=0 px=0 py=1.4 pz=-1.9
+body id=pyr_039 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=1.4 pz=-1.9
+body id=pyr_040 shape=cube motion=dynamic material=3 mesh=0 px=1.9 py=1.4 pz=-1.9
+body id=pyr_041 shape=cube motion=dynamic material=3 mesh=0 px=-1.9 py=1.4 pz=-0.95
+body id=pyr_042 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=1.4 pz=-0.95
+body id=pyr_043 shape=cube motion=dynamic material=3 mesh=0 px=0 py=1.4 pz=-0.95
+body id=pyr_044 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=1.4 pz=-0.95
+body id=pyr_045 shape=cube motion=dynamic material=3 mesh=0 px=1.9 py=1.4 pz=-0.95
+body id=pyr_046 shape=cube motion=dynamic material=3 mesh=0 px=-1.9 py=1.4 pz=0
+body id=pyr_047 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=1.4 pz=0
+body id=pyr_048 shape=cube motion=dynamic material=3 mesh=0 px=0 py=1.4 pz=0
+body id=pyr_049 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=1.4 pz=0
+body id=pyr_050 shape=cube motion=dynamic material=3 mesh=0 px=1.9 py=1.4 pz=0
+body id=pyr_051 shape=cube motion=dynamic material=3 mesh=0 px=-1.9 py=1.4 pz=0.95
+body id=pyr_052 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=1.4 pz=0.95
+body id=pyr_053 shape=cube motion=dynamic material=3 mesh=0 px=0 py=1.4 pz=0.95
+body id=pyr_054 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=1.4 pz=0.95
+body id=pyr_055 shape=cube motion=dynamic material=3 mesh=0 px=1.9 py=1.4 pz=0.95
+body id=pyr_056 shape=cube motion=dynamic material=3 mesh=0 px=-1.9 py=1.4 pz=1.9
+body id=pyr_057 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=1.4 pz=1.9
+body id=pyr_058 shape=cube motion=dynamic material=3 mesh=0 px=0 py=1.4 pz=1.9
+body id=pyr_059 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=1.4 pz=1.9
+body id=pyr_060 shape=cube motion=dynamic material=3 mesh=0 px=1.9 py=1.4 pz=1.9
+body id=pyr_061 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=2.35 pz=-1.425
+body id=pyr_062 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=2.35 pz=-1.425
+body id=pyr_063 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=2.35 pz=-1.425
+body id=pyr_064 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=2.35 pz=-1.425
+body id=pyr_065 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=2.35 pz=-0.475
+body id=pyr_066 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=2.35 pz=-0.475
+body id=pyr_067 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=2.35 pz=-0.475
+body id=pyr_068 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=2.35 pz=-0.475
+body id=pyr_069 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=2.35 pz=0.475
+body id=pyr_070 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=2.35 pz=0.475
+body id=pyr_071 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=2.35 pz=0.475
+body id=pyr_072 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=2.35 pz=0.475
+body id=pyr_073 shape=cube motion=dynamic material=3 mesh=0 px=-1.425 py=2.35 pz=1.425
+body id=pyr_074 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=2.35 pz=1.425
+body id=pyr_075 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=2.35 pz=1.425
+body id=pyr_076 shape=cube motion=dynamic material=3 mesh=0 px=1.425 py=2.35 pz=1.425
+body id=pyr_077 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=3.3 pz=-0.95
+body id=pyr_078 shape=cube motion=dynamic material=3 mesh=0 px=0 py=3.3 pz=-0.95
+body id=pyr_079 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=3.3 pz=-0.95
+body id=pyr_080 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=3.3 pz=0
+body id=pyr_081 shape=cube motion=dynamic material=3 mesh=0 px=0 py=3.3 pz=0
+body id=pyr_082 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=3.3 pz=0
+body id=pyr_083 shape=cube motion=dynamic material=3 mesh=0 px=-0.95 py=3.3 pz=0.95
+body id=pyr_084 shape=cube motion=dynamic material=3 mesh=0 px=0 py=3.3 pz=0.95
+body id=pyr_085 shape=cube motion=dynamic material=3 mesh=0 px=0.95 py=3.3 pz=0.95
+body id=pyr_086 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=4.25 pz=-0.475
+body id=pyr_087 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=4.25 pz=-0.475
+body id=pyr_088 shape=cube motion=dynamic material=3 mesh=0 px=-0.475 py=4.25 pz=0.475
+body id=pyr_089 shape=cube motion=dynamic material=3 mesh=0 px=0.475 py=4.25 pz=0.475
+body id=pyr_090 shape=cube motion=dynamic material=3 mesh=0 px=0 py=5.2 pz=0

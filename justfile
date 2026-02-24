@@ -3,6 +3,7 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 build_root := "build"
 default_preset := "dev"
 sandbox_target := "javelin_sandbox"
+scene_tool_target := "javelin_scene_tool"
 fmt_globs := "-g '*.{c,cc,cpp,cxx,cppm,ixx,h,hpp,hxx}'"
 tidy_globs := "-g '*.{c,cc,cpp,cxx,cppm,ixx}'"
 fmt_style := "{BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never, ColumnLimit: 120}"
@@ -57,6 +58,20 @@ run preset=default_preset *args: (build preset)
         exit 1
     fi
 
+scene-tool preset=default_preset *args: (build preset)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin_a="{{ build_root }}/{{ preset }}/examples/{{ scene_tool_target }}"
+    bin_b="{{ build_root }}/{{ preset }}/{{ scene_tool_target }}"
+    if [[ -x "$bin_a" ]]; then
+        "$bin_a" {{ args }}
+    elif [[ -x "$bin_b" ]]; then
+        "$bin_b" {{ args }}
+    else
+        echo "Scene tool binary not found. Build target '{{ scene_tool_target }}' first." >&2
+        exit 1
+    fi
+
 bench name preset=default_preset *args: (build preset)
     #!/usr/bin/env bash
     set -euo pipefail
@@ -91,3 +106,45 @@ tidy preset=default_preset: _check-tidy-tools (configure preset)
     set -euo pipefail
     rg --files -0 {{ tidy_globs }} -g '!build/**' -g '!third_party/**' | \
         xargs -0 clang-tidy -p "{{ build_root }}/{{ preset }}"
+
+scenes-generate-procedural counts="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -n "{{ counts }}" ]]; then
+        python3 tools/generate_procedural_scene_files.py --counts "{{ counts }}"
+    else
+        python3 tools/generate_procedural_scene_files.py
+    fi
+
+scenes-verify-roundtrip preset=default_preset: (build preset)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin_a="{{ build_root }}/{{ preset }}/examples/{{ scene_tool_target }}"
+    bin_b="{{ build_root }}/{{ preset }}/{{ scene_tool_target }}"
+    if [[ -x "$bin_a" ]]; then
+        tool_bin="$bin_a"
+    elif [[ -x "$bin_b" ]]; then
+        tool_bin="$bin_b"
+    else
+        echo "Scene tool binary not found. Build target '{{ scene_tool_target }}' first." >&2
+        exit 1
+    fi
+
+    sample_scenes=(
+        assets/scenes/samples/stack_boxes.jvscene
+        assets/scenes/samples/grid_boxes_3d.jvscene
+        assets/scenes/samples/grid_boxes_2d_with_rolling_sphere.jvscene
+        assets/scenes/samples/pyramid_cubes_3d.jvscene
+        assets/scenes/samples/single_cube_fall.jvscene
+        assets/scenes/samples/single_sphere_fall.jvscene
+    )
+    for scene in "${sample_scenes[@]}"; do
+        "$tool_bin" verify-roundtrip "$scene"
+    done
+
+    large_scene="assets/scenes/procedural/pile_15000.jvscene"
+    if [[ ! -f "$large_scene" ]]; then
+        echo "Generating '$large_scene' for large-scene verification"
+        python3 tools/generate_procedural_scene_files.py --counts "15000"
+    fi
+    "$tool_bin" verify-roundtrip "$large_scene"

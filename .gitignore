@@ -8,3 +8,6 @@ build
 .DS_Store
 imgui.ini
 compile_commands.json
+
+# Generated scene artifacts (keep source script and curated samples in git).
+assets/scenes/procedural/*.jvscene
