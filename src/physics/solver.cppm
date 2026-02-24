@@ -70,6 +70,28 @@ struct SolverPoint final {
     return std::fabs(point.normal_impulse) > kMassEps || point.tangent_impulse.length_sq() > kMassEps * kMassEps;
 }
 
+[[nodiscard]] inline Vec3 project_and_clamp_tangent_impulse(const Vec3 cached_tangent_impulse, const Vec3 normal,
+                                                            const f32 normal_impulse,
+                                                            const f32 friction_coeff) noexcept {
+    if (friction_coeff <= 0.0f || normal_impulse <= kMassEps) {
+        return Vec3{};
+    }
+
+    // Contact normals rotate between frames; remove any leaked normal component from cached friction.
+    Vec3 tangent_impulse = cached_tangent_impulse - normal * dot(cached_tangent_impulse, normal);
+    const f32 tangent_impulse_sq = tangent_impulse.length_sq();
+    if (tangent_impulse_sq <= kMassEps * kMassEps) {
+        return Vec3{};
+    }
+
+    const f32 max_friction = friction_coeff * normal_impulse;
+    const f32 max_friction_sq = max_friction * max_friction;
+    if (tangent_impulse_sq > max_friction_sq && max_friction_sq > kMassEps * kMassEps) {
+        tangent_impulse *= max_friction / std::sqrt(tangent_impulse_sq);
+    }
+    return tangent_impulse;
+}
+
 [[nodiscard]] inline std::pair<Vec3, Vec3> tangent_basis(const Vec3 normal) noexcept {
     // Deterministic orthonormal basis from normal.
     Vec3 tangent_u =
@@ -164,10 +186,13 @@ inline void apply_impulse_at_point(const SolverPoint &point, const Vec3 impulse,
         apply_inv_inertia(inv_inertia_body[point.b], orientation[point.b], cross(point.r_b, impulse));
 }
 
-inline void warm_start_solver_point(const SolverPoint &solver_point, const ContactPoint &point,
+inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoint &point, const f32 friction_coeff,
                                     std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
                                     std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
                                     std::span<const Quat> orientation) noexcept {
+    point.normal_impulse = std::max(point.normal_impulse, 0.0f);
+    point.tangent_impulse = project_and_clamp_tangent_impulse(point.tangent_impulse, solver_point.normal,
+                                                              point.normal_impulse, friction_coeff);
     if (!has_warm_start_impulse(point)) {
         return;
     }
@@ -269,11 +294,11 @@ void solve_contacts(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, 
         }
     }
 
-    // Warm start: apply accumulated normal + two tangent impulses per point.
+    // Warm start: apply accumulated normal impulse plus projected/clamped world-space friction impulse.
     for (const detail::SolverPoint &solver_point : solver_points) {
         ContactPoint &point = manifolds[solver_point.manifold_index].points[solver_point.point_index];
-        detail::warm_start_solver_point(solver_point, point, velocity, angular_velocity, inv_mass, inv_inertia_body,
-                                        orientation);
+        detail::warm_start_solver_point(solver_point, point, friction_coeff, velocity, angular_velocity, inv_mass,
+                                        inv_inertia_body, orientation);
     }
 
     // Iterative projected Gauss-Seidel.
