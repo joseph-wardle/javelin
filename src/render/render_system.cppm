@@ -159,8 +159,9 @@ struct RenderSystem final {
 
                 ImGui::Text("State: %s", simulation_paused ? "Paused" : "Running");
                 ImGui::Text("Pending steps: %u", physics_->pending_simulation_steps());
+                const u64 completed_simulation_steps = physics_->completed_simulation_steps();
                 ImGui::Text("Completed steps: %llu",
-                            static_cast<unsigned long long>(physics_->completed_simulation_steps()));
+                            static_cast<unsigned long long>(completed_simulation_steps));
 
                 ImGui::Separator();
                 ImGui::TextUnformatted("Parameters");
@@ -223,9 +224,11 @@ struct RenderSystem final {
                                      plot_min, plot_max, ImVec2(0, 80));
                 }
 
+                const u64 completed_steps_for_dt_sample = physics_->completed_simulation_steps();
                 const f32 physics_dt_ms = physics_->last_tick_dt_ms();
-                if (physics_dt_ms > 0.0f) {
+                if (physics_dt_ms > 0.0f && completed_steps_for_dt_sample != last_physics_dt_sample_step_count_) {
                     push_physics_dt_sample_(physics_dt_ms);
+                    last_physics_dt_sample_step_count_ = completed_steps_for_dt_sample;
                 }
                 ImGui::Text("Physics dt: %.3f ms", physics_dt_ms);
                 const int history_count = physics_dt_history_full_ ? static_cast<int>(kPhysicsDtHistory)
@@ -394,6 +397,9 @@ struct RenderSystem final {
     usize physics_dt_cursor_ = 0;
     bool physics_dt_history_full_ = false;
     u32 physics_dt_sample_tick_ = 0;
+    // Last completed simulation step id that contributed a physics-dt history sample.
+    // This avoids duplicating a single physics tick across many render frames.
+    u64 last_physics_dt_sample_step_count_{0};
 
     bool gpu_ready_ = false;
 

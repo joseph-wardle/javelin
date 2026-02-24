@@ -151,6 +151,12 @@ struct PhysicsSystem final {
                         completed_sim_step_count_.fetch_add(1u, std::memory_order_relaxed);
                     }
                 }
+                const bool paused_for_plot = simulation_paused_.load(std::memory_order_relaxed);
+                const u32 pending_steps_for_plot = pending_step_budget_.load(std::memory_order_relaxed);
+                const u64 completed_steps_for_plot = completed_sim_step_count_.load(std::memory_order_relaxed);
+                TracyPlot("physics_paused", paused_for_plot ? static_cast<i64>(1) : static_cast<i64>(0));
+                TracyPlot("physics_pending_steps", static_cast<i64>(pending_steps_for_plot));
+                TracyPlot("physics_completed_steps", tracy_counter_i64_(completed_steps_for_plot));
 
                 FrameMarkNamed("Physics");
             }
@@ -198,9 +204,10 @@ struct PhysicsSystem final {
     std::atomic<f32> angular_damping_{0.4f};
     std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
-    // Simulation control state:
+    // Simulation control invariants:
     // - paused gate controls continuous ticking.
-    // - pending_step_budget executes fixed ticks while paused.
+    // - pending_step_budget is decremented only by the physics thread.
+    // - request_simulation_steps() only increments budget when paused.
     // - completed_sim_step_count is a monotonic diagnostic counter.
     std::atomic<bool> simulation_paused_{false};
     std::atomic<u32> pending_step_budget_{0u};
@@ -269,6 +276,12 @@ struct PhysicsSystem final {
         u8 j{};
     };
 
+    [[nodiscard]] static i64 tracy_counter_i64_(const u64 value) noexcept {
+        return static_cast<i64>(std::min<u64>(value, static_cast<u64>(std::numeric_limits<i64>::max())));
+    }
+
+    // Sleeps only while paused and idle (no pending steps / no reset request).
+    // Running mode never takes this path.
     [[nodiscard]] bool wait_for_simulation_control_event_(const std::stop_token &stop_token) {
         std::unique_lock lock(simulation_control_mutex_);
         simulation_control_cv_.wait(lock, [&] {
@@ -290,6 +303,7 @@ struct PhysicsSystem final {
         return false;
     }
 
+    // Services a pending reset request at a thread-safe tick boundary.
     [[nodiscard]] bool apply_pending_reset_() noexcept {
         if (!reset_requested_.exchange(false, std::memory_order_acq_rel)) {
             return false;
