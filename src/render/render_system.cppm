@@ -127,10 +127,43 @@ struct RenderSystem final {
             ImGui::Checkbox("Grid", &debug_.draw_grid);
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
-                // TEMP: test-scene physics controls.
                 ImGui::Separator();
                 ImGui::TextUnformatted("Physics");
 
+                ImGui::TextUnformatted("Simulation");
+                bool simulation_paused = physics_->simulation_paused();
+                if (ImGui::Button(simulation_paused ? "Resume" : "Pause")) {
+                    simulation_paused = !simulation_paused;
+                    physics_->set_simulation_paused(simulation_paused);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Pause/resume continuous fixed-rate simulation.");
+                }
+
+                ImGui::SameLine();
+                ImGui::BeginDisabled(!simulation_paused);
+                if (ImGui::Button("Step")) {
+                    physics_->request_simulation_steps(1u);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Advance one fixed simulation tick (1/60 s).");
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Step x10")) {
+                    physics_->request_simulation_steps(10u);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Queue 10 fixed simulation ticks while paused.");
+                }
+                ImGui::EndDisabled();
+
+                ImGui::Text("State: %s", simulation_paused ? "Paused" : "Running");
+                ImGui::Text("Pending steps: %u", physics_->pending_simulation_steps());
+                ImGui::Text("Completed steps: %llu",
+                            static_cast<unsigned long long>(physics_->completed_simulation_steps()));
+
+                ImGui::Separator();
+                ImGui::TextUnformatted("Parameters");
                 f32 gravity = physics_->gravity();
                 if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
                     physics_->set_gravity(gravity);
@@ -152,6 +185,9 @@ struct RenderSystem final {
 
                 if (ImGui::Button("Reset Scene")) {
                     physics_->request_reset();
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Restore authored initial scene state.");
                 }
 
                 ImGui::Separator();
