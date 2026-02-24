@@ -127,10 +127,44 @@ struct RenderSystem final {
             ImGui::Checkbox("Grid", &debug_.draw_grid);
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
-                // TEMP: test-scene physics controls.
                 ImGui::Separator();
                 ImGui::TextUnformatted("Physics");
 
+                ImGui::TextUnformatted("Simulation");
+                bool simulation_paused = physics_->simulation_paused();
+                if (ImGui::Button(simulation_paused ? "Resume" : "Pause")) {
+                    simulation_paused = !simulation_paused;
+                    physics_->set_simulation_paused(simulation_paused);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Pause/resume continuous fixed-rate simulation.");
+                }
+
+                ImGui::SameLine();
+                ImGui::BeginDisabled(!simulation_paused);
+                if (ImGui::Button("Step")) {
+                    physics_->request_simulation_steps(1u);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Advance one fixed simulation tick (1/60 s).");
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Step x10")) {
+                    physics_->request_simulation_steps(10u);
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Queue 10 fixed simulation ticks while paused.");
+                }
+                ImGui::EndDisabled();
+
+                ImGui::Text("State: %s", simulation_paused ? "Paused" : "Running");
+                ImGui::Text("Pending steps: %u", physics_->pending_simulation_steps());
+                const u64 completed_simulation_steps = physics_->completed_simulation_steps();
+                ImGui::Text("Completed steps: %llu",
+                            static_cast<unsigned long long>(completed_simulation_steps));
+
+                ImGui::Separator();
+                ImGui::TextUnformatted("Parameters");
                 f32 gravity = physics_->gravity();
                 if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
                     physics_->set_gravity(gravity);
@@ -152,6 +186,9 @@ struct RenderSystem final {
 
                 if (ImGui::Button("Reset Scene")) {
                     physics_->request_reset();
+                }
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Restore authored initial scene state.");
                 }
 
                 ImGui::Separator();
@@ -187,9 +224,11 @@ struct RenderSystem final {
                                      plot_min, plot_max, ImVec2(0, 80));
                 }
 
+                const u64 completed_steps_for_dt_sample = physics_->completed_simulation_steps();
                 const f32 physics_dt_ms = physics_->last_tick_dt_ms();
-                if (physics_dt_ms > 0.0f) {
+                if (physics_dt_ms > 0.0f && completed_steps_for_dt_sample != last_physics_dt_sample_step_count_) {
                     push_physics_dt_sample_(physics_dt_ms);
+                    last_physics_dt_sample_step_count_ = completed_steps_for_dt_sample;
                 }
                 ImGui::Text("Physics dt: %.3f ms", physics_dt_ms);
                 const int history_count = physics_dt_history_full_ ? static_cast<int>(kPhysicsDtHistory)
@@ -358,6 +397,12 @@ struct RenderSystem final {
     usize physics_dt_cursor_ = 0;
     bool physics_dt_history_full_ = false;
     u32 physics_dt_sample_tick_ = 0;
+    // Cap interpolation span so a single step after a long pause does not blend slowly.
+    // Two fixed physics ticks keeps motion smooth without long wall-clock lag.
+    static constexpr u64 kMaxPoseInterpolationSpanNs = 2u * (1'000'000'000ull / 60u);
+    // Last completed simulation step id that contributed a physics-dt history sample.
+    // This avoids duplicating a single physics tick across many render frames.
+    u64 last_physics_dt_sample_step_count_{0};
 
     bool gpu_ready_ = false;
 
@@ -372,18 +417,20 @@ struct RenderSystem final {
             return 1.0f;
         }
 
-        const u64 span = poses.curr_time_ns - poses.prev_time_ns;
-        const u64 now = now_ns_();
-        const u64 render_time = (now > span) ? (now - span) : 0;
-
-        u64 sample_time = render_time;
-        if (sample_time < poses.prev_time_ns) {
-            sample_time = poses.prev_time_ns;
-        } else if (sample_time > poses.curr_time_ns) {
-            sample_time = poses.curr_time_ns;
+        const u64 raw_span = poses.curr_time_ns - poses.prev_time_ns;
+        const u64 interpolation_span = std::min(raw_span, kMaxPoseInterpolationSpanNs);
+        if (interpolation_span == 0u) {
+            return 1.0f;
         }
 
-        const f64 alpha = static_cast<f64>(sample_time - poses.prev_time_ns) / static_cast<f64>(span);
+        // Interpolate over a bounded window ending at the latest published pose.
+        // This avoids long blends when stepping after an extended pause.
+        const u64 interpolation_start_time = poses.curr_time_ns - interpolation_span;
+        const u64 now = now_ns_();
+        const u64 render_time = (now > interpolation_span) ? (now - interpolation_span) : 0u;
+        const u64 sample_time = std::clamp(render_time, interpolation_start_time, poses.curr_time_ns);
+        const f64 alpha =
+            static_cast<f64>(sample_time - interpolation_start_time) / static_cast<f64>(interpolation_span);
         return static_cast<f32>(alpha);
     }
 };
