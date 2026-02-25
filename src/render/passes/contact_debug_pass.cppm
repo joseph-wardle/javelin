@@ -10,6 +10,7 @@ import std;
 import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.vec3;
+import javelin.physics.contact_debug;
 import javelin.render.color;
 import javelin.render.render_context;
 import javelin.render.render_targets;
@@ -138,7 +139,8 @@ struct ContactDebugPass final {
 
         glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);
-        glEnable(GL_DEPTH_TEST);
+        // Draw contacts as an x-ray overlay so they remain visible through bodies.
+        glDisable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -150,11 +152,14 @@ struct ContactDebugPass final {
 
         glBindVertexArray(vao_);
         glDrawArrays(GL_POINTS, 0, point_vertex_count_);
+        glLineWidth(kContactNormalLineWidthPx);
         glDrawArrays(GL_LINES, point_vertex_count_, line_vertex_count_);
+        glLineWidth(1.0f);
         glBindVertexArray(0);
         glUseProgram(0);
 
         glDepthMask(GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
     }
 
   private:
@@ -166,6 +171,7 @@ struct ContactDebugPass final {
     static constexpr Vec3 kContactPointColorNew = linear_srgb_to_acescg(Vec3{1.0f, 0.20f, 0.10f});
     static constexpr Vec3 kContactPointColorPersisted = linear_srgb_to_acescg(Vec3{0.30f, 1.0f, 0.30f});
     static constexpr Vec3 kContactNormalColor = linear_srgb_to_acescg(Vec3{0.20f, 0.65f, 1.0f});
+    static constexpr f32 kContactNormalLineWidthPx = 3.0f;
 
     void create_shader_() {
         if (program_ != 0) {

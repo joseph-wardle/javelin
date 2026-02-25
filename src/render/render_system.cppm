@@ -28,6 +28,7 @@ import javelin.render.passes.geometry_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
 import javelin.render.types;
+import javelin.physics.contact_debug;
 import javelin.physics.physics_system;
 import javelin.scene;
 import javelin.scene.camera;
