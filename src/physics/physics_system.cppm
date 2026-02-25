@@ -13,6 +13,7 @@ import javelin.physics.aabb;
 import javelin.physics.bvh_dynamic;
 import javelin.physics.bvh_static;
 import javelin.physics.broad_phase;
+import javelin.physics.contact_debug;
 import javelin.physics.integrate;
 import javelin.physics.narrow_phase;
 import javelin.physics.publish;
@@ -29,9 +30,20 @@ export namespace javelin {
 // 2) generate candidate pairs (broad phase),
 // 3) build/refresh manifolds (narrow phase + persistence),
 // 4) solve constraints and integrate,
-// 5) publish authoritative transforms.
+// 5) publish debug snapshots + authoritative transforms.
 struct PhysicsSystem final {
-    void init(Scene &scene) noexcept { scene_ = &scene; }
+    void init(Scene &scene) noexcept {
+        scene_ = &scene;
+
+        // Contact debug payload budget:
+        // - manifold reserve heuristic is 4*body_count.
+        // - each manifold contributes up to 4 points.
+        // - use a conservative floor to avoid tiny startup allocations.
+        const u32 body_count = scene.physics_view().count;
+        const u32 estimated_point_capacity = std::max<u32>(body_count * 16u, 64u);
+        contact_debug_channel_.reserve(estimated_point_capacity);
+        contact_debug_channel_.publish_empty(0u);
+    }
 
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
     void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
@@ -41,6 +53,9 @@ struct PhysicsSystem final {
     }
     void set_angular_damping(const f32 damping) noexcept {
         angular_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
+    }
+    void set_contact_debug_enabled(const bool enabled) noexcept {
+        contact_debug_enabled_.store(enabled, std::memory_order_release);
     }
     // Thread-safe control request consumed by the physics thread.
     // Reset is serviced even while simulation is paused.
@@ -83,6 +98,10 @@ struct PhysicsSystem final {
     [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 linear_damping() const noexcept { return linear_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 angular_damping() const noexcept { return angular_damping_.load(std::memory_order_relaxed); }
+    [[nodiscard]] bool contact_debug_enabled() const noexcept {
+        return contact_debug_enabled_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] ContactDebugSnapshot contact_debug_snapshot() const noexcept { return contact_debug_channel_.snapshot(); }
     [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
     [[nodiscard]] bool simulation_paused() const noexcept {
         return simulation_paused_.load(std::memory_order_acquire);
@@ -202,6 +221,7 @@ struct PhysicsSystem final {
     std::atomic<f32> friction_{0.2f};
     std::atomic<f32> linear_damping_{0.1f};
     std::atomic<f32> angular_damping_{0.4f};
+    std::atomic<bool> contact_debug_enabled_{false};
     std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
     // Simulation control invariants:
@@ -260,6 +280,10 @@ struct PhysicsSystem final {
     std::vector<Aabb> bounds_cache_{};
     // Byte mask indexed by body id; set when body participates in any active contact this tick.
     std::vector<u8> contact_activity_mask_{};
+    ContactDebugChannel contact_debug_channel_{};
+    // Physics-thread state: tracks enable->disable transitions so we can clear
+    // stale snapshots once without paying per-tick writes while disabled.
+    bool contact_debug_enabled_last_tick_{false};
 
     struct PersistenceRefreshStats final {
         u32 previous_point_count{};
@@ -278,6 +302,12 @@ struct PhysicsSystem final {
 
     [[nodiscard]] static i64 tracy_counter_i64_(const u64 value) noexcept {
         return static_cast<i64>(std::min<u64>(value, static_cast<u64>(std::numeric_limits<i64>::max())));
+    }
+
+    [[nodiscard]] u64 next_completed_step_id_() const noexcept {
+        // This tick is counted by the outer loop immediately after
+        // simulate_one_fixed_tick_() returns true.
+        return completed_sim_step_count_.load(std::memory_order_relaxed) + 1u;
     }
 
     // Sleeps only while paused and idle (no pending steps / no reset request).
@@ -312,6 +342,8 @@ struct PhysicsSystem final {
             scene_->reset_simulation();
             static_dirty_ = true;
             clear_manifold_state_();
+            contact_debug_channel_.publish_empty(completed_sim_step_count_.load(std::memory_order_relaxed));
+            contact_debug_enabled_last_tick_ = false;
         }
         return true;
     }
@@ -441,6 +473,14 @@ struct PhysicsSystem final {
             kRestingLinearSpeedThreshold, kRestingAngularSpeedThreshold);
         integrate_positions(view.position, view.velocity, view.inv_mass, dt);
         integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
+        const bool publish_contact_debug = contact_debug_enabled_.load(std::memory_order_acquire);
+        if (publish_contact_debug) {
+            publish_contact_debug_snapshot_(view.position, view.orientation, std::span<const ContactManifold>{manifolds_},
+                                            next_completed_step_id_());
+        } else if (contact_debug_enabled_last_tick_) {
+            contact_debug_channel_.publish_empty(next_completed_step_id_());
+        }
+        contact_debug_enabled_last_tick_ = publish_contact_debug;
         publish_poses(view.poses, view.position, view.orientation, count);
         return true;
     }
@@ -517,6 +557,53 @@ struct PhysicsSystem final {
         for (ContactManifold &manifold : manifolds) {
             sort_manifold_points(manifold);
         }
+    }
+
+    void publish_contact_debug_snapshot_(std::span<const Vec3> position, std::span<const Quat> orientation,
+                                         std::span<const ContactManifold> manifolds, const u64 step_id) {
+        const u32 point_count = contact_point_count_(manifolds);
+        ContactDebugWrite out = contact_debug_channel_.write_contacts(point_count);
+
+        u32 out_index = 0u;
+        for (const ContactManifold &manifold : manifolds) {
+            if (manifold.point_count == 0u) {
+                continue;
+            }
+
+            Vec3 normal = manifold.normal;
+            if (!normal.try_normalize()) {
+                normal = Vec3::unit_y();
+            }
+            const u32 a = manifold.a;
+            const bool has_body_b = manifold.b != kInvalidBody;
+            const u32 b = has_body_b ? manifold.b : kInvalidBody;
+
+            for (u32 point_index = 0u; point_index < manifold.point_count; ++point_index) {
+                const ContactPoint &point = manifold.points[point_index];
+                const Vec3 world_a = position[a] + rotate(orientation[a], point.local_anchor_a);
+
+                Vec3 point_world = world_a;
+                if (has_body_b) {
+                    const Vec3 world_b = position[b] + rotate(orientation[b], point.local_anchor_b);
+                    point_world = (world_a + world_b) * 0.5f;
+                }
+
+                out.points[out_index] = point_world;
+                out.normals[out_index] = normal;
+                out.separations[out_index] = point.separation;
+                out.normal_impulses[out_index] = point.normal_impulse;
+                out.persisted[out_index] = point.persisted ? static_cast<u8>(1u) : static_cast<u8>(0u);
+                ++out_index;
+            }
+        }
+
+#ifndef NDEBUG
+        if (out_index != point_count) {
+            log::error(physics, "Contact debug packing mismatch expected={} actual={}", point_count, out_index);
+            std::terminate();
+        }
+#endif
+        contact_debug_channel_.publish(out_index, step_id);
     }
 
     [[nodiscard]] static bool body_pair_less_(const BodyPair lhs, const BodyPair rhs) noexcept {

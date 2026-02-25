@@ -125,6 +125,10 @@ struct RenderSystem final {
                 push_render_dt_sample_(render_dt_ms);
             }
             ImGui::Checkbox("Grid", &debug_.draw_grid);
+            ImGui::Checkbox("Contacts", &debug_.draw_contacts);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Render collision contact debug layer.");
+            }
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
                 ImGui::Separator();
@@ -280,6 +284,11 @@ struct RenderSystem final {
         const FrameCamera frame_camera{.view = view, .proj = proj, .view_proj = proj * view};
 
         const PoseSnapshot poses = scene_->pose_snapshot();
+        if (physics_ != nullptr) {
+            physics_->set_contact_debug_enabled(debug_.draw_contacts);
+        }
+        const ContactDebugSnapshot contacts =
+            (physics_ != nullptr) ? physics_->contact_debug_snapshot() : ContactDebugSnapshot{};
         const f32 pose_alpha = compute_pose_alpha_(poses);
 
         RenderContext ctx{
@@ -287,6 +296,7 @@ struct RenderSystem final {
             .camera = frame_camera,
             .view = scene_->render_view(),
             .poses = poses,
+            .contacts = contacts,
             .pose_alpha = pose_alpha,
             .targets = targets_,
             .debug = debug_,
