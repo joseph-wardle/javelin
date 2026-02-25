@@ -22,6 +22,7 @@ import javelin.render.pipeline;
 import javelin.render.render_context;
 import javelin.render.render_device;
 import javelin.render.render_targets;
+import javelin.render.passes.contact_debug_pass;
 import javelin.render.passes.display_pass;
 import javelin.render.passes.geometry_pass;
 import javelin.render.passes.world_grid_pass;
@@ -380,7 +381,7 @@ struct RenderSystem final {
     }
 
   private:
-    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, DisplayPass>;
+    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, ContactDebugPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     PhysicsSystem *physics_ = nullptr;
