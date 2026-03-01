@@ -25,6 +25,7 @@ target_sources(javelin
             physics/bvh_dynamic.cppm
             physics/bvh_static.cppm
             physics/broad_phase.cppm
+            physics/contact_debug.cppm
             physics/integrate.cppm
             physics/narrow_phase.cppm
             physics/publish.cppm
@@ -43,6 +44,7 @@ target_sources(javelin
             render/render_system.cppm
             render/types.cppm
             render/passes/geometry_pass.cppm
+            render/passes/contact_debug_pass.cppm
             render/passes/display_pass.cppm
             render/passes/world_grid_pass.cppm
             scene/camera.cppm

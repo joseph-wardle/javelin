@@ -1,6 +1,7 @@
 export module javelin.render.render_context;
 
 import javelin.core.types;
+import javelin.physics.contact_debug;
 import javelin.render.types;
 import javelin.render.render_targets;
 import javelin.math.mat4;
@@ -18,8 +19,9 @@ struct FrameCamera final {
 
 struct DebugToggles final {
     bool draw_grid{true};
+    bool draw_contacts{false};
     bool apply_color_transform{true};
-    // later: show_aabbs, show_contacts, etc.
+    // later: show_aabbs, show_joint_limits, etc.
 };
 
 struct RenderContext final {
@@ -28,6 +30,7 @@ struct RenderContext final {
 
     RenderView view;
     PoseSnapshot poses;
+    ContactDebugSnapshot contacts;
     f32 pose_alpha{1.0f};
 
     RenderTargets &targets;
