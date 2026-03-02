@@ -271,7 +271,8 @@ struct Scene final {
                 ++authored_material_count;
             }
         }
-        out.reserve(static_cast<u32>(shapes_.size()), count_, authored_material_count);
+        out.reserve(static_cast<u32>(shapes_.size()), count_, authored_material_count,
+                    static_cast<u32>(constraints_.size()));
         for (u32 i = 0; i < physics_material_restitution_.size(); ++i) {
             if (physics_material_restitution_[i] == kDefaultPhysicsMaterial.restitution &&
                 physics_material_friction_[i] == kDefaultPhysicsMaterial.friction) {
@@ -302,6 +303,9 @@ struct Scene final {
             });
         }
 
+        // Collect effective body string ids in scene-index order; constraints reference them by name.
+        std::vector<std::string> out_body_ids{};
+        out_body_ids.reserve(count_);
         for (u32 i = 0; i < count_; ++i) {
             if (shape_index_[i] >= shape_ids.size()) {
                 return error(std::format("Cannot export body {}: shape_index={} is out "
@@ -316,6 +320,7 @@ struct Scene final {
                 body_id = std::format("body_{:05}", i);
             }
 
+            out_body_ids.push_back(body_id);
             out.bodies.push_back(SceneFileBody{
                 .id = std::move(body_id),
                 .shape_id = shape_ids[shape_index_[i]],
@@ -329,13 +334,38 @@ struct Scene final {
             });
         }
 
+        // Export distance constraints: map numeric body indices back to string ids.
+        for (usize i = 0; i < constraints_.size(); ++i) {
+            const DistanceConstraint &c = constraints_[i];
+            if (c.body_a >= out_body_ids.size() || c.body_b >= out_body_ids.size()) {
+                return error(std::format("Cannot export constraint {}: body index out of range "
+                                         "(body_a={} body_b={} body_count={})",
+                                         i, c.body_a, c.body_b, out_body_ids.size()));
+            }
+            std::string constraint_id{};
+            if (i < constraint_ids_.size() && !constraint_ids_[i].empty()) {
+                constraint_id = constraint_ids_[i];
+            } else {
+                constraint_id = std::format("constraint_{:05}", i);
+            }
+            out.constraints.push_back(SceneFileConstraint{
+                .id = std::move(constraint_id),
+                .body_a_id = out_body_ids[c.body_a],
+                .body_b_id = out_body_ids[c.body_b],
+                .anchor_a = c.anchor_a,
+                .anchor_b = c.anchor_b,
+                .rest_length = c.rest_length,
+                .compliance = c.compliance,
+            });
+        }
+
         auto save_result = out.save(scene_path, save_options);
         if (!save_result) {
             return std::unexpected(save_result.error());
         }
 
-        log::info(scene, "Saved scene file '{}' (shapes={}, bodies={})", scene_path.string(), out.shapes.size(),
-                  out.bodies.size());
+        log::info(scene, "Saved scene file '{}' (shapes={}, bodies={}, constraints={})", scene_path.string(),
+                  out.shapes.size(), out.bodies.size(), out.constraints.size());
         return {};
     }
 
@@ -458,19 +488,49 @@ struct Scene final {
             out.physics_material_friction_[authored.id] = authored.material.friction;
         }
 
-        // Constraints are populated from scene file records (Step 3 extends the parser).
-        // Cleared here so Scene always starts in a consistent state.
+        // Resolve constraint body string ids to scene body indices.
         out.constraints_.clear();
         out.constraint_ids_.clear();
+        if (!in.constraints.empty()) {
+            // Build a body-id → scene index map.  The body order in in.bodies matches
+            // the scene SoA order established by the loop above.
+            std::unordered_map<std::string_view, u32> body_lookup{};
+            body_lookup.reserve(out.count_ * 2u + 1u);
+            for (u32 idx = 0; idx < out.count_; ++idx) {
+                body_lookup.emplace(out.body_ids_[idx], idx);
+            }
+
+            out.constraints_.reserve(in.constraints.size());
+            out.constraint_ids_.reserve(in.constraints.size());
+            for (const SceneFileConstraint &c : in.constraints) {
+                const auto a_it = body_lookup.find(c.body_a_id);
+                const auto b_it = body_lookup.find(c.body_b_id);
+                // Body refs were already cross-validated by SceneFile::load(); this is a safety net.
+                if (a_it == body_lookup.end() || b_it == body_lookup.end()) {
+                    log::error(scene,
+                               "Constraint '{}' references unknown body (body_a='{}' body_b='{}')",
+                               c.id, c.body_a_id, c.body_b_id);
+                    std::terminate();
+                }
+                out.constraints_.push_back(DistanceConstraint{
+                    .body_a = a_it->second,
+                    .body_b = b_it->second,
+                    .anchor_a = c.anchor_a,
+                    .anchor_b = c.anchor_b,
+                    .rest_length = c.rest_length,
+                    .compliance = c.compliance,
+                });
+                out.constraint_ids_.push_back(c.id);
+            }
+        }
 
         out.snapshot_initial_state_from_sim_();
         out.publish_poses_from_sim();
         log::info(scene,
                   "Loaded scene file '{}' version={} units={} shapes={} bodies={} "
-                  "(dynamic={}, static={}, spheres={}, "
-                  "boxes={})",
+                  "(dynamic={}, static={}, spheres={}, boxes={}) constraints={}",
                   scene_path.string(), in.version, in.units, in.shapes.size(), out.count_, dynamic_count, static_count,
-                  sphere_count, box_count);
+                  sphere_count, box_count, out.constraints_.size());
         return out;
     }
 
