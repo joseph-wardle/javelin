@@ -9,6 +9,7 @@ import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
+import javelin.physics.constraint_types;
 import javelin.physics.types;
 
 namespace javelin::detail {
@@ -237,6 +238,40 @@ inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoin
 
 [[nodiscard]] inline std::vector<SolverPoint> &solver_points_cache() {
     static thread_local std::vector<SolverPoint> cache{};
+    return cache;
+}
+
+// Iteration count for the bilateral distance constraint velocity solve.
+// 8 passes converge a rigid rod well at 60 Hz without over-burdening the
+// contact solver budget (which runs 16 passes of its own).
+inline constexpr u32 kConstraintIterations = 8;
+
+// Baumgarte stabilisation factor for distance constraint position error:
+// injects (factor / dt) * C_pos as a target closing velocity to correct drift.
+// 20% per tick matches the contact penetration bias factor.
+inline constexpr f32 kConstraintBiasFactor = 0.2f;
+
+// Anchor-point distance below which the constraint axis is considered degenerate
+// (anchors coincident within ~0.1 mm).  Skip rather than dividing by near-zero.
+inline constexpr f32 kConstraintAxisEpsSq = 1e-8f;
+
+// Per-constraint world-space geometry, precomputed once per tick before the
+// velocity iteration loop.  Positions and orientations are not modified during
+// the velocity solve so this data is invariant across all iterations.
+struct ConstraintGeometry final {
+    u32 a{};
+    u32 b{};
+    Vec3 r_a{};          // world-space anchor offset from body A COM (metres)
+    Vec3 r_b{};          // world-space anchor offset from body B COM (metres)
+    Vec3 n{};            // unit axis from anchor_a toward anchor_b
+    Vec3 ra_cross_n{};   // r_a × n; precomputed to avoid cross in the inner loop
+    Vec3 rb_cross_n{};   // r_b × n; precomputed to avoid cross in the inner loop
+    f32 C_pos{};         // position violation: dist − rest_length (metres)
+    f32 k_eff{};         // 1 / (w_eff + alpha_tilde); effective impulse scale
+};
+
+[[nodiscard]] inline std::vector<ConstraintGeometry> &constraint_geometry_cache() {
+    static thread_local std::vector<ConstraintGeometry> cache{};
     return cache;
 }
 } // namespace javelin::detail
@@ -513,6 +548,151 @@ void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orienta
 
         if (!any_correction) {
             break;
+        }
+    }
+}
+
+// Solves bilateral distance constraints between body pairs using a velocity-level
+// XPBD impulse with Baumgarte position stabilisation.
+//
+// Each constraint enforces: |p_b − p_a| = rest_length
+//   where p_a = position[body_a] + rotate(orientation[body_a], anchor_a)
+//         p_b = position[body_b] + rotate(orientation[body_b], anchor_b)
+//
+// Formulation per iteration:
+//   n            = (p_b − p_a) / |p_b − p_a|               (constraint axis)
+//   v_n          = dot(v_b + ω_b×r_b − v_a − ω_a×r_a, n)  (relative anchor velocity)
+//   bias         = (kConstraintBiasFactor / dt) * C_pos     (Baumgarte position correction)
+//   alpha_tilde  = compliance / dt²                         (XPBD softened denominator)
+//   k_eff        = 1 / (w_eff + alpha_tilde)                (effective impulse scale)
+//   delta_lambda = -(v_n + bias) * k_eff                    (bilateral; no sign clamp)
+//
+// Impulse applied as:
+//   v_a  -= n * delta_lambda * inv_mass_a
+//   ω_a  -= I_a⁻¹(r_a × n) * delta_lambda
+//   v_b  += n * delta_lambda * inv_mass_b
+//   ω_b  += I_b⁻¹(r_b × n) * delta_lambda
+//
+// Positions are not modified here; positional drift is corrected purely through
+// the Baumgarte bias term injected into the velocity target.
+void solve_distance_constraints(std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
+                                std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
+                                std::span<const Quat> orientation, std::span<const Vec3> position,
+                                std::span<const DistanceConstraint> constraints, const f32 dt,
+                                std::span<const u8> asleep) {
+    ZoneScopedN("Physics solve constraints");
+
+    if (constraints.empty()) {
+        return;
+    }
+#ifndef NDEBUG
+    if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
+        velocity.size() != inv_inertia_body.size() || velocity.size() != orientation.size() ||
+        velocity.size() != position.size() || velocity.size() != asleep.size()) {
+        log::error(physics,
+                   "Constraint solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} "
+                   "orientation={} position={} asleep={})",
+                   velocity.size(), angular_velocity.size(), inv_mass.size(), inv_inertia_body.size(),
+                   orientation.size(), position.size(), asleep.size());
+        std::terminate();
+    }
+#endif
+    if (dt <= detail::kDtEps) {
+        return;
+    }
+
+    const f32 inv_dt = 1.0f / dt;
+    const f32 inv_dt2 = inv_dt * inv_dt;
+
+    // Precompute world-space geometry from current positions and orientations.
+    // Positions and orientations are not modified during this function, so the
+    // constraint axis, anchor offsets, and effective mass are invariant across all
+    // velocity iterations.
+    std::vector<detail::ConstraintGeometry> &geom = detail::constraint_geometry_cache();
+    geom.clear();
+    geom.reserve(constraints.size());
+
+    for (const DistanceConstraint &c : constraints) {
+        // Skip constraints where both participants are asleep.  One-asleep constraints
+        // are processed so the awake body remains properly constrained until both sleep.
+        if (asleep[c.body_a] != 0u && asleep[c.body_b] != 0u) {
+            continue;
+        }
+
+        const Vec3 r_a = rotate(orientation[c.body_a], c.anchor_a);
+        const Vec3 r_b = rotate(orientation[c.body_b], c.anchor_b);
+        const Vec3 p_a = position[c.body_a] + r_a;
+        const Vec3 p_b = position[c.body_b] + r_b;
+
+        Vec3 n = p_b - p_a;
+        const f32 dist_sq = n.length_sq();
+        if (dist_sq < detail::kConstraintAxisEpsSq) {
+            // Anchors are coincident: axis is undefined.  Skip this tick; other
+            // forces will separate the bodies and restore a usable direction.
+            continue;
+        }
+        const f32 dist = std::sqrt(dist_sq);
+        n *= (1.0f / dist);
+
+        // C_pos > 0: bodies are too far apart (constraint pulls them together).
+        // C_pos < 0: bodies are too close   (constraint pushes them apart).
+        const f32 C_pos = dist - c.rest_length;
+
+        const Vec3 ra_cross_n = cross(r_a, n);
+        const Vec3 rb_cross_n = cross(r_b, n);
+
+        // Translational + rotational inverse mass along the constraint axis.
+        const f32 w_a = inv_mass[c.body_a] +
+                        detail::inv_inertia_term(inv_inertia_body[c.body_a], orientation[c.body_a], ra_cross_n);
+        const f32 w_b = inv_mass[c.body_b] +
+                        detail::inv_inertia_term(inv_inertia_body[c.body_b], orientation[c.body_b], rb_cross_n);
+
+        // XPBD: alpha_tilde = compliance / dt² softens the constraint.
+        // compliance = 0 gives a rigid bilateral rod.
+        const f32 alpha_tilde = c.compliance * inv_dt2;
+        const f32 denom = w_a + w_b + alpha_tilde;
+        if (denom <= detail::kMassEps) {
+            continue; // both bodies have infinite mass — constraint has no effect
+        }
+
+        geom.push_back(detail::ConstraintGeometry{
+            .a          = c.body_a,
+            .b          = c.body_b,
+            .r_a        = r_a,
+            .r_b        = r_b,
+            .n          = n,
+            .ra_cross_n = ra_cross_n,
+            .rb_cross_n = rb_cross_n,
+            .C_pos      = C_pos,
+            .k_eff      = 1.0f / denom,
+        });
+    }
+
+    if (geom.empty()) {
+        return;
+    }
+
+    // Iterative velocity correction: drive the relative anchor-point velocity toward
+    // the Baumgarte position-correction target.
+    for (u32 iter = 0; iter < detail::kConstraintIterations; ++iter) {
+        for (const detail::ConstraintGeometry &g : geom) {
+            const Vec3 v_a = velocity[g.a] + cross(angular_velocity[g.a], g.r_a);
+            const Vec3 v_b = velocity[g.b] + cross(angular_velocity[g.b], g.r_b);
+            const f32 v_n = dot(v_b - v_a, g.n);
+
+            // Baumgarte bias drives v_n toward −(factor/dt)*C_pos to correct drift.
+            const f32 bias = detail::kConstraintBiasFactor * inv_dt * g.C_pos;
+            const f32 delta_lambda = -(v_n + bias) * g.k_eff;
+
+            // Apply impulse along the constraint axis.
+            // cross(r, n * delta_lambda) == ra_cross_n * delta_lambda (precomputed).
+            const Vec3 impulse = g.n * delta_lambda;
+            velocity[g.a] -= impulse * inv_mass[g.a];
+            angular_velocity[g.a] -=
+                detail::apply_inv_inertia(inv_inertia_body[g.a], orientation[g.a], g.ra_cross_n * delta_lambda);
+            velocity[g.b] += impulse * inv_mass[g.b];
+            angular_velocity[g.b] +=
+                detail::apply_inv_inertia(inv_inertia_body[g.b], orientation[g.b], g.rb_cross_n * delta_lambda);
         }
     }
 }
