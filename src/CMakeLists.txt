@@ -49,6 +49,7 @@ target_sources(javelin
             render/passes/world_grid_pass.cppm
             scene/camera.cppm
             scene/entity.cppm
+            scene/physics_materials.cppm
             scene/physics_view.cppm
             scene/pose_channel.cppm
             scene/render_view.cppm

@@ -8,12 +8,6 @@ import javelin.math.quat;
 import javelin.math.vec3;
 
 export namespace javelin {
-namespace detail {
-[[nodiscard]] inline u64 now_ns() noexcept {
-    const auto now = SteadyClock::now().time_since_epoch();
-    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
-}
-} // namespace detail
 
 struct PoseSnapshot final {
     std::span<const Vec3> prev_positions;

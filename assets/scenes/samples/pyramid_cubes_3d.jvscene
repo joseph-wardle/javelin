@@ -3,6 +3,10 @@
 # scene: 3d stepped pyramid of dynamic cubes
 scene version=1 units=m
 
+# physics_materials
+# id=3  wood: low bounce, high friction — favours stable stacking
+physics_material id=3 restitution=0.3 friction=0.7
+
 # shapes
 shape id=cube kind=box hx=0.45 hy=0.45 hz=0.45
 

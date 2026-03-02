@@ -3,6 +3,10 @@
 # scene: one dynamic sphere falling onto the implicit ground plane
 scene version=1 units=m
 
+# physics_materials
+# id=1  rubber: high bounce, high grip — models a rubber ball
+physics_material id=1 restitution=0.8 friction=0.8
+
 # shapes
 shape id=sphere kind=sphere r=0.5
 

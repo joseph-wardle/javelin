@@ -20,8 +20,17 @@ import javelin.physics.publish;
 import javelin.physics.solve;
 import javelin.physics.types;
 import javelin.scene;
+import javelin.scene.physics_materials;
 import javelin.scene.physics_view;
 import javelin.scene.shapes;
+
+namespace javelin::detail {
+// Pair-wise material combination rules for contact resolution:
+// - restitution: geometric mean preserves the elastic range [0,1] symmetrically.
+// - friction: minimum gives the softer of the two surfaces (conservative slip threshold).
+[[nodiscard]] inline f32 combined_restitution(const f32 a, const f32 b) noexcept { return std::sqrt(a * b); }
+[[nodiscard]] inline f32 combined_friction(const f32 a, const f32 b) noexcept { return std::min(a, b); }
+} // namespace javelin::detail
 
 export namespace javelin {
 // Fixed-timestep physics driver.
@@ -278,6 +287,9 @@ struct PhysicsSystem final {
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
+    // Per-manifold combined material properties, recomputed each tick before solve.
+    std::vector<f32> manifold_restitution_cache_{};
+    std::vector<f32> manifold_friction_cache_{};
     // Byte mask indexed by body id; set when body participates in any active contact this tick.
     std::vector<u8> contact_activity_mask_{};
     ContactDebugChannel contact_debug_channel_{};
@@ -355,12 +367,17 @@ struct PhysicsSystem final {
 
         static_cast<void>(apply_pending_reset_());
 
+        // Material 0 is the fallback for any body with no explicit physics_material record.
+        // Push the live global slider values into it so ImGui edits take effect immediately.
+        scene_->set_physics_material(0u, PhysicsMaterial{
+            .restitution = restitution_.load(std::memory_order_relaxed),
+            .friction    = friction_.load(std::memory_order_relaxed),
+        });
+
         PhysicsView view = scene_->physics_view();
         const u32 count = view.count;
         const f32 dt = kFixedStepDtSeconds;
         const f32 gravity = gravity_.load(std::memory_order_relaxed);
-        const f32 restitution = restitution_.load(std::memory_order_relaxed);
-        const f32 friction = friction_.load(std::memory_order_relaxed);
         const f32 linear_damping = linear_damping_.load(std::memory_order_relaxed);
         const f32 angular_damping = angular_damping_.load(std::memory_order_relaxed);
 
@@ -460,8 +477,24 @@ struct PhysicsSystem final {
         TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
 
         // Stage 4: solve constraints, damp, integrate, and publish transforms.
+        // Pre-compute per-manifold combined material properties.
+        // Body b == kInvalidBody (ground plane) uses material id 0 (the default material).
+        manifold_restitution_cache_.resize(manifold_count);
+        manifold_friction_cache_.resize(manifold_count);
+        for (u32 i = 0; i < manifold_count; ++i) {
+            const u32 a = manifolds_[i].a;
+            const u32 b = manifolds_[i].b;
+            const u32 mat_a = view.material[a].value;
+            const u32 mat_b = (b != kInvalidBody) ? view.material[b].value : 0u;
+            manifold_restitution_cache_[i] =
+                detail::combined_restitution(view.material_restitution[mat_a], view.material_restitution[mat_b]);
+            manifold_friction_cache_[i] =
+                detail::combined_friction(view.material_friction[mat_a], view.material_friction[mat_b]);
+        }
         solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia, view.orientation,
-                                 manifolds_, dt, restitution, friction);
+                                 manifolds_, dt,
+                                 std::span<const f32>{manifold_restitution_cache_},
+                                 std::span<const f32>{manifold_friction_cache_});
         solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
                                   std::span<const ContactManifold>{manifolds_});
         mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
@@ -502,6 +535,8 @@ struct PhysicsSystem final {
         manifolds_.reserve(manifold_reserve);
         next_manifolds_.reserve(manifold_reserve);
         manifold_lookup_.reserve(manifold_reserve);
+        manifold_restitution_cache_.reserve(manifold_reserve);
+        manifold_friction_cache_.reserve(manifold_reserve);
         ensure_broad_phase_workers_(count);
     }
 
