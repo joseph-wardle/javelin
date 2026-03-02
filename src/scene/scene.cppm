@@ -110,6 +110,8 @@ struct Scene final {
       sized to cover max MaterialId.value across both body references and authored
       physics_material records; all entries default to kDefaultPhysicsMaterial, then
       authored records overwrite their specific indices.
+      Material 0 may be overridden at runtime via set_physics_material(0u, ...) so that
+      global ImGui sliders (restitution/friction) tune the fallback material live.
     - transient runtime state: capacity_, count_, pose channel buffers/timestamps.
 
     Notes:
@@ -196,6 +198,18 @@ struct Scene final {
             .angular_velocity = std::span<const Vec3>{angular_velocity_.data(), count_},
             .poses = poses_,
         };
+    }
+
+    // Updates a physics material in the runtime pool by id.
+    // id=0 (the implicit default) is always present; ids beyond the pool size are ignored.
+    // Intended for live overrides: the global ImGui sliders call this each tick to push
+    // their current values into material 0, which any body with no explicit material uses.
+    void set_physics_material(const u32 id, const PhysicsMaterial material) noexcept {
+        if (id >= physics_material_restitution_.size()) {
+            return;
+        }
+        physics_material_restitution_[id] = material.restitution;
+        physics_material_friction_[id] = material.friction;
     }
 
     // Render reads this each frame for interpolation.

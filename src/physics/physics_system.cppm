@@ -20,6 +20,7 @@ import javelin.physics.publish;
 import javelin.physics.solve;
 import javelin.physics.types;
 import javelin.scene;
+import javelin.scene.physics_materials;
 import javelin.scene.physics_view;
 import javelin.scene.shapes;
 
@@ -365,6 +366,13 @@ struct PhysicsSystem final {
         }
 
         static_cast<void>(apply_pending_reset_());
+
+        // Material 0 is the fallback for any body with no explicit physics_material record.
+        // Push the live global slider values into it so ImGui edits take effect immediately.
+        scene_->set_physics_material(0u, PhysicsMaterial{
+            .restitution = restitution_.load(std::memory_order_relaxed),
+            .friction    = friction_.load(std::memory_order_relaxed),
+        });
 
         PhysicsView view = scene_->physics_view();
         const u32 count = view.count;
