@@ -252,11 +252,14 @@ struct PhysicsSystem final {
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
-    // Sleep velocity thresholds: a dynamic body must remain below BOTH for
-    // kSleepTickThreshold consecutive ticks before being marked asleep (step 5).
+    // Sleep parameters: a dynamic body is marked asleep once its sleep_timer
+    // reaches kSleepTickThreshold consecutive ticks with both speeds below threshold.
+    // Tick threshold: 60 ticks = 1 second at 60 Hz — long enough to exclude
+    //   transient slow moments (e.g., apex of a bouncing trajectory).
     // Linear:  0.05 m/s  — imperceptible drift at 60 Hz (~3 mm/s).
     // Angular: 0.10 rad/s — sub-perceptual rotation at 60 Hz (~6 deg/s).
     // Squared variants avoid a sqrt in the per-body hot loop.
+    static constexpr u32 kSleepTickThreshold            = 60u;
     static constexpr f32 kSleepLinearSpeedThreshold     = 0.05f;
     static constexpr f32 kSleepAngularSpeedThreshold    = 0.10f;
     static constexpr f32 kSleepLinearSpeedThresholdSq   = kSleepLinearSpeedThreshold  * kSleepLinearSpeedThreshold;
@@ -507,9 +510,11 @@ struct PhysicsSystem final {
         mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
         apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
-        // Update sleep timers after all velocity changes (solve + damping) are final.
+        // Update sleep timers after all velocity changes (solve + damping) are final,
+        // then mark any body whose timer has reached the threshold as asleep.
         update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count},
                              view.velocity, view.angular_velocity, view.inv_mass, view.sleep_timer);
+        mark_bodies_asleep_(count, view.sleep_timer, view.asleep);
         integrate_positions(view.position, view.velocity, view.inv_mass, dt);
         integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
         const bool publish_contact_debug = contact_debug_enabled_.load(std::memory_order_acquire);
@@ -613,6 +618,18 @@ struct PhysicsSystem final {
                 ++sleep_timer[i];
             } else {
                 sleep_timer[i] = 0u;
+            }
+        }
+    }
+
+    // Mark bodies asleep once their sleep timer has reached the threshold.
+    // Only transitions awake → asleep; wake-on-new-contact is handled by step 6.
+    // Static bodies are already excluded from update_sleep_timers_ so their
+    // timer stays zero and they are never marked asleep here.
+    void mark_bodies_asleep_(const u32 count, std::span<const u32> sleep_timer, std::span<u8> asleep) noexcept {
+        for (u32 i = 0; i < count; ++i) {
+            if (sleep_timer[i] >= kSleepTickThreshold) {
+                asleep[i] = 1u;
             }
         }
     }
