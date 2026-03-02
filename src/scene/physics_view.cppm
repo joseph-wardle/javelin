@@ -35,6 +35,12 @@ struct PhysicsView final {
     std::span<Quat> orientation;
     std::span<Vec3> angular_velocity;
 
+    // sleep state (read/write)
+    // sleep_timer: consecutive ticks this body's speed has been below the sleep threshold.
+    // asleep:      0 = awake, 1 = asleep; set once sleep_timer reaches the threshold.
+    std::span<u32> sleep_timer;
+    std::span<u8>  asleep;
+
     // presentation write access
     PoseChannel &poses;
 };

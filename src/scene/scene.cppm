@@ -183,6 +183,8 @@ struct Scene final {
             .velocity = std::span<Vec3>{velocity_.data(), count_},
             .orientation = std::span<Quat>{orientation_.data(), count_},
             .angular_velocity = std::span<Vec3>{angular_velocity_.data(), count_},
+            .sleep_timer = std::span<u32>{sleep_timer_.data(), count_},
+            .asleep = std::span<u8>{asleep_.data(), count_},
             .poses = poses_,
         };
     }
