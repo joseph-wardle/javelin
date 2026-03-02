@@ -14,6 +14,8 @@ struct PoseSnapshot final {
     std::span<const Vec3> curr_positions;
     std::span<const Quat> prev_orientations;
     std::span<const Quat> curr_orientations;
+    // curr buffer only — binary sleep state does not interpolate.
+    std::span<const u8> sleep_flags;
     u32 count{};
     u64 prev_time_ns{};
     u64 curr_time_ns{};
@@ -22,6 +24,7 @@ struct PoseSnapshot final {
 struct PoseWrite final {
     std::span<Vec3> positions;
     std::span<Quat> orientations;
+    std::span<u8> sleep_flags;
 };
 
 struct PoseSample final {
@@ -46,6 +49,7 @@ struct PoseChannel final {
 
         pos_ = std::move(other.pos_);
         rot_ = std::move(other.rot_);
+        sleep_ = std::move(other.sleep_);
         capacity_ = other.capacity_;
         count_ = other.count_;
         write_idx_ = other.write_idx_;
@@ -81,6 +85,9 @@ struct PoseChannel final {
         for (auto &b : rot_) {
             b.resize(capacity);
         }
+        for (auto &b : sleep_) {
+            b.resize(capacity);
+        }
         capacity_ = capacity;
     }
 
@@ -90,6 +97,7 @@ struct PoseChannel final {
         return PoseWrite{
             .positions = std::span<Vec3>{pos_[write_idx_].data(), count},
             .orientations = std::span<Quat>{rot_[write_idx_].data(), count},
+            .sleep_flags = std::span<u8>{sleep_[write_idx_].data(), count},
         };
     }
 
@@ -120,6 +128,7 @@ struct PoseChannel final {
             .curr_positions = std::span<const Vec3>{pos_[curr].data(), n},
             .prev_orientations = std::span<const Quat>{rot_[prev].data(), n},
             .curr_orientations = std::span<const Quat>{rot_[curr].data(), n},
+            .sleep_flags = std::span<const u8>{sleep_[curr].data(), n},
             .count = n,
             .prev_time_ns = prev_time,
             .curr_time_ns = curr_time,
@@ -129,6 +138,7 @@ struct PoseChannel final {
   private:
     std::array<std::vector<Vec3>, 3> pos_{};
     std::array<std::vector<Quat>, 3> rot_{};
+    std::array<std::vector<u8>, 3> sleep_{};
     u32 capacity_{0};
     u32 count_{0};
 

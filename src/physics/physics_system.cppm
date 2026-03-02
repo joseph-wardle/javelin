@@ -541,7 +541,7 @@ struct PhysicsSystem final {
             contact_debug_channel_.publish_empty(next_completed_step_id_());
         }
         contact_debug_enabled_last_tick_ = publish_contact_debug;
-        publish_poses(view.poses, view.position, view.orientation, count);
+        publish_poses(view.poses, view.position, view.orientation, view.asleep, count);
         return true;
     }
 

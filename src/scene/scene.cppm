@@ -229,6 +229,7 @@ struct Scene final {
         for (u32 i = 0; i < count_; ++i) {
             out.positions[i] = position_[i];
             out.orientations[i] = orientation_[i];
+            out.sleep_flags[i] = 0u; // bodies are always awake at load/reset
         }
         poses_.publish();
     }
