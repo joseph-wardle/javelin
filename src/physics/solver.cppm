@@ -251,11 +251,12 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
     ZoneScopedN("Physics solve");
 #ifndef NDEBUG
     if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
-        velocity.size() != inv_inertia_body.size() || velocity.size() != orientation.size()) {
+        velocity.size() != inv_inertia_body.size() || velocity.size() != orientation.size() ||
+        velocity.size() != asleep.size()) {
         log::error(physics,
-                   "Velocity solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} orientation={})",
+                   "Velocity solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} orientation={} asleep={})",
                    velocity.size(), angular_velocity.size(), inv_mass.size(), inv_inertia_body.size(),
-                   orientation.size());
+                   orientation.size(), asleep.size());
         std::terminate();
     }
 #endif
@@ -416,10 +417,10 @@ void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orienta
     ZoneScopedN("Physics solve positions");
 #ifndef NDEBUG
     if (position.size() != orientation.size() || position.size() != inv_mass.size() ||
-        position.size() != inv_inertia_body.size()) {
+        position.size() != inv_inertia_body.size() || position.size() != asleep.size()) {
         log::error(physics,
-                   "Position solver span size mismatch (position={} orientation={} inv_mass={} inv_inertia={})",
-                   position.size(), orientation.size(), inv_mass.size(), inv_inertia_body.size());
+                   "Position solver span size mismatch (position={} orientation={} inv_mass={} inv_inertia={} asleep={})",
+                   position.size(), orientation.size(), inv_mass.size(), inv_inertia_body.size(), asleep.size());
         std::terminate();
     }
 #endif

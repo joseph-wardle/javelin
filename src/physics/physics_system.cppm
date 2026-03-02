@@ -642,6 +642,11 @@ struct PhysicsSystem final {
     // a body resting on a static surface should stay asleep.
     // Clears both asleep_ and sleep_timer_ so the body must re-earn sleep from scratch.
     // Called BEFORE the solver so just-woken bodies are solved on the same tick.
+    //
+    // Note: wake propagation is single-pass and manifold-order-dependent.  In a chain
+    // A(sleep)–B(sleep)–C(awake), if the A–B manifold is processed before B–C, B is
+    // still asleep when A is checked, so A wakes one tick later than B.  This one-tick
+    // lag is imperceptible and avoids an O(manifolds × depth) graph traversal.
     void wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold> manifolds,
                                              std::span<const f32> inv_mass, std::span<u8> asleep,
                                              std::span<u32> sleep_timer) noexcept {
