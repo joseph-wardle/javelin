@@ -61,6 +61,7 @@ struct SolverPoint final {
     f32 tangent_mass_u{};
     f32 tangent_mass_v{};
     f32 velocity_bias{};
+    f32 friction_coeff{};   // combined per-contact friction (min of two body materials)
 };
 
 [[nodiscard]] inline bool has_body_b(const SolverPoint &point) noexcept { return point.b != kInvalidBody; }
@@ -192,13 +193,13 @@ inline void apply_impulse_at_point(const SolverPoint &point, const Vec3 impulse,
         apply_inv_inertia(inv_inertia_body[point.b], orientation[point.b], cross(point.r_b, impulse));
 }
 
-inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoint &point, const f32 friction_coeff,
+inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoint &point,
                                     std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
                                     std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
                                     std::span<const Quat> orientation) noexcept {
     point.normal_impulse = std::max(point.normal_impulse, 0.0f);
     point.tangent_impulse = project_and_clamp_tangent_impulse(point.tangent_impulse, solver_point.normal,
-                                                              point.normal_impulse, friction_coeff);
+                                                              point.normal_impulse, solver_point.friction_coeff);
     if (!has_warm_start_impulse(point)) {
         return;
     }
@@ -216,8 +217,8 @@ export namespace javelin {
 
 void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
                               std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
-                              std::span<ContactManifold> manifolds, const f32 dt, const f32 restitution,
-                              const f32 friction) {
+                              std::span<ContactManifold> manifolds, const f32 dt,
+                              std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction) {
     ZoneScopedN("Physics solve");
 #ifndef NDEBUG
     if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
@@ -235,8 +236,6 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
 
     const u32 body_count = static_cast<u32>(velocity.size());
     const f32 inv_dt = (dt > detail::kDtEps) ? (1.0f / dt) : 0.0f;
-    const f32 restitution_coeff = std::clamp(restitution, 0.0f, 1.0f);
-    const f32 friction_coeff = std::max(friction, 0.0f);
 
     usize point_count = 0;
     for (u32 manifold_index = 0; manifold_index < manifolds.size(); ++manifold_index) {
@@ -269,6 +268,8 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
         if (manifold.point_count == 0u) {
             continue;
         }
+        const f32 rest_coeff = std::clamp(manifold_restitution[manifold_index], 0.0f, 1.0f);
+        const f32 fric_coeff = std::max(manifold_friction[manifold_index], 0.0f);
         Vec3 normal = manifold.normal;
         if (!normal.try_normalize()) {
 #ifndef NDEBUG
@@ -294,6 +295,7 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
                 .tangent_v = tangent_v,
                 .r_a = rotate(orientation[manifold.a], point.local_anchor_a),
                 .r_b = (manifold.b != kInvalidBody) ? rotate(orientation[manifold.b], point.local_anchor_b) : Vec3{},
+                .friction_coeff = fric_coeff,
             };
 
             solver_point.normal_mass =
@@ -310,7 +312,7 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
 
             const Vec3 relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
             const f32 normal_velocity = dot(relative_velocity, normal);
-            const f32 restitution_velocity_bias = detail::restitution_bias(normal_velocity, restitution_coeff);
+            const f32 restitution_velocity_bias = detail::restitution_bias(normal_velocity, rest_coeff);
             solver_point.velocity_bias = std::max(clamped_penetration_bias, restitution_velocity_bias);
 
             solver_points.push_back(solver_point);
@@ -320,7 +322,7 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
     // Warm start: apply accumulated normal impulse plus projected/clamped world-space friction impulse.
     for (const detail::SolverPoint &solver_point : solver_points) {
         ContactPoint &point = manifolds[solver_point.manifold_index].points[solver_point.point_index];
-        detail::warm_start_solver_point(solver_point, point, friction_coeff, velocity, angular_velocity, inv_mass,
+        detail::warm_start_solver_point(solver_point, point, velocity, angular_velocity, inv_mass,
                                         inv_inertia_body, orientation);
     }
 
@@ -351,7 +353,7 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
             f32 new_tangent_v = old_tangent_v - solver_point.tangent_mass_v * vt_v;
 
             // Coulomb friction on the accumulated tangent impulse vector.
-            const f32 max_friction = friction_coeff * point.normal_impulse;
+            const f32 max_friction = solver_point.friction_coeff * point.normal_impulse;
             const f32 max_friction_sq = max_friction * max_friction;
             const f32 tangent_impulse_sq = new_tangent_u * new_tangent_u + new_tangent_v * new_tangent_v;
             if (tangent_impulse_sq > max_friction_sq && tangent_impulse_sq > detail::kMassEps * detail::kMassEps) {

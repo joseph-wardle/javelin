@@ -1,10 +1,18 @@
 export module javelin.core.time;
 
 import std;
+import javelin.core.types;
 
 export namespace javelin {
 
 using SteadyClock = std::chrono::steady_clock;
+
+namespace detail {
+[[nodiscard]] inline u64 now_ns() noexcept {
+    const auto now = SteadyClock::now().time_since_epoch();
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+}
+} // namespace detail
 
 [[nodiscard]] inline double to_us(const std::chrono::nanoseconds ns) noexcept {
     return static_cast<double>(ns.count()) / 1000.0;

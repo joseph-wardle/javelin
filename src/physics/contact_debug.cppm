@@ -7,12 +7,6 @@ import javelin.core.types;
 import javelin.math.vec3;
 
 export namespace javelin {
-namespace detail {
-[[nodiscard]] inline u64 now_ns() noexcept {
-    const auto now = SteadyClock::now().time_since_epoch();
-    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
-}
-} // namespace detail
 
 // Per-contact debug attributes in world space.
 // All spans in a snapshot are indexed in lockstep [0, count).

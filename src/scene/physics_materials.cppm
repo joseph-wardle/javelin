@@ -9,8 +9,8 @@ export namespace javelin {
 // - friction in [0, inf): Coulomb friction coefficient; higher values resist sliding more.
 // - material_id = 0 is the implicit default; kDefaultPhysicsMaterial is always present at
 //   index 0 of the material pool and its values match the physics system global defaults.
-// - the solver combines two body materials pair-wise using geometric mean for both
-//   restitution and friction (see solve.cppm: combined_restitution, combined_friction).
+// - the solver combines two body materials pair-wise: geometric mean for restitution,
+//   minimum for friction (see physics_system.cppm: detail::combined_restitution/friction).
 struct PhysicsMaterial final {
     f32 restitution{0.3f};
     f32 friction{0.2f};
