@@ -57,35 +57,6 @@ void apply_linear_damping(std::span<Vec3> velocity, std::span<const f32> inv_mas
     }
 }
 
-void settle_resting_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
-                                       std::span<const f32> inv_mass, std::span<const u8> in_contact,
-                                       const f32 linear_speed_threshold, const f32 angular_speed_threshold) noexcept {
-    ZoneScopedN("Physics settle resting velocities");
-#ifndef NDEBUG
-    if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
-        velocity.size() != in_contact.size()) {
-        std::terminate();
-    }
-#endif
-    if (linear_speed_threshold <= 0.0f || angular_speed_threshold <= 0.0f) {
-        return;
-    }
-
-    const f32 linear_speed_threshold_sq = linear_speed_threshold * linear_speed_threshold;
-    const f32 angular_speed_threshold_sq = angular_speed_threshold * angular_speed_threshold;
-    const u32 count = static_cast<u32>(velocity.size());
-    for (u32 i = 0; i < count; ++i) {
-        if (inv_mass[i] == 0.0f || in_contact[i] == 0u) {
-            continue;
-        }
-        if (velocity[i].length_sq() <= linear_speed_threshold_sq &&
-            angular_velocity[i].length_sq() <= angular_speed_threshold_sq) {
-            velocity[i] = Vec3{};
-            angular_velocity[i] = Vec3{};
-        }
-    }
-}
-
 void integrate_positions(std::span<Vec3> position, std::span<const Vec3> velocity, std::span<const f32> inv_mass,
                          const f32 dt) noexcept {
     ZoneScopedN("Physics integrate positions");

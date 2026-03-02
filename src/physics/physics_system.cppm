@@ -252,8 +252,6 @@ struct PhysicsSystem final {
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
-    static constexpr f32 kRestingLinearSpeedThreshold = 0.05f;
-    static constexpr f32 kRestingAngularSpeedThreshold = 0.1f;
     // Persistence thresholds in world-space meters.
     // A cached point is dropped when either threshold is exceeded.
     static constexpr f32 kPersistenceAnchorThreshold = 0.03f;
@@ -500,10 +498,6 @@ struct PhysicsSystem final {
         mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
         apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
-        settle_resting_contact_velocities(
-            view.velocity, view.angular_velocity, view.inv_mass,
-            std::span<const u8>{contact_activity_mask_.data(), static_cast<usize>(count)},
-            kRestingLinearSpeedThreshold, kRestingAngularSpeedThreshold);
         integrate_positions(view.position, view.velocity, view.inv_mass, dt);
         integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
         const bool publish_contact_debug = contact_debug_enabled_.load(std::memory_order_acquire);
