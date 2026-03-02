@@ -252,6 +252,15 @@ struct PhysicsSystem final {
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
+    // Sleep velocity thresholds: a dynamic body must remain below BOTH for
+    // kSleepTickThreshold consecutive ticks before being marked asleep (step 5).
+    // Linear:  0.05 m/s  — imperceptible drift at 60 Hz (~3 mm/s).
+    // Angular: 0.10 rad/s — sub-perceptual rotation at 60 Hz (~6 deg/s).
+    // Squared variants avoid a sqrt in the per-body hot loop.
+    static constexpr f32 kSleepLinearSpeedThreshold     = 0.05f;
+    static constexpr f32 kSleepAngularSpeedThreshold    = 0.10f;
+    static constexpr f32 kSleepLinearSpeedThresholdSq   = kSleepLinearSpeedThreshold  * kSleepLinearSpeedThreshold;
+    static constexpr f32 kSleepAngularSpeedThresholdSq  = kSleepAngularSpeedThreshold * kSleepAngularSpeedThreshold;
     // Persistence thresholds in world-space meters.
     // A cached point is dropped when either threshold is exceeded.
     static constexpr f32 kPersistenceAnchorThreshold = 0.03f;
@@ -498,6 +507,9 @@ struct PhysicsSystem final {
         mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
         apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
+        // Update sleep timers after all velocity changes (solve + damping) are final.
+        update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count},
+                             view.velocity, view.angular_velocity, view.inv_mass, view.sleep_timer);
         integrate_positions(view.position, view.velocity, view.inv_mass, dt);
         integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, dt);
         const bool publish_contact_debug = contact_debug_enabled_.load(std::memory_order_acquire);
@@ -578,6 +590,29 @@ struct PhysicsSystem final {
             contact_activity_mask_[manifold.a] = 1u;
             if (manifold.b != kInvalidBody) {
                 contact_activity_mask_[manifold.b] = 1u;
+            }
+        }
+    }
+
+    // Update per-body sleep timers using the velocity state for this tick.
+    // A body's timer increments when it is in contact AND both its linear and angular
+    // speeds are below the sleep thresholds; otherwise the timer resets to zero.
+    // The timer saturates implicitly: once step 5 sets asleep_[i], the body stops
+    // integrating so its speed stays at zero and the timer continues to hold.
+    // Static bodies (inv_mass == 0) are skipped: they are neither awake nor asleep.
+    void update_sleep_timers_(const u32 count, std::span<const u8> in_contact, std::span<const Vec3> velocity,
+                              std::span<const Vec3> angular_velocity, std::span<const f32> inv_mass,
+                              std::span<u32> sleep_timer) noexcept {
+        for (u32 i = 0; i < count; ++i) {
+            if (inv_mass[i] == 0.0f) {
+                continue;
+            }
+            const bool at_rest = velocity[i].length_sq()         <= kSleepLinearSpeedThresholdSq &&
+                                 angular_velocity[i].length_sq() <= kSleepAngularSpeedThresholdSq;
+            if (in_contact[i] != 0u && at_rest) {
+                ++sleep_timer[i];
+            } else {
+                sleep_timer[i] = 0u;
             }
         }
     }
