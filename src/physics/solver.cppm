@@ -18,17 +18,45 @@ namespace javelin::detail {
 //   then a positional correction pass for residual penetration.
 // - only dynamic bodies (inv_mass > 0) are moved by impulses/corrections.
 // 3D manifold stacks converge more slowly than single-point contacts.
+
+// Iteration counts:
+//   kSolverIterations         — velocity PGS passes per tick.  16 converges well
+//                               for moderate stacks (≤ ~8 bodies) at 60 Hz.
+//   kPositionSolverIterations — geometric correction passes after the velocity solve.
+//                               4 removes residual penetration without over-stiffening
+//                               resting contacts.
 inline constexpr u32 kSolverIterations = 16;
 inline constexpr u32 kPositionSolverIterations = 4;
+
+// Degenerate-contact guards: skip impulse or correction when effective mass or dt
+// is below these epsilons to avoid divide-by-zero and NaN propagation.
 inline constexpr f32 kMassEps = 1e-8f;
-inline constexpr f32 kDtEps = 1e-8f;
+inline constexpr f32 kDtEps   = 1e-8f;
+
+// Baumgarte stabilisation injects a closing velocity to resolve penetration:
+//   kPenetrationBiasFactor — fraction of penetration depth resolved per tick (20%).
+//                            Lower values are smoother but allow more sinking.
+//   kPenetrationSlop       — 5 mm of free penetration before bias activates;
+//                            suppresses micro-jitter on resting contacts.
+//   kMaxPenetrationBias    — cap on injected correction velocity (m/s); prevents
+//                            explosive separation from very deep interpenetrations.
 inline constexpr f32 kPenetrationBiasFactor = 0.2f;
-inline constexpr f32 kPenetrationSlop = 0.005f;
-inline constexpr f32 kMaxPenetrationBias = 2.0f;
-inline constexpr f32 kPositionSlop = 0.001f;
+inline constexpr f32 kPenetrationSlop       = 0.005f;
+inline constexpr f32 kMaxPenetrationBias    = 2.0f;
+
+// Position solver: one-shot geometric correction applied after the velocity pass.
+//   kPositionSlop             — 1 mm contacts are not corrected; avoids fighting
+//                               resting-contact noise with position moves.
+//   kPositionCorrectionFactor — 20% of residual error corrected per iteration;
+//                               under-relaxed to prevent oscillation.
+//   kAngularCorrectionEpsSq   — skip quaternion update when |Δθ|² < 1e-12
+//                               (i.e. |Δθ| < 1e-6 rad) to avoid normalising noise.
+inline constexpr f32 kPositionSlop            = 0.001f;
 inline constexpr f32 kPositionCorrectionFactor = 0.2f;
-inline constexpr f32 kAngularCorrectionEpsSq = 1e-12f;
-// Resting contacts should not bounce; restitution is applied only above this impact speed.
+inline constexpr f32 kAngularCorrectionEpsSq  = 1e-12f;
+
+// Restitution is only applied when the closing speed exceeds 1 m/s.
+// Below this threshold the contact is treated as resting and should not bounce.
 inline constexpr f32 kRestitutionVelocityThreshold = 1.0f;
 
 [[nodiscard]] inline Vec3 to_body_space(const Quat q, const Vec3 v) noexcept { return rotate(inverse_unit(q), v); }

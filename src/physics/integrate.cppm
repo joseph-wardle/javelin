@@ -10,6 +10,9 @@ import javelin.math.quat;
 import javelin.math.vec3;
 
 namespace javelin::detail {
+// Skip orientation integration when |angular_velocity|² < kAngularVelocityEpsSq
+// (i.e., |ω| < 1e-6 rad/s).  Avoids computing a near-identity quaternion step
+// that would be normalised away immediately and contributes only floating-point noise.
 inline constexpr f32 kAngularVelocityEpsSq = 1e-12f;
 }
 

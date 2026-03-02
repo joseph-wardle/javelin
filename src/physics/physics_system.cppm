@@ -254,11 +254,20 @@ struct PhysicsSystem final {
     static constexpr u32 kManifoldReserveFactor = 4;
     // Sleep parameters: a dynamic body is marked asleep once its sleep_timer
     // reaches kSleepTickThreshold consecutive ticks with both speeds below threshold.
-    // Tick threshold: 60 ticks = 1 second at 60 Hz — long enough to exclude
-    //   transient slow moments (e.g., apex of a bouncing trajectory).
-    // Linear:  0.05 m/s  — imperceptible drift at 60 Hz (~3 mm/s).
-    // Angular: 0.10 rad/s — sub-perceptual rotation at 60 Hz (~6 deg/s).
-    // Squared variants avoid a sqrt in the per-body hot loop.
+    //
+    // kSleepTickThreshold        — 60 ticks = 1 s at 60 Hz.  Long enough to exclude
+    //   transient slow moments (e.g., apex of a bouncing arc) without delaying
+    //   sleep detection on a genuinely settled stack.
+    //
+    // kSleepLinearSpeedThreshold  — 0.05 m/s (5 cm/s).  At 60 Hz a body moving at
+    //   this speed travels < 0.84 mm per tick — imperceptible at normal viewing
+    //   distances and within typical floating-point drift for metre-scale scenes.
+    //   Raise to sleep more aggressively; lower to require stricter stillness.
+    //
+    // kSleepAngularSpeedThreshold — 0.10 rad/s (≈ 5.7°/s).  The body rotates
+    //   < 0.10° per tick — sub-perceptual for any ordinary viewing distance.
+    //
+    // Squared variants pre-computed to avoid std::sqrt in the per-body hot loop.
     static constexpr u32 kSleepTickThreshold            = 60u;
     static constexpr f32 kSleepLinearSpeedThreshold     = 0.05f;
     static constexpr f32 kSleepAngularSpeedThreshold    = 0.10f;
