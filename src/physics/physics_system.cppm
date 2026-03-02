@@ -508,6 +508,13 @@ struct PhysicsSystem final {
         solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
                                   std::span<const ContactManifold>{manifolds_});
         mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
+        // Wake any sleeping body that has an active contact this tick.
+        // Must run before update_sleep_timers_ so the timer resets on the same tick.
+        // NOTE: the current tick's solve already ran; a just-woken body participates
+        // fully from the next tick. When step 7 adds integration skipping, this call
+        // must move to before solve_contact_velocities so the body is solved immediately.
+        wake_sleeping_bodies_with_contacts_(count, std::span<const u8>{contact_activity_mask_.data(), count},
+                                            view.asleep, view.sleep_timer);
         apply_linear_damping(view.velocity, view.inv_mass, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, angular_damping, dt);
         // Update sleep timers after all velocity changes (solve + damping) are final,
@@ -622,8 +629,21 @@ struct PhysicsSystem final {
         }
     }
 
+    // Wake sleeping bodies that have an active contact this tick.
+    // Clears both asleep_ and sleep_timer_ so the body must re-earn sleep from scratch.
+    // Static bodies are never asleep (their timer stays zero) so they are unaffected.
+    void wake_sleeping_bodies_with_contacts_(const u32 count, std::span<const u8> in_contact,
+                                             std::span<u8> asleep, std::span<u32> sleep_timer) noexcept {
+        for (u32 i = 0; i < count; ++i) {
+            if (asleep[i] != 0u && in_contact[i] != 0u) {
+                asleep[i] = 0u;
+                sleep_timer[i] = 0u;
+            }
+        }
+    }
+
     // Mark bodies asleep once their sleep timer has reached the threshold.
-    // Only transitions awake → asleep; wake-on-new-contact is handled by step 6.
+    // Only transitions awake → asleep; wake-on-new-contact is in wake_sleeping_bodies_with_contacts_.
     // Static bodies are already excluded from update_sleep_timers_ so their
     // timer stays zero and they are never marked asleep here.
     void mark_bodies_asleep_(const u32 count, std::span<const u32> sleep_timer, std::span<u8> asleep) noexcept {
