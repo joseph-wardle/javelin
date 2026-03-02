@@ -10,6 +10,7 @@ import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
+import javelin.physics.constraint_types;
 import javelin.scene.entity;
 import javelin.scene.physics_materials;
 import javelin.scene.physics_view;
@@ -115,6 +116,10 @@ struct Scene final {
     - sleep state: sleep_timer_ counts consecutive ticks a body has been below the
       sleep velocity threshold; asleep_ (u8, 0=awake/1=asleep) is set once the timer
       reaches the threshold. Both reset to 0 on restore_simulation_from_initial_().
+    - constraint definitions: constraints_ holds authored DistanceConstraints (body
+      pairs, local anchors, rest length, compliance). constraint_ids_ preserves the
+      authored string ids for round-trip scene-file export. Constraints reference
+      bodies by scene index and carry no simulation state of their own.
     - transient runtime state: capacity_, count_, pose channel buffers/timestamps.
 
     Notes:
@@ -185,6 +190,7 @@ struct Scene final {
             .angular_velocity = std::span<Vec3>{angular_velocity_.data(), count_},
             .sleep_timer = std::span<u32>{sleep_timer_.data(), count_},
             .asleep = std::span<u8>{asleep_.data(), count_},
+            .constraints = std::span<const DistanceConstraint>{constraints_.data(), constraints_.size()},
             .poses = poses_,
         };
     }
@@ -452,6 +458,11 @@ struct Scene final {
             out.physics_material_friction_[authored.id] = authored.material.friction;
         }
 
+        // Constraints are populated from scene file records (Step 3 extends the parser).
+        // Cleared here so Scene always starts in a consistent state.
+        out.constraints_.clear();
+        out.constraint_ids_.clear();
+
         out.snapshot_initial_state_from_sim_();
         out.publish_poses_from_sim();
         log::info(scene,
@@ -481,6 +492,12 @@ struct Scene final {
     // Authored logical ids (serialized values, preserved for round-trip export).
     std::vector<std::string> shape_ids_{};
     std::vector<std::string> body_ids_{};
+
+    // Authored constraints (serialized values, preserved for round-trip export).
+    // constraints_:     distance constraint definitions (body pairs, anchors, rest length, compliance).
+    // constraint_ids_:  per-constraint string ids, parallel to constraints_.
+    std::vector<DistanceConstraint> constraints_{};
+    std::vector<std::string> constraint_ids_{};
 
     // Authored motion intent (serialized values, preserved for round-trip export).
     std::vector<SceneFileBodyMotion> body_motion_{};

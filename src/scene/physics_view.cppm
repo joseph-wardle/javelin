@@ -5,6 +5,7 @@ import std;
 import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
+import javelin.physics.constraint_types;
 import javelin.scene.entity;
 import javelin.scene.shapes;
 import javelin.scene.pose_channel;
@@ -40,6 +41,10 @@ struct PhysicsView final {
     // asleep:      0 = awake, 1 = asleep; set once sleep_timer reaches the threshold.
     std::span<u32> sleep_timer;
     std::span<u8>  asleep;
+
+    // constraints (read)
+    // Authored distance constraints between body pairs; solver reads these each tick.
+    std::span<const DistanceConstraint> constraints;
 
     // presentation write access
     PoseChannel &poses;
