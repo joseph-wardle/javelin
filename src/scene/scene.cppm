@@ -11,6 +11,7 @@ import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
 import javelin.scene.entity;
+import javelin.scene.physics_materials;
 import javelin.scene.physics_view;
 import javelin.scene.pose_channel;
 import javelin.scene.render_view;
@@ -105,6 +106,9 @@ struct Scene final {
     - identity/liveness bookkeeping: generation_, alive_.
     - runtime shape indirection/cache: shape_kind_, shape_index_, shapes_.
     - physics derived properties: inv_mass_, inv_inertia_.
+    - physics material pool: physics_material_restitution_, physics_material_friction_;
+      sized to cover max MaterialId.value; all entries default to kDefaultPhysicsMaterial
+      until authored material records are added (see scene_file.cppm step 3).
     - transient runtime state: capacity_, count_, pose channel buffers/timestamps.
 
     Notes:
@@ -131,6 +135,10 @@ struct Scene final {
         body_ids_.resize(capacity_);
         body_motion_.resize(capacity_, SceneFileBodyMotion::dynamic_body);
         material_.resize(capacity_);
+        // Physics material pool always starts with the default at index 0.
+        // load_scene_from_disk expands it to cover all authored material indices.
+        physics_material_restitution_.assign(1u, kDefaultPhysicsMaterial.restitution);
+        physics_material_friction_.assign(1u, kDefaultPhysicsMaterial.friction);
         mesh_.resize(capacity_);
         inv_mass_.resize(capacity_, 1.0f);
         inv_inertia_.resize(capacity_);
@@ -157,6 +165,8 @@ struct Scene final {
             .shape_index = std::span<const u32>{shape_index_.data(), count_},
             .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
             .material = std::span<const MaterialId>{material_.data(), count_},
+            .material_restitution = std::span<const f32>{physics_material_restitution_.data(), physics_material_restitution_.size()},
+            .material_friction = std::span<const f32>{physics_material_friction_.data(), physics_material_friction_.size()},
             .mesh = std::span<const MeshId>{mesh_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
             .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
@@ -375,6 +385,16 @@ struct Scene final {
             }
         }
 
+        // Size the material pool to cover every MaterialId referenced by any body.
+        // All entries default to kDefaultPhysicsMaterial until authored material records
+        // are added (scene file step 3). Pool index 0 is always the implicit default.
+        u32 max_material_value = 0u;
+        for (u32 idx = 0; idx < out.count_; ++idx) {
+            max_material_value = std::max(max_material_value, out.material_[idx].value);
+        }
+        out.physics_material_restitution_.assign(max_material_value + 1u, kDefaultPhysicsMaterial.restitution);
+        out.physics_material_friction_.assign(max_material_value + 1u, kDefaultPhysicsMaterial.friction);
+
         out.snapshot_initial_state_from_sim_();
         out.publish_poses_from_sim();
         log::info(scene,
@@ -409,8 +429,14 @@ struct Scene final {
     std::vector<SceneFileBodyMotion> body_motion_{};
 
     // Authored render/material references (serialized values).
-    std::vector<MaterialId> material_{};
+    std::vector<MaterialId> material_{};   // per-body index into physics material pool
     std::vector<MeshId> mesh_{};
+
+    // Physics material pool: indexed by MaterialId.value.
+    // Always contains kDefaultPhysicsMaterial at index 0; sized to cover the
+    // maximum MaterialId.value used by any body in the scene.
+    std::vector<f32> physics_material_restitution_{};
+    std::vector<f32> physics_material_friction_{};
 
     // Physics derived values (recomputed during load/build).
     std::vector<f32> inv_mass_{};
