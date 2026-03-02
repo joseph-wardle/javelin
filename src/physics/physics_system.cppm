@@ -526,6 +526,13 @@ struct PhysicsSystem final {
                                   std::span<const u8>{view.asleep});
         apply_linear_damping(view.velocity, view.inv_mass, view.asleep, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, view.asleep, angular_damping, dt);
+        // Clamp near-zero velocities on awake resting contacts to zero.
+        // Kills PGS residuals that would otherwise accumulate and destabilise tall stacks
+        // during the settling window (ticks 1..kSleepTickThreshold).
+        clamp_resting_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass,
+                                         std::span<const u8>{contact_activity_mask_.data(), count},
+                                         view.asleep,
+                                         kSleepLinearSpeedThresholdSq, kSleepAngularSpeedThresholdSq);
         // Update sleep timers after all velocity changes (solve + damping) are final,
         // then mark any body whose timer has reached the threshold as asleep.
         update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count},

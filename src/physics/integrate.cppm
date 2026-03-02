@@ -109,6 +109,42 @@ void integrate_orientations(std::span<Quat> orientation, std::span<const Vec3> a
     }
 }
 
+// Clamps near-zero velocities to zero for awake dynamic bodies that are in contact.
+// Called every tick after the solver and damping, before integration.
+//
+// Purpose: the PGS velocity solver leaves small residual velocities on resting contacts
+// (insufficient iterations to reach machine-epsilon convergence for tall stacks).
+// Without this clamp those residuals accumulate across ticks, perturb contact geometry,
+// and eventually topple stacks — well before the sleep timer fires.
+//
+// This is complementary to the sleep system: clamping stabilises the settling phase
+// (ticks 1–N), sleeping eliminates computation once the stack is fully settled.
+// Both use the same speed thresholds so a body eligible for clamping is also eligible
+// for sleep, ensuring the two mechanisms agree on what "at rest" means.
+void clamp_resting_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
+                                      std::span<const f32> inv_mass, std::span<const u8> in_contact,
+                                      std::span<const u8> asleep, const f32 linear_speed_sq_threshold,
+                                      const f32 angular_speed_sq_threshold) noexcept {
+    ZoneScopedN("Physics clamp resting velocities");
+#ifndef NDEBUG
+    if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
+        velocity.size() != in_contact.size() || velocity.size() != asleep.size()) {
+        std::terminate();
+    }
+#endif
+    const u32 count = static_cast<u32>(velocity.size());
+    for (u32 i = 0; i < count; ++i) {
+        if (inv_mass[i] == 0.0f || in_contact[i] == 0u || asleep[i] != 0u) {
+            continue;
+        }
+        if (velocity[i].length_sq() <= linear_speed_sq_threshold &&
+            angular_velocity[i].length_sq() <= angular_speed_sq_threshold) {
+            velocity[i] = Vec3{};
+            angular_velocity[i] = Vec3{};
+        }
+    }
+}
+
 void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
                            std::span<const u8> asleep, const f32 damping, const f32 dt) noexcept {
     ZoneScopedN("Physics angular damping");
