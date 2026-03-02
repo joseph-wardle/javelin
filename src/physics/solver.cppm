@@ -218,7 +218,8 @@ export namespace javelin {
 void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
                               std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
                               std::span<ContactManifold> manifolds, const f32 dt,
-                              std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction) {
+                              std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction,
+                              std::span<const u8> asleep) {
     ZoneScopedN("Physics solve");
 #ifndef NDEBUG
     if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
@@ -263,9 +264,15 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
     solver_points.reserve(point_count);
 
     // Pre-step: world anchors, tangent basis, effective masses, and velocity bias.
+    // Skip manifolds where both participants are asleep: a body is only still asleep
+    // if all its contacts are ground/static/other-sleeping (wake_sleeping_bodies_with_contacts_
+    // already cleared asleep for any body touched by an awake dynamic neighbour).
     for (u32 manifold_index = 0; manifold_index < manifolds.size(); ++manifold_index) {
         ContactManifold &manifold = manifolds[manifold_index];
         if (manifold.point_count == 0u) {
+            continue;
+        }
+        if (asleep[manifold.a] != 0u) {
             continue;
         }
         const f32 rest_coeff = std::clamp(manifold_restitution[manifold_index], 0.0f, 1.0f);
@@ -376,7 +383,8 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
 }
 
 void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orientation, std::span<const f32> inv_mass,
-                               std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds) {
+                               std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds,
+                               std::span<const u8> asleep) {
     ZoneScopedN("Physics solve positions");
 #ifndef NDEBUG
     if (position.size() != orientation.size() || position.size() != inv_mass.size() ||
@@ -397,6 +405,9 @@ void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orienta
 
         for (const ContactManifold &manifold : manifolds) {
             if (manifold.point_count == 0u) {
+                continue;
+            }
+            if (asleep[manifold.a] != 0u) {
                 continue;
             }
 #ifndef NDEBUG

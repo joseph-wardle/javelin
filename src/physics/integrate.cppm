@@ -18,29 +18,30 @@ export namespace javelin {
 // Integration contract:
 // - all spans in each function address the same body index domain.
 // - inv_mass[i] == 0 marks static/kinematic bodies that are skipped.
+// - asleep[i] != 0 marks sleeping bodies that are skipped (functions that accept asleep).
 // - loops are single-pass, contiguous, and allocation-free.
-void integrate_gravity_velocity(std::span<Vec3> velocity, std::span<const f32> inv_mass, const f32 gravity,
-                                const f32 dt) noexcept {
+void integrate_gravity_velocity(std::span<Vec3> velocity, std::span<const f32> inv_mass,
+                                std::span<const u8> asleep, const f32 gravity, const f32 dt) noexcept {
     ZoneScopedN("Physics accumulate forces");
 #ifndef NDEBUG
-    if (velocity.size() != inv_mass.size()) {
+    if (velocity.size() != inv_mass.size() || velocity.size() != asleep.size()) {
         std::terminate();
     }
 #endif
     const u32 count = static_cast<u32>(velocity.size());
     for (u32 i = 0; i < count; ++i) {
-        if (inv_mass[i] == 0.0f) {
+        if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
             continue;
         }
         velocity[i].y += gravity * dt;
     }
 }
 
-void apply_linear_damping(std::span<Vec3> velocity, std::span<const f32> inv_mass, const f32 damping,
-                          const f32 dt) noexcept {
+void apply_linear_damping(std::span<Vec3> velocity, std::span<const f32> inv_mass, std::span<const u8> asleep,
+                          const f32 damping, const f32 dt) noexcept {
     ZoneScopedN("Physics linear damping");
 #ifndef NDEBUG
-    if (velocity.size() != inv_mass.size()) {
+    if (velocity.size() != inv_mass.size() || velocity.size() != asleep.size()) {
         std::terminate();
     }
 #endif
@@ -50,7 +51,7 @@ void apply_linear_damping(std::span<Vec3> velocity, std::span<const f32> inv_mas
     const f32 scale = std::clamp(1.0f - damping * dt, 0.0f, 1.0f);
     const u32 count = static_cast<u32>(velocity.size());
     for (u32 i = 0; i < count; ++i) {
-        if (inv_mass[i] == 0.0f) {
+        if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
             continue;
         }
         velocity[i] *= scale;
@@ -58,16 +59,17 @@ void apply_linear_damping(std::span<Vec3> velocity, std::span<const f32> inv_mas
 }
 
 void integrate_positions(std::span<Vec3> position, std::span<const Vec3> velocity, std::span<const f32> inv_mass,
-                         const f32 dt) noexcept {
+                         std::span<const u8> asleep, const f32 dt) noexcept {
     ZoneScopedN("Physics integrate positions");
 #ifndef NDEBUG
-    if (position.size() != velocity.size() || position.size() != inv_mass.size()) {
+    if (position.size() != velocity.size() || position.size() != inv_mass.size() ||
+        position.size() != asleep.size()) {
         std::terminate();
     }
 #endif
     const u32 count = static_cast<u32>(position.size());
     for (u32 i = 0; i < count; ++i) {
-        if (inv_mass[i] == 0.0f) {
+        if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
             continue;
         }
         position[i] += velocity[i] * dt;
@@ -75,16 +77,17 @@ void integrate_positions(std::span<Vec3> position, std::span<const Vec3> velocit
 }
 
 void integrate_orientations(std::span<Quat> orientation, std::span<const Vec3> angular_velocity,
-                            std::span<const f32> inv_mass, const f32 dt) noexcept {
+                            std::span<const f32> inv_mass, std::span<const u8> asleep, const f32 dt) noexcept {
     ZoneScopedN("Physics integrate orientations");
 #ifndef NDEBUG
-    if (orientation.size() != angular_velocity.size() || orientation.size() != inv_mass.size()) {
+    if (orientation.size() != angular_velocity.size() || orientation.size() != inv_mass.size() ||
+        orientation.size() != asleep.size()) {
         std::terminate();
     }
 #endif
     const u32 count = static_cast<u32>(orientation.size());
     for (u32 i = 0; i < count; ++i) {
-        if (inv_mass[i] == 0.0f) {
+        if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
             continue;
         }
         const Vec3 angular_velocity_world = angular_velocity[i];
@@ -103,11 +106,11 @@ void integrate_orientations(std::span<Quat> orientation, std::span<const Vec3> a
     }
 }
 
-void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32> inv_mass, const f32 damping,
-                           const f32 dt) noexcept {
+void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                           std::span<const u8> asleep, const f32 damping, const f32 dt) noexcept {
     ZoneScopedN("Physics angular damping");
 #ifndef NDEBUG
-    if (angular_velocity.size() != inv_mass.size()) {
+    if (angular_velocity.size() != inv_mass.size() || angular_velocity.size() != asleep.size()) {
         std::terminate();
     }
 #endif
@@ -117,7 +120,7 @@ void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32
     const f32 scale = std::clamp(1.0f - damping * dt, 0.0f, 1.0f);
     const u32 count = static_cast<u32>(angular_velocity.size());
     for (u32 i = 0; i < count; ++i) {
-        if (inv_mass[i] == 0.0f) {
+        if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
             continue;
         }
         angular_velocity[i] *= scale;
