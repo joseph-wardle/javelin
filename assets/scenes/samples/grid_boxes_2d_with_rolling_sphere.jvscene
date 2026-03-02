@@ -3,6 +3,15 @@
 # scene: static 2d box grid floor with a rolling dynamic sphere
 scene version=1 units=m
 
+# physics_materials
+# id=1  rubber: high bounce, high grip
+# id=2  ice:    low bounce, very low friction — tiles feel almost frictionless
+# id=3  wood:   low bounce, high friction — tiles resist sliding strongly
+# tiles cycle through materials 0-3 every 4 columns, producing four distinct friction zones
+physics_material id=1 restitution=0.8 friction=0.8
+physics_material id=2 restitution=0.1 friction=0.05
+physics_material id=3 restitution=0.3 friction=0.7
+
 # shapes
 shape id=floor_tile kind=box hx=0.5 hy=0.1 hz=0.5
 shape id=roller kind=sphere r=0.35
