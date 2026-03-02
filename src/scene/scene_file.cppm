@@ -24,7 +24,7 @@ Scene file text schema (v1, .jvscene):
 - One record per line, key=value pairs, '#' comments.
 - Core records:
   - scene version=<u32> units=m
-  - physics_material id=<u32> restitution=<f32> friction=<f32>
+  - physics_material id=<u32> restitution=<f32> friction=<f32> [density=<f32>]
   - shape id=<id> kind=sphere r=<f32>
   - shape id=<id> kind=box hx=<f32> hy=<f32> hz=<f32>
   - body id=<id> shape=<shape_id> motion=<dynamic|static> material=<u32>
@@ -136,9 +136,16 @@ struct SceneFileBody final {
 
 // A physics_material record as authored in the scene file.
 // id is the MaterialId.value shared with body records' material=<u32> field.
+// density (kg/m³, default=1.0) scales the mass computed from shape volume at load time.
+// It is a load-time property only: changing density at runtime has no effect until the
+// scene is reloaded. It is intentionally not part of PhysicsMaterial so that the per-tick
+// set_physics_material() override path (used by the ImGui restitution/friction sliders)
+// cannot accidentally reset an authored density.
+inline constexpr f32 kDefaultMaterialDensity = 1.0f;
 struct SceneFilePhysicsMaterial final {
     u32 id{};
     PhysicsMaterial material{};
+    f32 density{kDefaultMaterialDensity};
 };
 
 // A distance constraint record as authored in the scene file.
@@ -866,6 +873,7 @@ parse_physics_material_record(const std::string_view payload) {
     bool has_id = false;
     bool has_restitution = false;
     bool has_friction = false;
+    bool has_density = false;
 
     TokenCursor cursor{payload};
     while (const auto token_opt = cursor.next()) {
@@ -915,6 +923,21 @@ parse_physics_material_record(const std::string_view payload) {
                 return std::unexpected(std::format("Invalid friction {} (expected >= 0)", *parsed));
             }
             out.material.friction = *parsed;
+            continue;
+        }
+        if (kv->key == "density") {
+            if (has_density) {
+                return std::unexpected("Duplicate key 'density'");
+            }
+            has_density = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            if (!std::isfinite(*parsed) || *parsed <= 0.0f) {
+                return std::unexpected(std::format("Invalid density {} (expected finite > 0)", *parsed));
+            }
+            out.density = *parsed;
             continue;
         }
 
@@ -1152,6 +1175,10 @@ struct SceneFile final {
             if (!std::isfinite(mat.material.friction) || mat.material.friction < 0.0f) {
                 return error(std::format("physics_material id={} has invalid friction {} (expected >= 0)", mat.id,
                                          mat.material.friction));
+            }
+            if (!std::isfinite(mat.density) || mat.density <= 0.0f) {
+                return error(std::format("physics_material id={} has invalid density {} (expected finite > 0)", mat.id,
+                                         mat.density));
             }
         }
 
@@ -1499,6 +1526,9 @@ struct SceneFile final {
                 detail::append_key_value_u32(line, "id", mat.id);
                 detail::append_key_value_f32(line, "restitution", mat.material.restitution);
                 detail::append_key_value_f32(line, "friction", mat.material.friction);
+                if (mat.density != kDefaultMaterialDensity) {
+                    detail::append_key_value_f32(line, "density", mat.density);
+                }
                 out_text.append(line);
                 out_text.push_back('\n');
             }

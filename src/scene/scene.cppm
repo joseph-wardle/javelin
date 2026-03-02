@@ -21,17 +21,16 @@ import javelin.scene.shapes;
 
 export namespace javelin {
 namespace detail {
-[[nodiscard]] inline f32 dynamic_inv_mass_for_sphere(const f32 radius) noexcept {
-    // Scene-file contract (v1): dynamic sphere mass uses unit density and r^3
-    // proportional volume.
-    const f32 mass = radius * radius * radius;
+[[nodiscard]] inline f32 dynamic_inv_mass_for_sphere(const f32 radius, const f32 density) noexcept {
+    // mass = density * r^3 (r^3 is proportional to the true sphere volume 4/3*pi*r^3;
+    // the constant factor is absorbed into the unit system and kept consistent across shapes).
+    const f32 mass = density * radius * radius * radius;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
-[[nodiscard]] inline f32 dynamic_inv_mass_for_box(const Vec3 half_extents) noexcept {
-    // Scene-file contract (v1): dynamic box mass uses unit density and full box
-    // volume.
-    const f32 mass = 8.0f * half_extents.x * half_extents.y * half_extents.z;
+[[nodiscard]] inline f32 dynamic_inv_mass_for_box(const Vec3 half_extents, const f32 density) noexcept {
+    // mass = density * full box volume = density * 8 * hx * hy * hz.
+    const f32 mass = density * 8.0f * half_extents.x * half_extents.y * half_extents.z;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
@@ -79,15 +78,16 @@ namespace detail {
     return Vec3{};
 }
 
-[[nodiscard]] inline f32 shape_inv_mass(const SceneFileBodyMotion motion, const ShapeData &shape) noexcept {
+[[nodiscard]] inline f32 shape_inv_mass(const SceneFileBodyMotion motion, const ShapeData &shape,
+                                       const f32 density) noexcept {
     if (motion == SceneFileBodyMotion::static_body) {
         return 0.0f;
     }
     switch (shape.kind) {
     case ShapeKind::sphere:
-        return dynamic_inv_mass_for_sphere(shape_sphere(shape).radius);
+        return dynamic_inv_mass_for_sphere(shape_sphere(shape).radius, density);
     case ShapeKind::box:
-        return dynamic_inv_mass_for_box(shape_box(shape).half_extents);
+        return dynamic_inv_mass_for_box(shape_box(shape).half_extents, density);
     }
     return 0.0f;
 }
@@ -214,10 +214,12 @@ struct Scene final {
         };
     }
 
-    // Updates a physics material in the runtime pool by id.
+    // Updates restitution and friction for a physics material in the runtime pool by id.
     // id=0 (the implicit default) is always present; ids beyond the pool size are ignored.
     // Intended for live overrides: the global ImGui sliders call this each tick to push
     // their current values into material 0, which any body with no explicit material uses.
+    // density is intentionally NOT updated here: it is baked into inv_mass_ at load time
+    // and has no effect on body masses at runtime.
     void set_physics_material(const u32 id, const PhysicsMaterial material) noexcept {
         if (id >= physics_material_restitution_.size()) {
             return;
@@ -263,27 +265,32 @@ struct Scene final {
         out.clear();
 
         // Export any physics_material pool entries that differ from the default.
-        // Material id=0 equal to kDefaultPhysicsMaterial is implicit and skipped.
+        // Material id=0 equal to kDefaultPhysicsMaterial with default density is implicit and skipped.
+        const usize pool_size = physics_material_restitution_.size();
+        auto is_default_material = [&](const u32 i) {
+            const f32 density = (i < physics_material_density_.size()) ? physics_material_density_[i]
+                                                                        : kDefaultMaterialDensity;
+            return physics_material_restitution_[i] == kDefaultPhysicsMaterial.restitution &&
+                   physics_material_friction_[i]    == kDefaultPhysicsMaterial.friction    &&
+                   density                          == kDefaultMaterialDensity;
+        };
         u32 authored_material_count = 0u;
-        for (u32 i = 0; i < physics_material_restitution_.size(); ++i) {
-            if (physics_material_restitution_[i] != kDefaultPhysicsMaterial.restitution ||
-                physics_material_friction_[i] != kDefaultPhysicsMaterial.friction) {
-                ++authored_material_count;
-            }
+        for (u32 i = 0; i < pool_size; ++i) {
+            if (!is_default_material(i)) { ++authored_material_count; }
         }
         out.reserve(static_cast<u32>(shapes_.size()), count_, authored_material_count,
                     static_cast<u32>(constraints_.size()));
-        for (u32 i = 0; i < physics_material_restitution_.size(); ++i) {
-            if (physics_material_restitution_[i] == kDefaultPhysicsMaterial.restitution &&
-                physics_material_friction_[i] == kDefaultPhysicsMaterial.friction) {
-                continue;
-            }
+        for (u32 i = 0; i < pool_size; ++i) {
+            if (is_default_material(i)) { continue; }
+            const f32 density = (i < physics_material_density_.size()) ? physics_material_density_[i]
+                                                                        : kDefaultMaterialDensity;
             out.physics_materials.push_back(SceneFilePhysicsMaterial{
-                .id = i,
+                .id      = i,
                 .material = PhysicsMaterial{
                     .restitution = physics_material_restitution_[i],
                     .friction    = physics_material_friction_[i],
                 },
+                .density = density,
             });
         }
 
@@ -427,6 +434,16 @@ struct Scene final {
             shape_lookup.emplace(shape.id, shape_index);
         }
 
+        // Build a density lookup keyed by MaterialId.value before the body loop.
+        // Most scenes have few materials so a small lambda with linear search is sufficient.
+        // Unlisted materials default to kDefaultMaterialDensity (1.0).
+        auto material_density = [&](const u32 mat_id) -> f32 {
+            for (const SceneFilePhysicsMaterial &mat : in.physics_materials) {
+                if (mat.id == mat_id) { return mat.density; }
+            }
+            return kDefaultMaterialDensity;
+        };
+
         for (u32 idx = 0; idx < out.count_; ++idx) {
             const SceneFileBody &body = in.bodies[idx];
             const auto shape_it = shape_lookup.find(body.shape_id);
@@ -443,7 +460,8 @@ struct Scene final {
             out.shape_kind_[idx] = kind;
             out.shape_index_[idx] = shape_index;
 
-            const f32 inv_mass = detail::shape_inv_mass(body.motion, shape);
+            const f32 density = material_density(body.material.value);
+            const f32 inv_mass = detail::shape_inv_mass(body.motion, shape, density);
             out.inv_mass_[idx] = inv_mass;
             out.inv_inertia_[idx] = detail::shape_inv_inertia(kind, shape, inv_mass);
 
@@ -483,9 +501,11 @@ struct Scene final {
         }
         out.physics_material_restitution_.assign(max_material_value + 1u, kDefaultPhysicsMaterial.restitution);
         out.physics_material_friction_.assign(max_material_value + 1u, kDefaultPhysicsMaterial.friction);
+        out.physics_material_density_.assign(max_material_value + 1u, kDefaultMaterialDensity);
         for (const SceneFilePhysicsMaterial &authored : in.physics_materials) {
             out.physics_material_restitution_[authored.id] = authored.material.restitution;
             out.physics_material_friction_[authored.id] = authored.material.friction;
+            out.physics_material_density_[authored.id]  = authored.density;
         }
 
         // Resolve constraint body string ids to scene body indices.
@@ -569,8 +589,11 @@ struct Scene final {
     // Physics material pool: indexed by MaterialId.value.
     // Always contains kDefaultPhysicsMaterial at index 0; sized to cover the
     // maximum MaterialId.value used by any body in the scene.
+    // restitution and friction are live-overrideable per tick via set_physics_material().
+    // density is load-time only; it is stored here solely for the save round-trip.
     std::vector<f32> physics_material_restitution_{};
     std::vector<f32> physics_material_friction_{};
+    std::vector<f32> physics_material_density_{};
 
     // Physics derived values (recomputed during load/build).
     std::vector<f32> inv_mass_{};
