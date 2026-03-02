@@ -12,18 +12,19 @@ import javelin.scene.pose_channel;
 
 export namespace javelin {
 
-// Copies authoritative physics transforms into the pose channel once per tick.
+// Copies authoritative physics transforms and sleep state into the pose channel once per tick.
 // Contract:
 // - count matches the active body count for this frame.
 // - caller provides spans sized for at least count entries.
 // - publish() is called exactly once after writing the full frame.
 void publish_poses(PoseChannel &poses, std::span<const Vec3> position, std::span<const Quat> orientation,
-                   const u32 count) noexcept {
+                   std::span<const u8> asleep, const u32 count) noexcept {
     ZoneScopedN("Physics publish poses");
     auto out = poses.write_pose(count);
     for (u32 i = 0; i < count; ++i) {
         out.positions[i] = position[i];
         out.orientations[i] = orientation[i];
+        out.sleep_flags[i] = asleep[i];
     }
     poses.publish();
 }

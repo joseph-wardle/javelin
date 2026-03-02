@@ -112,6 +112,9 @@ struct Scene final {
       authored records overwrite their specific indices.
       Material 0 may be overridden at runtime via set_physics_material(0u, ...) so that
       global ImGui sliders (restitution/friction) tune the fallback material live.
+    - sleep state: sleep_timer_ counts consecutive ticks a body has been below the
+      sleep velocity threshold; asleep_ (u8, 0=awake/1=asleep) is set once the timer
+      reaches the threshold. Both reset to 0 on restore_simulation_from_initial_().
     - transient runtime state: capacity_, count_, pose channel buffers/timestamps.
 
     Notes:
@@ -151,6 +154,9 @@ struct Scene final {
         velocity_.resize(capacity_);
         orientation_.resize(capacity_);
         angular_velocity_.resize(capacity_);
+        // sleep state: zeroed so all bodies start awake on first load.
+        sleep_timer_.resize(capacity_, 0u);
+        asleep_.resize(capacity_, 0u);
         initial_position_.resize(capacity_);
         initial_velocity_.resize(capacity_);
         initial_orientation_.resize(capacity_);
@@ -177,6 +183,8 @@ struct Scene final {
             .velocity = std::span<Vec3>{velocity_.data(), count_},
             .orientation = std::span<Quat>{orientation_.data(), count_},
             .angular_velocity = std::span<Vec3>{angular_velocity_.data(), count_},
+            .sleep_timer = std::span<u32>{sleep_timer_.data(), count_},
+            .asleep = std::span<u8>{asleep_.data(), count_},
             .poses = poses_,
         };
     }
@@ -221,6 +229,7 @@ struct Scene final {
         for (u32 i = 0; i < count_; ++i) {
             out.positions[i] = position_[i];
             out.orientations[i] = orientation_[i];
+            out.sleep_flags[i] = 0u; // bodies are always awake at load/reset
         }
         poses_.publish();
     }
@@ -340,6 +349,9 @@ struct Scene final {
             velocity_[i] = initial_velocity_[i];
             orientation_[i] = initial_orientation_[i];
             angular_velocity_[i] = initial_angular_velocity_[i];
+            // All bodies wake on reset: any accumulated sleep state is stale.
+            sleep_timer_[i] = 0u;
+            asleep_[i] = 0u;
         }
     }
 
@@ -492,6 +504,13 @@ struct Scene final {
     std::vector<Vec3> velocity_{};
     std::vector<Quat> orientation_{};
     std::vector<Vec3> angular_velocity_{};
+
+    // Sleep state (physics-owned; reset to 0 on restore_simulation_from_initial_).
+    // sleep_timer_: consecutive ticks the body's speed has stayed below the sleep threshold.
+    // asleep_:      0 = awake, 1 = asleep; set once sleep_timer_ reaches the threshold.
+    std::vector<u32> sleep_timer_{};
+    std::vector<u8>  asleep_{};
+
     std::vector<Vec3> initial_position_{};
     std::vector<Vec3> initial_velocity_{};
     std::vector<Quat> initial_orientation_{};

@@ -18,17 +18,45 @@ namespace javelin::detail {
 //   then a positional correction pass for residual penetration.
 // - only dynamic bodies (inv_mass > 0) are moved by impulses/corrections.
 // 3D manifold stacks converge more slowly than single-point contacts.
+
+// Iteration counts:
+//   kSolverIterations         — velocity PGS passes per tick.  16 converges well
+//                               for moderate stacks (≤ ~8 bodies) at 60 Hz.
+//   kPositionSolverIterations — geometric correction passes after the velocity solve.
+//                               4 removes residual penetration without over-stiffening
+//                               resting contacts.
 inline constexpr u32 kSolverIterations = 16;
 inline constexpr u32 kPositionSolverIterations = 4;
+
+// Degenerate-contact guards: skip impulse or correction when effective mass or dt
+// is below these epsilons to avoid divide-by-zero and NaN propagation.
 inline constexpr f32 kMassEps = 1e-8f;
-inline constexpr f32 kDtEps = 1e-8f;
+inline constexpr f32 kDtEps   = 1e-8f;
+
+// Baumgarte stabilisation injects a closing velocity to resolve penetration:
+//   kPenetrationBiasFactor — fraction of penetration depth resolved per tick (20%).
+//                            Lower values are smoother but allow more sinking.
+//   kPenetrationSlop       — 5 mm of free penetration before bias activates;
+//                            suppresses micro-jitter on resting contacts.
+//   kMaxPenetrationBias    — cap on injected correction velocity (m/s); prevents
+//                            explosive separation from very deep interpenetrations.
 inline constexpr f32 kPenetrationBiasFactor = 0.2f;
-inline constexpr f32 kPenetrationSlop = 0.005f;
-inline constexpr f32 kMaxPenetrationBias = 2.0f;
-inline constexpr f32 kPositionSlop = 0.001f;
+inline constexpr f32 kPenetrationSlop       = 0.005f;
+inline constexpr f32 kMaxPenetrationBias    = 2.0f;
+
+// Position solver: one-shot geometric correction applied after the velocity pass.
+//   kPositionSlop             — 1 mm contacts are not corrected; avoids fighting
+//                               resting-contact noise with position moves.
+//   kPositionCorrectionFactor — 20% of residual error corrected per iteration;
+//                               under-relaxed to prevent oscillation.
+//   kAngularCorrectionEpsSq   — skip quaternion update when |Δθ|² < 1e-12
+//                               (i.e. |Δθ| < 1e-6 rad) to avoid normalising noise.
+inline constexpr f32 kPositionSlop            = 0.001f;
 inline constexpr f32 kPositionCorrectionFactor = 0.2f;
-inline constexpr f32 kAngularCorrectionEpsSq = 1e-12f;
-// Resting contacts should not bounce; restitution is applied only above this impact speed.
+inline constexpr f32 kAngularCorrectionEpsSq  = 1e-12f;
+
+// Restitution is only applied when the closing speed exceeds 1 m/s.
+// Below this threshold the contact is treated as resting and should not bounce.
 inline constexpr f32 kRestitutionVelocityThreshold = 1.0f;
 
 [[nodiscard]] inline Vec3 to_body_space(const Quat q, const Vec3 v) noexcept { return rotate(inverse_unit(q), v); }
@@ -218,15 +246,17 @@ export namespace javelin {
 void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
                               std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
                               std::span<ContactManifold> manifolds, const f32 dt,
-                              std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction) {
+                              std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction,
+                              std::span<const u8> asleep) {
     ZoneScopedN("Physics solve");
 #ifndef NDEBUG
     if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
-        velocity.size() != inv_inertia_body.size() || velocity.size() != orientation.size()) {
+        velocity.size() != inv_inertia_body.size() || velocity.size() != orientation.size() ||
+        velocity.size() != asleep.size()) {
         log::error(physics,
-                   "Velocity solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} orientation={})",
+                   "Velocity solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} orientation={} asleep={})",
                    velocity.size(), angular_velocity.size(), inv_mass.size(), inv_inertia_body.size(),
-                   orientation.size());
+                   orientation.size(), asleep.size());
         std::terminate();
     }
 #endif
@@ -263,9 +293,15 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
     solver_points.reserve(point_count);
 
     // Pre-step: world anchors, tangent basis, effective masses, and velocity bias.
+    // Skip manifolds where both participants are asleep: a body is only still asleep
+    // if all its contacts are ground/static/other-sleeping (wake_sleeping_bodies_with_contacts_
+    // already cleared asleep for any body touched by an awake dynamic neighbour).
     for (u32 manifold_index = 0; manifold_index < manifolds.size(); ++manifold_index) {
         ContactManifold &manifold = manifolds[manifold_index];
         if (manifold.point_count == 0u) {
+            continue;
+        }
+        if (asleep[manifold.a] != 0u) {
             continue;
         }
         const f32 rest_coeff = std::clamp(manifold_restitution[manifold_index], 0.0f, 1.0f);
@@ -376,14 +412,15 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
 }
 
 void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orientation, std::span<const f32> inv_mass,
-                               std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds) {
+                               std::span<const Vec3> inv_inertia_body, std::span<const ContactManifold> manifolds,
+                               std::span<const u8> asleep) {
     ZoneScopedN("Physics solve positions");
 #ifndef NDEBUG
     if (position.size() != orientation.size() || position.size() != inv_mass.size() ||
-        position.size() != inv_inertia_body.size()) {
+        position.size() != inv_inertia_body.size() || position.size() != asleep.size()) {
         log::error(physics,
-                   "Position solver span size mismatch (position={} orientation={} inv_mass={} inv_inertia={})",
-                   position.size(), orientation.size(), inv_mass.size(), inv_inertia_body.size());
+                   "Position solver span size mismatch (position={} orientation={} inv_mass={} inv_inertia={} asleep={})",
+                   position.size(), orientation.size(), inv_mass.size(), inv_inertia_body.size(), asleep.size());
         std::terminate();
     }
 #endif
@@ -397,6 +434,9 @@ void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orienta
 
         for (const ContactManifold &manifold : manifolds) {
             if (manifold.point_count == 0u) {
+                continue;
+            }
+            if (asleep[manifold.a] != 0u) {
                 continue;
             }
 #ifndef NDEBUG
