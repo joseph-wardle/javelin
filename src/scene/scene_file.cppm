@@ -10,6 +10,7 @@ import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
 import javelin.scene.entity;
+import javelin.scene.physics_materials;
 import javelin.scene.shapes;
 
 export namespace javelin {
@@ -22,21 +23,26 @@ Scene file text schema (v1, .jvscene):
 - One record per line, key=value pairs, '#' comments.
 - Core records:
   - scene version=<u32> units=m
+  - physics_material id=<u32> restitution=<f32> friction=<f32>
   - shape id=<id> kind=sphere r=<f32>
   - shape id=<id> kind=box hx=<f32> hy=<f32> hz=<f32>
   - body id=<id> shape=<shape_id> motion=<dynamic|static> material=<u32>
-mesh=<u32> px=<f32> py=<f32> pz=<f32> [ox=<f32> oy=<f32> oz=<f32> ow=<f32>]
+         mesh=<u32> px=<f32> py=<f32> pz=<f32> [ox=<f32> oy=<f32> oz=<f32> ow=<f32>]
          [vx=<f32> vy=<f32> vz=<f32>]
          [wx=<f32> wy=<f32> wz=<f32>]
 - Defaults:
+  - physics_material: material id=0 always exists as kDefaultPhysicsMaterial; only
+    non-default materials need explicit records.
   - body.motion=dynamic, body.material=0, body.mesh=0
   - body.orientation=identity
   - body.velocity=(0,0,0), body.angular_velocity=(0,0,0)
   - body position (px/py/pz) is required.
+- physics_material.id and body.material share the same numeric namespace: a body
+  with material=2 uses the physics_material record with id=2.
 - The format is intentionally grep-friendly and parses line-by-line with no
-external dependencies.
+  external dependencies.
 - Validation is strict by design: programmatic construction and text parsing are
-held to the same contract.
+  held to the same contract.
 */
 
 enum struct SceneFileBodyMotion : u8 {
@@ -117,6 +123,13 @@ struct SceneFileBody final {
     Quat orientation{Quat::identity()};
     Vec3 velocity{};
     Vec3 angular_velocity{};
+};
+
+// A physics_material record as authored in the scene file.
+// id is the MaterialId.value shared with body records' material=<u32> field.
+struct SceneFilePhysicsMaterial final {
+    u32 id{};
+    PhysicsMaterial material{};
 };
 
 struct SceneFileLoadOptions final {
@@ -817,27 +830,106 @@ parse_scene_header_record(const std::string_view payload) {
 
     return out;
 }
+[[nodiscard]] inline std::expected<SceneFilePhysicsMaterial, std::string>
+parse_physics_material_record(const std::string_view payload) {
+    SceneFilePhysicsMaterial out{};
+    bool has_id = false;
+    bool has_restitution = false;
+    bool has_friction = false;
+
+    TokenCursor cursor{payload};
+    while (const auto token_opt = cursor.next()) {
+        const std::string_view token = *token_opt;
+        const auto kv = split_key_value_token(token);
+        if (!kv) {
+            return std::unexpected(std::format("Expected key=value token, got '{}'", token));
+        }
+
+        if (kv->key == "id") {
+            if (has_id) {
+                return std::unexpected("Duplicate key 'id'");
+            }
+            has_id = true;
+            auto parsed = parse_numeric_field<u32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            out.id = *parsed;
+            continue;
+        }
+        if (kv->key == "restitution") {
+            if (has_restitution) {
+                return std::unexpected("Duplicate key 'restitution'");
+            }
+            has_restitution = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            if (!std::isfinite(*parsed) || *parsed < 0.0f || *parsed > 1.0f) {
+                return std::unexpected(std::format("Invalid restitution {} (expected [0, 1])", *parsed));
+            }
+            out.material.restitution = *parsed;
+            continue;
+        }
+        if (kv->key == "friction") {
+            if (has_friction) {
+                return std::unexpected("Duplicate key 'friction'");
+            }
+            has_friction = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            if (!std::isfinite(*parsed) || *parsed < 0.0f) {
+                return std::unexpected(std::format("Invalid friction {} (expected >= 0)", *parsed));
+            }
+            out.material.friction = *parsed;
+            continue;
+        }
+
+        return std::unexpected(std::format("Unknown physics_material key '{}'", kv->key));
+    }
+
+    if (!has_id) {
+        return std::unexpected("Missing required key 'id'");
+    }
+    if (!has_restitution) {
+        return std::unexpected("Missing required key 'restitution'");
+    }
+    if (!has_friction) {
+        return std::unexpected("Missing required key 'friction'");
+    }
+
+    return out;
+}
+
 } // namespace detail
 
 struct SceneFile final {
     u32 version{kSceneFileVersion};
     std::string units{std::string{kSceneFileUnitsMeters}};
+    std::vector<SceneFilePhysicsMaterial> physics_materials{};
     std::vector<SceneFileShape> shapes{};
     std::vector<SceneFileBody> bodies{};
 
     void clear() {
         version = kSceneFileVersion;
         units.assign(kSceneFileUnitsMeters);
+        physics_materials.clear();
         shapes.clear();
         bodies.clear();
     }
 
-    void reserve(const u32 shape_count, const u32 body_count) {
+    void reserve(const u32 shape_count, const u32 body_count, const u32 physics_material_count = 0u) {
+        physics_materials.reserve(physics_material_count);
         shapes.reserve(shape_count);
         bodies.reserve(body_count);
     }
 
-    [[nodiscard]] bool empty() const noexcept { return shapes.empty() && bodies.empty(); }
+    [[nodiscard]] bool empty() const noexcept {
+        return physics_materials.empty() && shapes.empty() && bodies.empty();
+    }
 
     [[nodiscard]] std::expected<void, SceneFileError>
     validate(const std::filesystem::path &source_path = std::filesystem::path{}) const {
@@ -851,6 +943,24 @@ struct SceneFile final {
         if (units != kSceneFileUnitsMeters) {
             return error(
                 std::format("Unsupported scene file units '{}' (expected '{}')", units, kSceneFileUnitsMeters));
+        }
+
+        std::unordered_set<u32> physics_material_ids{};
+        physics_material_ids.reserve(physics_materials.size() * 2u + 1u);
+        for (u32 i = 0; i < physics_materials.size(); ++i) {
+            const SceneFilePhysicsMaterial &mat = physics_materials[i];
+            if (!physics_material_ids.insert(mat.id).second) {
+                return error(std::format("Duplicate physics_material id {}", mat.id));
+            }
+            if (!std::isfinite(mat.material.restitution) || mat.material.restitution < 0.0f ||
+                mat.material.restitution > 1.0f) {
+                return error(std::format("physics_material id={} has invalid restitution {} (expected [0, 1])", mat.id,
+                                         mat.material.restitution));
+            }
+            if (!std::isfinite(mat.material.friction) || mat.material.friction < 0.0f) {
+                return error(std::format("physics_material id={} has invalid friction {} (expected >= 0)", mat.id,
+                                         mat.material.friction));
+            }
         }
 
         std::unordered_set<std::string_view> shape_ids{};
@@ -946,6 +1056,7 @@ struct SceneFile final {
 
         u32 scene_line = 0u;
         u32 line_no = 0u;
+        std::unordered_map<u32, u32> physics_material_line_by_id{};
         std::unordered_map<std::string, u32> shape_line_by_id{};
         std::unordered_map<std::string, u32> body_line_by_id{};
         std::vector<u32> body_lines{};
@@ -986,6 +1097,21 @@ struct SceneFile final {
                 scene_line = line_no;
                 out.version = parsed->version;
                 out.units = std::move(parsed->units);
+                continue;
+            }
+
+            if (record == "physics_material") {
+                auto parsed = detail::parse_physics_material_record(payload);
+                if (!parsed) {
+                    return error(line_no, std::move(parsed.error()));
+                }
+                auto [it, inserted] = physics_material_line_by_id.emplace(parsed->id, line_no);
+                if (!inserted) {
+                    return error(line_no,
+                                 std::format("Duplicate physics_material id {} (first declared on line {})", parsed->id,
+                                             it->second));
+                }
+                out.physics_materials.push_back(std::move(*parsed));
                 continue;
             }
 
@@ -1044,6 +1170,7 @@ struct SceneFile final {
         }
 
         TracyPlot("scenefile_lines", static_cast<i64>(line_no));
+        TracyPlot("scenefile_physics_materials", static_cast<i64>(out.physics_materials.size()));
         TracyPlot("scenefile_shapes", static_cast<i64>(out.shapes.size()));
         TracyPlot("scenefile_bodies", static_cast<i64>(out.bodies.size()));
         return out;
@@ -1077,7 +1204,7 @@ struct SceneFile final {
         }
 
         std::string out_text{};
-        out_text.reserve(256 + shapes.size() * 64 + bodies.size() * 220);
+        out_text.reserve(256 + physics_materials.size() * 64 + shapes.size() * 64 + bodies.size() * 220);
         out_text.append("# javelin scene file (.jvscene)\n");
         out_text.append("# schema=v1 units=m one-record-per-line key=value\n");
 
@@ -1090,6 +1217,27 @@ struct SceneFile final {
         detail::append_key_value(line, "units", units);
         out_text.append(line);
         out_text.push_back('\n');
+
+        // physics_materials sorted by id for stable, diffable output.
+        if (!physics_materials.empty()) {
+            std::vector<usize> sorted_mat_indices(physics_materials.size());
+            std::iota(sorted_mat_indices.begin(), sorted_mat_indices.end(), static_cast<usize>(0));
+            std::sort(sorted_mat_indices.begin(), sorted_mat_indices.end(),
+                      [&](const usize a, const usize b) { return physics_materials[a].id < physics_materials[b].id; });
+
+            out_text.push_back('\n');
+            out_text.append("# physics materials\n");
+            for (const usize idx : sorted_mat_indices) {
+                const SceneFilePhysicsMaterial &mat = physics_materials[idx];
+                line.clear();
+                detail::append_token(line, "physics_material");
+                detail::append_key_value_u32(line, "id", mat.id);
+                detail::append_key_value_f32(line, "restitution", mat.material.restitution);
+                detail::append_key_value_f32(line, "friction", mat.material.friction);
+                out_text.append(line);
+                out_text.push_back('\n');
+            }
+        }
 
         const std::vector<usize> sorted_shape_indices = detail::sorted_indices_by_id(shapes);
         if (!sorted_shape_indices.empty()) {
@@ -1167,6 +1315,7 @@ struct SceneFile final {
         }
 
         TracyPlot("scenefile_write_bytes", static_cast<i64>(out_text.size()));
+        TracyPlot("scenefile_write_physics_materials", static_cast<i64>(physics_materials.size()));
         TracyPlot("scenefile_write_shapes", static_cast<i64>(shapes.size()));
         TracyPlot("scenefile_write_bodies", static_cast<i64>(bodies.size()));
         return {};
