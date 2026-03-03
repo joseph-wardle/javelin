@@ -323,17 +323,32 @@ struct RenderSystem final {
 
     void draw_debug_section_(DebugToggles &debug) const {
         ImGui::Checkbox("Grid", &debug.draw_grid);
+        ImGui::SameLine();
+        help_marker_("Render the world-space reference grid.");
+
         ImGui::Checkbox("Contacts", &debug.draw_contacts);
-        tooltip_if_hovered_("Render collision contact debug layer.");
+        ImGui::SameLine();
+        help_marker_("Render collision contact points and normals.");
+
         ImGui::Checkbox("AABBs", &debug.draw_aabbs);
-        tooltip_if_hovered_("Render per-body axis-aligned bounding box wireframes.");
+        ImGui::SameLine();
+        help_marker_("Render per-body axis-aligned bounding box wireframes.");
+
         ImGui::Checkbox("Sleep State", &debug.draw_sleep_state);
-        tooltip_if_hovered_("Overlay sleeping bodies gray, recently-woken bodies yellow.");
+        ImGui::SameLine();
+        help_marker_("Overlay sleeping bodies gray and recently-woken bodies yellow.");
+
         ImGui::Checkbox("Constraints", &debug.draw_constraints);
-        tooltip_if_hovered_("Draw lines between constraint anchor points (blue-white = rigid, orange = soft).");
+        ImGui::SameLine();
+        help_marker_("Draw lines between distance-constraint anchor points.");
+
         ImGui::Checkbox("Velocities", &debug.draw_velocities);
-        tooltip_if_hovered_("Draw velocity vectors from body centers (green = linear, magenta = angular).");
+        ImGui::SameLine();
+        help_marker_("Draw linear (green) and angular (magenta) velocity vectors.");
+
         ImGui::Checkbox("Color Transform", &debug.apply_color_transform);
+        ImGui::SameLine();
+        help_marker_("Apply display color transform to the final image.");
     }
 
     void draw_simulation_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
@@ -347,19 +362,22 @@ struct RenderSystem final {
             commands.has_simulation_paused = true;
             commands.simulation_paused = !snapshot.simulation_paused;
         }
-        tooltip_if_hovered_("Pause/resume continuous fixed-rate simulation.");
+        ImGui::SameLine();
+        help_marker_("Pause or resume continuous fixed-rate simulation.");
 
         ImGui::SameLine();
         ImGui::BeginDisabled(!snapshot.simulation_paused);
         if (ImGui::Button("Step")) {
             add_requested_simulation_steps_(commands, 1u);
         }
-        tooltip_if_hovered_("Advance one fixed simulation tick (1/60 s).");
+        ImGui::SameLine();
+        help_marker_("Advance exactly one fixed simulation tick (1/60 s).");
         ImGui::SameLine();
         if (ImGui::Button("Step x10")) {
             add_requested_simulation_steps_(commands, 10u);
         }
-        tooltip_if_hovered_("Queue 10 fixed simulation ticks while paused.");
+        ImGui::SameLine();
+        help_marker_("Queue ten fixed simulation ticks while paused.");
         ImGui::EndDisabled();
 
         ImGui::Text("State: %s", snapshot.simulation_paused ? "Paused" : "Running");
@@ -376,16 +394,20 @@ struct RenderSystem final {
         ImGui::TextUnformatted("Parameters");
 
         f32 gravity = snapshot.gravity;
-        if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
+        if (ImGui::DragFloat("Gravity (m/s²)", &gravity, 0.1f, -50.0f, 0.0f)) {
             commands.has_gravity = true;
             commands.gravity = gravity;
         }
+        ImGui::SameLine();
+        help_marker_("Constant vertical acceleration applied to dynamic bodies.");
 
         f32 angular_damping = snapshot.angular_damping;
-        if (ImGui::DragFloat("Angular Damping", &angular_damping, 0.01f, 0.0f, 5.0f)) {
+        if (ImGui::DragFloat("Angular Damping (1/s)", &angular_damping, 0.01f, 0.0f, 5.0f)) {
             commands.has_angular_damping = true;
             commands.angular_damping = angular_damping;
         }
+        ImGui::SameLine();
+        help_marker_("Exponential damping coefficient applied to angular velocity.");
     }
 
     void draw_performance_section_(const UiSnapshot &snapshot) {
@@ -429,7 +451,8 @@ struct RenderSystem final {
         if (ImGui::Button("Reset Scene")) {
             commands.request_reset = true;
         }
-        tooltip_if_hovered_("Restore authored initial scene state.");
+        ImGui::SameLine();
+        help_marker_("Restore authored initial transforms and velocities.");
         ImGui::EndDisabled();
     }
 
@@ -470,9 +493,14 @@ struct RenderSystem final {
         commands.requested_simulation_steps += std::min(step_count, remaining);
     }
 
-    static void tooltip_if_hovered_(const char *text) noexcept {
+    static void help_marker_(const char *text) noexcept {
+        ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("%s", text);
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::TextUnformatted(text);
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
         }
     }
 
