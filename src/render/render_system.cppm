@@ -24,6 +24,7 @@ import javelin.render.render_device;
 import javelin.render.render_targets;
 import javelin.render.passes.aabb_debug_pass;
 import javelin.render.passes.contact_debug_pass;
+import javelin.render.passes.constraint_debug_pass;
 import javelin.render.passes.display_pass;
 import javelin.render.passes.geometry_pass;
 import javelin.render.passes.sleep_debug_pass;
@@ -141,6 +142,10 @@ struct RenderSystem final {
             ImGui::Checkbox("Sleep State", &debug_.draw_sleep_state);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 ImGui::SetTooltip("Overlay sleeping bodies gray, recently-woken bodies yellow.");
+            }
+            ImGui::Checkbox("Constraints", &debug_.draw_constraints);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Draw lines between constraint anchor points (blue-white = rigid, orange = soft).");
             }
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
@@ -397,9 +402,10 @@ struct RenderSystem final {
   private:
     // Pipeline order: opaque geometry → surface overlays → x-ray overlays → display.
     // SleepDebugPass uses GL_LEQUAL depth (surface overlay) and must run before the
-    // x-ray passes (ContactDebugPass, AabbDebugPass) which disable depth testing.
-    using Pipeline =
-        RenderPipeline<GeometryPass, WorldGridPass, SleepDebugPass, ContactDebugPass, AabbDebugPass, DisplayPass>;
+    // x-ray passes (ContactDebugPass, AabbDebugPass, ConstraintDebugPass) which disable
+    // depth testing.
+    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, SleepDebugPass, ContactDebugPass, AabbDebugPass,
+                                    ConstraintDebugPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     PhysicsSystem *physics_ = nullptr;

@@ -23,6 +23,7 @@ struct DebugToggles final {
     bool draw_contacts{false};
     bool draw_aabbs{false};
     bool draw_sleep_state{false};
+    bool draw_constraints{false};
     bool apply_color_transform{true};
 };
 

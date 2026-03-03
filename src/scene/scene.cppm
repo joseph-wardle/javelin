@@ -208,6 +208,7 @@ struct Scene final {
             .mesh = std::span<const MeshId>{mesh_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
             .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
+            .constraints = std::span<const DistanceConstraint>{constraints_.data(), constraints_.size()},
             .position = std::span<const Vec3>{position_.data(), count_},
             .velocity = std::span<const Vec3>{velocity_.data(), count_},
             .orientation = std::span<const Quat>{orientation_.data(), count_},
