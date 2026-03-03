@@ -138,9 +138,8 @@ struct SceneFileBody final {
 // id is the MaterialId.value shared with body records' material=<u32> field.
 // density (kg/m³, default=1.0) scales the mass computed from shape volume at load time.
 // It is a load-time property only: changing density at runtime has no effect until the
-// scene is reloaded. It is intentionally not part of PhysicsMaterial so that the per-tick
-// set_physics_material() override path (used by the ImGui restitution/friction sliders)
-// cannot accidentally reset an authored density.
+// scene is reloaded. It is intentionally not part of PhysicsMaterial so runtime simulation
+// updates cannot accidentally reset an authored density.
 inline constexpr f32 kDefaultMaterialDensity = 1.0f;
 struct SceneFilePhysicsMaterial final {
     u32 id{};

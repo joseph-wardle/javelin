@@ -195,16 +195,6 @@ struct RenderSystem final {
                 if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
                     physics_->set_gravity(gravity);
                 }
-                f32 restitution = physics_->restitution();
-                if (ImGui::DragFloat("Restitution", &restitution, 0.01f, 0.0f, 1.0f)) {
-                    physics_->set_restitution(restitution);
-                }
-
-                f32 friction = physics_->friction();
-                if (ImGui::DragFloat("Friction", &friction, 0.01f, 0.0f, 1.0f)) {
-                    physics_->set_friction(friction);
-                }
-
                 f32 angular_damping = physics_->angular_damping();
                 if (ImGui::DragFloat("Angular Damping", &angular_damping, 0.01f, 0.0f, 5.0f)) {
                     physics_->set_angular_damping(angular_damping);

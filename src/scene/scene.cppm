@@ -111,8 +111,6 @@ struct Scene final {
       sized to cover max MaterialId.value across both body references and authored
       physics_material records; all entries default to kDefaultPhysicsMaterial, then
       authored records overwrite their specific indices.
-      Material 0 may be overridden at runtime via set_physics_material(0u, ...) so that
-      global ImGui sliders (restitution/friction) tune the fallback material live.
     - sleep state: sleep_timer_ counts consecutive ticks a body has been below the
       sleep velocity threshold; asleep_ (u8, 0=awake/1=asleep) is set once the timer
       reaches the threshold. Both reset to 0 on restore_simulation_from_initial_().
@@ -215,20 +213,6 @@ struct Scene final {
             .angular_velocity = std::span<const Vec3>{angular_velocity_.data(), count_},
             .poses = poses_,
         };
-    }
-
-    // Updates restitution and friction for a physics material in the runtime pool by id.
-    // id=0 (the implicit default) is always present; ids beyond the pool size are ignored.
-    // Intended for live overrides: the global ImGui sliders call this each tick to push
-    // their current values into material 0, which any body with no explicit material uses.
-    // density is intentionally NOT updated here: it is baked into inv_mass_ at load time
-    // and has no effect on body masses at runtime.
-    void set_physics_material(const u32 id, const PhysicsMaterial material) noexcept {
-        if (id >= physics_material_restitution_.size()) {
-            return;
-        }
-        physics_material_restitution_[id] = material.restitution;
-        physics_material_friction_[id] = material.friction;
     }
 
     // Render reads this each frame for interpolation.
@@ -598,7 +582,6 @@ struct Scene final {
     // Physics material pool: indexed by MaterialId.value.
     // Always contains kDefaultPhysicsMaterial at index 0; sized to cover the
     // maximum MaterialId.value used by any body in the scene.
-    // restitution and friction are live-overrideable per tick via set_physics_material().
     // density is load-time only; it is stored here solely for the save round-trip.
     std::vector<f32> physics_material_restitution_{};
     std::vector<f32> physics_material_friction_{};

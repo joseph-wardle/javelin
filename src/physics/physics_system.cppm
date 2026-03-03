@@ -21,7 +21,6 @@ import javelin.physics.publish;
 import javelin.physics.solve;
 import javelin.physics.types;
 import javelin.scene;
-import javelin.scene.physics_materials;
 import javelin.scene.physics_view;
 import javelin.scene.shapes;
 
@@ -59,8 +58,6 @@ struct PhysicsSystem final {
     }
 
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
-    void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
-    void set_friction(const f32 friction) noexcept { friction_.store(friction, std::memory_order_relaxed); }
     void set_linear_damping(const f32 damping) noexcept {
         linear_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
     }
@@ -110,8 +107,6 @@ struct PhysicsSystem final {
     }
 
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
-    [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
-    [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 linear_damping() const noexcept { return linear_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 angular_damping() const noexcept { return angular_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] bool contact_debug_enabled() const noexcept {
@@ -143,8 +138,8 @@ struct PhysicsSystem final {
         }
 
         log::info(physics, "Starting physics system");
-        log::info(physics, "Params gravity={} restitution={} friction={} linear_damping={} angular_damping={}",
-                  gravity(), restitution(), friction(), linear_damping(), angular_damping());
+        log::info(physics, "Params gravity={} linear_damping={} angular_damping={}", gravity(), linear_damping(),
+                  angular_damping());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -237,8 +232,6 @@ struct PhysicsSystem final {
     Scene *scene_{nullptr};
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
-    std::atomic<f32> restitution_{0.3f};
-    std::atomic<f32> friction_{0.2f};
     std::atomic<f32> linear_damping_{0.1f};
     std::atomic<f32> angular_damping_{0.4f};
     std::atomic<bool> contact_debug_enabled_{false};
@@ -401,13 +394,6 @@ struct PhysicsSystem final {
         }
 
         static_cast<void>(apply_pending_reset_());
-
-        // Material 0 is the fallback for any body with no explicit physics_material record.
-        // Push the live global slider values into it so ImGui edits take effect immediately.
-        scene_->set_physics_material(0u, PhysicsMaterial{
-                                             .restitution = restitution_.load(std::memory_order_relaxed),
-                                             .friction = friction_.load(std::memory_order_relaxed),
-                                         });
 
         PhysicsView view = scene_->physics_view();
         const u32 count = view.count;
