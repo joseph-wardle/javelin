@@ -287,8 +287,8 @@ void add_sphere_box_contact(std::span<const Vec3> position, std::span<const Quat
     const u32 feature_id = box_face_feature_id(feature_axis, feature_positive, inside_fallback);
 
     const Vec3 normal_world = box_axis_x * normal_local.x + box_axis_y * normal_local.y + box_axis_z * normal_local.z;
-    const Vec3 contact_point_world = box_center_world + box_axis_x * contact_point_local.x + box_axis_y * contact_point_local.y +
-                                     box_axis_z * contact_point_local.z;
+    const Vec3 contact_point_world = box_center_world + box_axis_x * contact_point_local.x +
+                                     box_axis_y * contact_point_local.y + box_axis_z * contact_point_local.z;
 
     Vec3 manifold_normal = normal_world;
     Vec3 anchor_a_world_offset{};

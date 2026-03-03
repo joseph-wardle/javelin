@@ -21,11 +21,12 @@ struct PhysicsView final {
 
     // authored/static (read)
     std::span<const ShapeKind> shape_kind;
-    std::span<const u32> shape_index;        // per-body index into shape pool
-    std::span<const ShapeData> shapes;       // shape pool, indexed by shape_index[body]
-    std::span<const MaterialId> material;    // per-body index into physics material pool
-    std::span<const f32> material_restitution; // physics material pool (see PhysicsMaterial), indexed by MaterialId.value
-    std::span<const f32> material_friction;    // physics material pool (see PhysicsMaterial), indexed by MaterialId.value
+    std::span<const u32> shape_index;     // per-body index into shape pool
+    std::span<const ShapeData> shapes;    // shape pool, indexed by shape_index[body]
+    std::span<const MaterialId> material; // per-body index into physics material pool
+    std::span<const f32>
+        material_restitution;               // physics material pool (see PhysicsMaterial), indexed by MaterialId.value
+    std::span<const f32> material_friction; // physics material pool (see PhysicsMaterial), indexed by MaterialId.value
     std::span<const MeshId> mesh;
     std::span<const f32> inv_mass;
     std::span<const Vec3> inv_inertia;
@@ -40,7 +41,7 @@ struct PhysicsView final {
     // sleep_timer: consecutive ticks this body's speed has been below the sleep threshold.
     // asleep:      0 = awake, 1 = asleep; set once sleep_timer reaches the threshold.
     std::span<u32> sleep_timer;
-    std::span<u8>  asleep;
+    std::span<u8> asleep;
 
     // constraints (read)
     // Authored distance constraints between body pairs; solver reads these each tick.

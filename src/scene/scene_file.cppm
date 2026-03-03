@@ -155,10 +155,10 @@ struct SceneFileConstraint final {
     std::string id{};
     std::string body_a_id{};
     std::string body_b_id{};
-    Vec3 anchor_a{};      // attachment point in body A local space (metres)
-    Vec3 anchor_b{};      // attachment point in body B local space (metres)
-    f32 rest_length{};    // target distance (metres, >= 0)
-    f32 compliance{};     // XPBD alpha (m/N); 0 = rigid link
+    Vec3 anchor_a{};   // attachment point in body A local space (metres)
+    Vec3 anchor_b{};   // attachment point in body B local space (metres)
+    f32 rest_length{}; // target distance (metres, >= 0)
+    f32 compliance{};  // XPBD alpha (m/N); 0 = rigid link
 };
 
 struct SceneFileLoadOptions final {
@@ -985,7 +985,9 @@ parse_constraint_record(const std::string_view payload) {
         }
 
         if (kv->key == "id") {
-            if (has_id) { return std::unexpected("Duplicate key 'id'"); }
+            if (has_id) {
+                return std::unexpected("Duplicate key 'id'");
+            }
             has_id = true;
             if (!is_valid_identifier(kv->value)) {
                 return std::unexpected(std::format("Invalid constraint id '{}'", kv->value));
@@ -994,16 +996,19 @@ parse_constraint_record(const std::string_view payload) {
             continue;
         }
         if (kv->key == "kind") {
-            if (has_kind) { return std::unexpected("Duplicate key 'kind'"); }
+            if (has_kind) {
+                return std::unexpected("Duplicate key 'kind'");
+            }
             has_kind = true;
             if (kv->value != "distance") {
-                return std::unexpected(
-                    std::format("Unknown constraint kind '{}' (expected 'distance')", kv->value));
+                return std::unexpected(std::format("Unknown constraint kind '{}' (expected 'distance')", kv->value));
             }
             continue;
         }
         if (kv->key == "body_a") {
-            if (has_body_a) { return std::unexpected("Duplicate key 'body_a'"); }
+            if (has_body_a) {
+                return std::unexpected("Duplicate key 'body_a'");
+            }
             has_body_a = true;
             if (!is_valid_identifier(kv->value)) {
                 return std::unexpected(std::format("Invalid body_a id '{}'", kv->value));
@@ -1012,7 +1017,9 @@ parse_constraint_record(const std::string_view payload) {
             continue;
         }
         if (kv->key == "body_b") {
-            if (has_body_b) { return std::unexpected("Duplicate key 'body_b'"); }
+            if (has_body_b) {
+                return std::unexpected("Duplicate key 'body_b'");
+            }
             has_body_b = true;
             if (!is_valid_identifier(kv->value)) {
                 return std::unexpected(std::format("Invalid body_b id '{}'", kv->value));
@@ -1021,73 +1028,103 @@ parse_constraint_record(const std::string_view payload) {
             continue;
         }
         if (kv->key == "ax") {
-            if (has_ax) { return std::unexpected("Duplicate key 'ax'"); }
+            if (has_ax) {
+                return std::unexpected("Duplicate key 'ax'");
+            }
             has_ax = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             ax = *parsed;
             continue;
         }
         if (kv->key == "ay") {
-            if (has_ay) { return std::unexpected("Duplicate key 'ay'"); }
+            if (has_ay) {
+                return std::unexpected("Duplicate key 'ay'");
+            }
             has_ay = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             ay = *parsed;
             continue;
         }
         if (kv->key == "az") {
-            if (has_az) { return std::unexpected("Duplicate key 'az'"); }
+            if (has_az) {
+                return std::unexpected("Duplicate key 'az'");
+            }
             has_az = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             az = *parsed;
             continue;
         }
         if (kv->key == "bx") {
-            if (has_bx) { return std::unexpected("Duplicate key 'bx'"); }
+            if (has_bx) {
+                return std::unexpected("Duplicate key 'bx'");
+            }
             has_bx = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             bx = *parsed;
             continue;
         }
         if (kv->key == "by") {
-            if (has_by) { return std::unexpected("Duplicate key 'by'"); }
+            if (has_by) {
+                return std::unexpected("Duplicate key 'by'");
+            }
             has_by = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             by = *parsed;
             continue;
         }
         if (kv->key == "bz") {
-            if (has_bz) { return std::unexpected("Duplicate key 'bz'"); }
+            if (has_bz) {
+                return std::unexpected("Duplicate key 'bz'");
+            }
             has_bz = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             bz = *parsed;
             continue;
         }
         if (kv->key == "rest") {
-            if (has_rest) { return std::unexpected("Duplicate key 'rest'"); }
+            if (has_rest) {
+                return std::unexpected("Duplicate key 'rest'");
+            }
             has_rest = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             if (!std::isfinite(*parsed) || *parsed < 0.0f) {
-                return std::unexpected(
-                    std::format("Invalid rest_length {} (expected finite >= 0)", *parsed));
+                return std::unexpected(std::format("Invalid rest_length {} (expected finite >= 0)", *parsed));
             }
             out.rest_length = *parsed;
             continue;
         }
         if (kv->key == "compliance") {
-            if (has_compliance) { return std::unexpected("Duplicate key 'compliance'"); }
+            if (has_compliance) {
+                return std::unexpected("Duplicate key 'compliance'");
+            }
             has_compliance = true;
             auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
-            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
             if (!std::isfinite(*parsed) || *parsed < 0.0f) {
-                return std::unexpected(
-                    std::format("Invalid compliance {} (expected finite >= 0)", *parsed));
+                return std::unexpected(std::format("Invalid compliance {} (expected finite >= 0)", *parsed));
             }
             out.compliance = *parsed;
             continue;
@@ -1096,18 +1133,30 @@ parse_constraint_record(const std::string_view payload) {
         return std::unexpected(std::format("Unknown constraint key '{}'", kv->key));
     }
 
-    if (!has_id)         { return std::unexpected("Missing required key 'id'"); }
-    if (!has_kind)       { return std::unexpected("Missing required key 'kind'"); }
-    if (!has_body_a)     { return std::unexpected("Missing required key 'body_a'"); }
-    if (!has_body_b)     { return std::unexpected("Missing required key 'body_b'"); }
+    if (!has_id) {
+        return std::unexpected("Missing required key 'id'");
+    }
+    if (!has_kind) {
+        return std::unexpected("Missing required key 'kind'");
+    }
+    if (!has_body_a) {
+        return std::unexpected("Missing required key 'body_a'");
+    }
+    if (!has_body_b) {
+        return std::unexpected("Missing required key 'body_b'");
+    }
     if (!has_ax || !has_ay || !has_az) {
         return std::unexpected("Constraint missing required anchor A fields (ax/ay/az)");
     }
     if (!has_bx || !has_by || !has_bz) {
         return std::unexpected("Constraint missing required anchor B fields (bx/by/bz)");
     }
-    if (!has_rest)       { return std::unexpected("Missing required key 'rest'"); }
-    if (!has_compliance) { return std::unexpected("Missing required key 'compliance'"); }
+    if (!has_rest) {
+        return std::unexpected("Missing required key 'rest'");
+    }
+    if (!has_compliance) {
+        return std::unexpected("Missing required key 'compliance'");
+    }
 
     out.anchor_a = Vec3{ax, ay, az};
     out.anchor_b = Vec3{bx, by, bz};
@@ -1282,12 +1331,12 @@ struct SceneFile final {
                 return error(std::format("constraint '{}' has non-finite anchor_b", c.id));
             }
             if (!std::isfinite(c.rest_length) || c.rest_length < 0.0f) {
-                return error(
-                    std::format("constraint '{}' has invalid rest_length {} (expected finite >= 0)", c.id, c.rest_length));
+                return error(std::format("constraint '{}' has invalid rest_length {} (expected finite >= 0)", c.id,
+                                         c.rest_length));
             }
             if (!std::isfinite(c.compliance) || c.compliance < 0.0f) {
-                return error(
-                    std::format("constraint '{}' has invalid compliance {} (expected finite >= 0)", c.id, c.compliance));
+                return error(std::format("constraint '{}' has invalid compliance {} (expected finite >= 0)", c.id,
+                                         c.compliance));
             }
         }
 
@@ -1369,9 +1418,8 @@ struct SceneFile final {
                 }
                 auto [it, inserted] = physics_material_line_by_id.emplace(parsed->id, line_no);
                 if (!inserted) {
-                    return error(line_no,
-                                 std::format("Duplicate physics_material id {} (first declared on line {})", parsed->id,
-                                             it->second));
+                    return error(line_no, std::format("Duplicate physics_material id {} (first declared on line {})",
+                                                      parsed->id, it->second));
                 }
                 out.physics_materials.push_back(std::move(*parsed));
                 continue;
@@ -1413,9 +1461,8 @@ struct SceneFile final {
                 }
                 auto [it, inserted] = constraint_line_by_id.emplace(parsed->id, line_no);
                 if (!inserted) {
-                    return error(line_no,
-                                 std::format("Duplicate constraint id '{}' (first declared on line {})", parsed->id,
-                                             it->second));
+                    return error(line_no, std::format("Duplicate constraint id '{}' (first declared on line {})",
+                                                      parsed->id, it->second));
                 }
                 constraint_lines.push_back(line_no);
                 out.constraints.push_back(std::move(*parsed));

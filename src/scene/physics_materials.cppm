@@ -20,7 +20,7 @@ struct PhysicsMaterial final {
 // are authored. Bodies that omit a material record receive this implicitly.
 inline constexpr PhysicsMaterial kDefaultPhysicsMaterial{
     .restitution = 0.3f,
-    .friction    = 0.2f,
+    .friction = 0.2f,
 };
 
 } // namespace javelin

@@ -26,6 +26,7 @@ import javelin.render.passes.aabb_debug_pass;
 import javelin.render.passes.contact_debug_pass;
 import javelin.render.passes.display_pass;
 import javelin.render.passes.geometry_pass;
+import javelin.render.passes.sleep_debug_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
 import javelin.render.types;
@@ -137,6 +138,10 @@ struct RenderSystem final {
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 ImGui::SetTooltip("Render per-body axis-aligned bounding box wireframes.");
             }
+            ImGui::Checkbox("Sleep State", &debug_.draw_sleep_state);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Overlay sleeping bodies gray, recently-woken bodies yellow.");
+            }
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
                 ImGui::Separator();
@@ -172,8 +177,7 @@ struct RenderSystem final {
                 ImGui::Text("State: %s", simulation_paused ? "Paused" : "Running");
                 ImGui::Text("Pending steps: %u", physics_->pending_simulation_steps());
                 const u64 completed_simulation_steps = physics_->completed_simulation_steps();
-                ImGui::Text("Completed steps: %llu",
-                            static_cast<unsigned long long>(completed_simulation_steps));
+                ImGui::Text("Completed steps: %llu", static_cast<unsigned long long>(completed_simulation_steps));
 
                 ImGui::Separator();
                 ImGui::TextUnformatted("Parameters");
@@ -298,8 +302,7 @@ struct RenderSystem final {
         }
         const ContactDebugSnapshot contacts =
             (physics_ != nullptr) ? physics_->contact_debug_snapshot() : ContactDebugSnapshot{};
-        const AabbDebugSnapshot aabbs =
-            (physics_ != nullptr) ? physics_->aabb_debug_snapshot() : AabbDebugSnapshot{};
+        const AabbDebugSnapshot aabbs = (physics_ != nullptr) ? physics_->aabb_debug_snapshot() : AabbDebugSnapshot{};
         const f32 pose_alpha = compute_pose_alpha_(poses);
 
         RenderContext ctx{
@@ -392,7 +395,11 @@ struct RenderSystem final {
     }
 
   private:
-    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, ContactDebugPass, AabbDebugPass, DisplayPass>;
+    // Pipeline order: opaque geometry → surface overlays → x-ray overlays → display.
+    // SleepDebugPass uses GL_LEQUAL depth (surface overlay) and must run before the
+    // x-ray passes (ContactDebugPass, AabbDebugPass) which disable depth testing.
+    using Pipeline =
+        RenderPipeline<GeometryPass, WorldGridPass, SleepDebugPass, ContactDebugPass, AabbDebugPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     PhysicsSystem *physics_ = nullptr;

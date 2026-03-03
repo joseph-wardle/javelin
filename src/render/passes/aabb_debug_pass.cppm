@@ -115,8 +115,7 @@ struct AabbDebugPass final {
     }
 
     void execute(RenderContext &ctx) {
-        if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0 || !ctx.debug.draw_aabbs ||
-            ctx.aabbs.count == 0u) {
+        if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0 || !ctx.debug.draw_aabbs || ctx.aabbs.count == 0u) {
             return;
         }
         if (program_ == 0 || vao_ == 0 || vbo_ == 0) {
@@ -168,9 +167,18 @@ struct AabbDebugPass final {
     //   0:(min,min,min)  1:(max,min,min)  2:(max,max,min)  3:(min,max,min)  (near face, z=min)
     //   4:(min,min,max)  5:(max,min,max)  6:(max,max,max)  7:(min,max,max)  (far  face, z=max)
     static constexpr std::array<std::array<u8, 2>, 12> kEdges = {{
-        {0, 1}, {1, 2}, {2, 3}, {3, 0},  // near face bottom/top/left/right
-        {4, 5}, {5, 6}, {6, 7}, {7, 4},  // far  face bottom/top/left/right
-        {0, 4}, {1, 5}, {2, 6}, {3, 7},  // lateral edges connecting near to far
+        {0, 1},
+        {1, 2},
+        {2, 3},
+        {3, 0}, // near face bottom/top/left/right
+        {4, 5},
+        {5, 6},
+        {6, 7},
+        {7, 4}, // far  face bottom/top/left/right
+        {0, 4},
+        {1, 5},
+        {2, 6},
+        {3, 7}, // lateral edges connecting near to far
     }};
 
     void build_aabb_vertices_(const AabbDebugSnapshot &aabbs) {
@@ -182,14 +190,9 @@ struct AabbDebugPass final {
         for (usize i = 0; i < aabb_count; ++i) {
             const Aabb &box = aabbs.aabbs[i];
             const Vec3 corners[8] = {
-                {box.min.x, box.min.y, box.min.z},
-                {box.max.x, box.min.y, box.min.z},
-                {box.max.x, box.max.y, box.min.z},
-                {box.min.x, box.max.y, box.min.z},
-                {box.min.x, box.min.y, box.max.z},
-                {box.max.x, box.min.y, box.max.z},
-                {box.max.x, box.max.y, box.max.z},
-                {box.min.x, box.max.y, box.max.z},
+                {box.min.x, box.min.y, box.min.z}, {box.max.x, box.min.y, box.min.z}, {box.max.x, box.max.y, box.min.z},
+                {box.min.x, box.max.y, box.min.z}, {box.min.x, box.min.y, box.max.z}, {box.max.x, box.min.y, box.max.z},
+                {box.max.x, box.max.y, box.max.z}, {box.min.x, box.max.y, box.max.z},
             };
             for (const std::array<u8, 2> &edge : kEdges) {
                 vertices_[write++] = Vertex{.position = corners[edge[0]], .color = kAabbWireframeColor};
