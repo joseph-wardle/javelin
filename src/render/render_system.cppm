@@ -47,6 +47,10 @@ struct RenderSystem final {
   private:
     struct UiSnapshot final {
         f32 render_dt_ms{};
+        DebugToggles debug_toggles{};
+        u32 scene_body_count{};
+        u32 scene_shape_count{};
+        u32 scene_constraint_count{};
         bool has_physics{};
         bool simulation_paused{};
         u32 pending_simulation_steps{};
@@ -237,7 +241,15 @@ struct RenderSystem final {
     [[nodiscard]] UiSnapshot build_ui_snapshot_(const f32 render_dt_ms) const noexcept {
         UiSnapshot snapshot{
             .render_dt_ms = render_dt_ms,
+            .debug_toggles = debug_,
         };
+
+        if (scene_ != nullptr) {
+            const auto scene_view = scene_->render_view();
+            snapshot.scene_body_count = static_cast<u32>(scene_view.generation.size());
+            snapshot.scene_shape_count = static_cast<u32>(scene_view.shapes.size());
+            snapshot.scene_constraint_count = static_cast<u32>(scene_view.constraints.size());
+        }
 
         if (physics_ == nullptr) {
             return snapshot;
@@ -256,22 +268,57 @@ struct RenderSystem final {
     void build_ui_(const UiSnapshot &snapshot, UiCommands &commands) {
         ImGui::Begin("Javelin");
 
-        DebugToggles edited_debug = debug_;
-        draw_debug_section_(edited_debug);
-        if (!debug_toggles_equal_(edited_debug, debug_)) {
-            commands.has_debug_toggles = true;
-            commands.debug_toggles = edited_debug;
-        }
+        draw_status_row_(snapshot);
+        ImGui::Separator();
 
-        if (snapshot.has_physics) {
-            ImGui::Separator();
-            ImGui::TextUnformatted("Physics");
-            draw_simulation_section_(snapshot, commands);
-            draw_parameters_section_(snapshot, commands);
-            draw_performance_section_(snapshot);
+        if (ImGui::BeginTabBar("ControlTabs")) {
+            if (ImGui::BeginTabItem("Simulation")) {
+                draw_simulation_section_(snapshot, commands);
+                draw_parameters_section_(snapshot, commands);
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Debug")) {
+                DebugToggles edited_debug = snapshot.debug_toggles;
+                draw_debug_section_(edited_debug);
+                if (!debug_toggles_equal_(edited_debug, snapshot.debug_toggles)) {
+                    commands.has_debug_toggles = true;
+                    commands.debug_toggles = edited_debug;
+                }
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Performance")) {
+                draw_performance_section_(snapshot);
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Scene")) {
+                draw_scene_section_(snapshot, commands);
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
         }
 
         ImGui::End();
+    }
+
+    void draw_status_row_(const UiSnapshot &snapshot) const {
+        if (!snapshot.has_physics) {
+            ImGui::TextDisabled("Physics unavailable");
+            return;
+        }
+
+        const ImVec4 status_color =
+            snapshot.simulation_paused ? ImVec4{0.95f, 0.80f, 0.25f, 1.0f} : ImVec4{0.30f, 0.90f, 0.40f, 1.0f};
+        ImGui::TextUnformatted("Status:");
+        ImGui::SameLine();
+        ImGui::TextColored(status_color, "%s", snapshot.simulation_paused ? "Paused" : "Running");
+        ImGui::SameLine();
+        ImGui::Text("Pending: %u", snapshot.pending_simulation_steps);
+        ImGui::SameLine();
+        ImGui::Text("Completed: %llu", static_cast<unsigned long long>(snapshot.completed_simulation_steps));
     }
 
     void draw_debug_section_(DebugToggles &debug) const {
@@ -290,6 +337,11 @@ struct RenderSystem final {
     }
 
     void draw_simulation_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
+        if (!snapshot.has_physics) {
+            ImGui::TextDisabled("Physics controls unavailable.");
+            return;
+        }
+
         ImGui::TextUnformatted("Simulation");
         if (ImGui::Button(snapshot.simulation_paused ? "Resume" : "Pause")) {
             commands.has_simulation_paused = true;
@@ -316,6 +368,10 @@ struct RenderSystem final {
     }
 
     void draw_parameters_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
+        if (!snapshot.has_physics) {
+            return;
+        }
+
         ImGui::Separator();
         ImGui::TextUnformatted("Parameters");
 
@@ -330,15 +386,9 @@ struct RenderSystem final {
             commands.has_angular_damping = true;
             commands.angular_damping = angular_damping;
         }
-
-        if (ImGui::Button("Reset Scene")) {
-            commands.request_reset = true;
-        }
-        tooltip_if_hovered_("Restore authored initial scene state.");
     }
 
     void draw_performance_section_(const UiSnapshot &snapshot) {
-        ImGui::Separator();
         ImGui::Text("Frame dt: %.3f ms", snapshot.render_dt_ms);
         const int render_history_count =
             render_dt_history_full_ ? static_cast<int>(kRenderDtHistory) : static_cast<int>(render_dt_cursor_);
@@ -346,6 +396,11 @@ struct RenderSystem final {
             const int offset = render_dt_history_full_ ? static_cast<int>(render_dt_cursor_) : 0;
             plot_dt_history_("Frame dt (ms)", render_dt_history_.data(), render_history_count, offset,
                              kRenderDtHistory);
+        }
+
+        if (!snapshot.has_physics) {
+            ImGui::TextDisabled("Physics timing unavailable.");
+            return;
         }
 
         if (snapshot.physics_dt_ms > 0.0f &&
@@ -362,6 +417,20 @@ struct RenderSystem final {
             plot_dt_history_("Physics dt (ms)", physics_dt_history_.data(), physics_history_count, offset,
                              kPhysicsDtHistory);
         }
+    }
+
+    void draw_scene_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
+        ImGui::Text("Bodies: %u", snapshot.scene_body_count);
+        ImGui::Text("Shapes: %u", snapshot.scene_shape_count);
+        ImGui::Text("Constraints: %u", snapshot.scene_constraint_count);
+
+        ImGui::Separator();
+        ImGui::BeginDisabled(!snapshot.has_physics);
+        if (ImGui::Button("Reset Scene")) {
+            commands.request_reset = true;
+        }
+        tooltip_if_hovered_("Restore authored initial scene state.");
+        ImGui::EndDisabled();
     }
 
     void apply_ui_commands_(const UiCommands &commands) noexcept {
