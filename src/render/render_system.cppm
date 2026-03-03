@@ -133,6 +133,10 @@ struct RenderSystem final {
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 ImGui::SetTooltip("Render collision contact debug layer.");
             }
+            ImGui::Checkbox("AABBs", &debug_.draw_aabbs);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Render per-body axis-aligned bounding box wireframes.");
+            }
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
                 ImGui::Separator();
