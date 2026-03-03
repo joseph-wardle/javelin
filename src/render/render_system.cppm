@@ -76,6 +76,13 @@ struct RenderSystem final {
         bool request_reset{};
     };
 
+    enum struct UiTab : u8 {
+        simulation,
+        debug,
+        performance,
+        scene,
+    };
+
   public:
     void init_cpu(const Scene &scene, PhysicsSystem &physics) noexcept {
         scene_ = &scene;
@@ -127,6 +134,7 @@ struct RenderSystem final {
         pipeline_.resize(device_, extent_);
 
         init_imgui_();
+        load_ui_state_();
         gpu_ready_ = true;
 
         log::info(render, "GPU initialized");
@@ -227,6 +235,7 @@ struct RenderSystem final {
         log::info(render, "Shutting down render system");
 
         if (gpu_ready_) {
+            save_ui_state_();
             pipeline_.shutdown(device_);
             targets_.shutdown();
             shutdown_imgui_();
@@ -241,6 +250,152 @@ struct RenderSystem final {
     }
 
   private:
+    static constexpr std::string_view kUiStatePath = "javelin_ui_state.ini";
+
+    [[nodiscard]] static std::string_view tab_to_string_(const UiTab tab) noexcept {
+        switch (tab) {
+        case UiTab::simulation:
+            return "simulation";
+        case UiTab::debug:
+            return "debug";
+        case UiTab::performance:
+            return "performance";
+        case UiTab::scene:
+            return "scene";
+        }
+        return "simulation";
+    }
+
+    [[nodiscard]] static UiTab parse_tab_(const std::string_view value) noexcept {
+        if (value == "debug") {
+            return UiTab::debug;
+        }
+        if (value == "performance") {
+            return UiTab::performance;
+        }
+        if (value == "scene") {
+            return UiTab::scene;
+        }
+        return UiTab::simulation;
+    }
+
+    [[nodiscard]] static bool parse_f32_(const std::string_view text, f32 &out) noexcept {
+        if (text.empty()) {
+            return false;
+        }
+
+        const std::string owned{text};
+        char *end = nullptr;
+        const float parsed = std::strtof(owned.c_str(), &end);
+        if (end == owned.c_str() || *end != '\0' || !std::isfinite(parsed)) {
+            return false;
+        }
+        out = parsed;
+        return true;
+    }
+
+    void load_ui_state_() noexcept {
+        std::ifstream in{std::string{kUiStatePath}};
+        if (!in.is_open()) {
+            return;
+        }
+
+        bool has_x = false;
+        bool has_y = false;
+        bool has_w = false;
+        bool has_h = false;
+        f32 loaded_x = 0.0f;
+        f32 loaded_y = 0.0f;
+        f32 loaded_w = 0.0f;
+        f32 loaded_h = 0.0f;
+
+        std::string line{};
+        while (std::getline(in, line)) {
+            const usize eq = line.find('=');
+            if (eq == std::string::npos) {
+                continue;
+            }
+            const std::string_view key{line.data(), eq};
+            const std::string_view value{line.data() + eq + 1u, line.size() - eq - 1u};
+
+            if (key == "selected_tab") {
+                selected_tab_ = parse_tab_(value);
+                ui_tab_restore_pending_ = true;
+                continue;
+            }
+            if (key == "window_pos_x") {
+                has_x = parse_f32_(value, loaded_x);
+                continue;
+            }
+            if (key == "window_pos_y") {
+                has_y = parse_f32_(value, loaded_y);
+                continue;
+            }
+            if (key == "window_size_x") {
+                has_w = parse_f32_(value, loaded_w);
+                continue;
+            }
+            if (key == "window_size_y") {
+                has_h = parse_f32_(value, loaded_h);
+                continue;
+            }
+        }
+
+        if (has_x && has_y && has_w && has_h && loaded_w > 64.0f && loaded_h > 64.0f) {
+            ui_window_pos_ = ImVec2{loaded_x, loaded_y};
+            ui_window_size_ = ImVec2{loaded_w, loaded_h};
+            ui_window_rect_valid_ = true;
+            ui_window_restore_pending_ = true;
+        }
+    }
+
+    void save_ui_state_() const noexcept {
+        std::ofstream out{std::string{kUiStatePath}, std::ios::trunc};
+        if (!out.is_open()) {
+            return;
+        }
+
+        out << "selected_tab=" << tab_to_string_(selected_tab_) << '\n';
+        if (ui_window_rect_valid_) {
+            out << "window_pos_x=" << ui_window_pos_.x << '\n';
+            out << "window_pos_y=" << ui_window_pos_.y << '\n';
+            out << "window_size_x=" << ui_window_size_.x << '\n';
+            out << "window_size_y=" << ui_window_size_.y << '\n';
+        }
+    }
+
+    [[nodiscard]] ImGuiTabItemFlags tab_item_flags_(const UiTab tab, const bool restore_pending) const noexcept {
+        if (restore_pending && tab == selected_tab_) {
+            return ImGuiTabItemFlags_SetSelected;
+        }
+        return ImGuiTabItemFlags_None;
+    }
+
+    void handle_keyboard_shortcuts_(const UiSnapshot &snapshot, UiCommands &commands) const {
+        if (!snapshot.has_physics) {
+            return;
+        }
+
+        const ImGuiIO &io = ImGui::GetIO();
+        if (io.WantTextInput) {
+            return;
+        }
+
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+            commands.has_simulation_paused = true;
+            commands.simulation_paused = !snapshot.simulation_paused;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F6, false)) {
+            add_requested_simulation_steps_(commands, 1u);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) {
+            add_requested_simulation_steps_(commands, 10u);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
+            commands.request_reset = true;
+        }
+    }
+
     [[nodiscard]] UiSnapshot build_ui_snapshot_(const f32 render_dt_ms) const noexcept {
         UiSnapshot snapshot{
             .render_dt_ms = render_dt_ms,
@@ -270,20 +425,38 @@ struct RenderSystem final {
     }
 
     void build_ui_(const UiSnapshot &snapshot, UiCommands &commands) {
-        ImGui::SetNextWindowSize(ImVec2(460.0f, 620.0f), ImGuiCond_FirstUseEver);
+        if (ui_window_restore_pending_ && ui_window_rect_valid_) {
+            ImGui::SetNextWindowPos(ui_window_pos_, ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ui_window_size_, ImGuiCond_Always);
+            ui_window_restore_pending_ = false;
+        } else {
+            ImGui::SetNextWindowSize(ImVec2(460.0f, 620.0f), ImGuiCond_FirstUseEver);
+        }
+
         ImGui::Begin("Javelin");
+        ui_window_pos_ = ImGui::GetWindowPos();
+        ui_window_size_ = ImGui::GetWindowSize();
+        ui_window_rect_valid_ = true;
+
+        handle_keyboard_shortcuts_(snapshot, commands);
 
         draw_status_row_(snapshot);
         ImGui::Separator();
 
         if (ImGui::BeginTabBar("ControlTabs")) {
-            if (ImGui::BeginTabItem("Simulation")) {
+            bool tab_restore_pending = ui_tab_restore_pending_;
+
+            if (ImGui::BeginTabItem("Simulation", nullptr, tab_item_flags_(UiTab::simulation, tab_restore_pending))) {
+                selected_tab_ = UiTab::simulation;
+                tab_restore_pending = false;
                 draw_simulation_section_(snapshot, commands);
                 draw_parameters_section_(snapshot, commands);
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Debug")) {
+            if (ImGui::BeginTabItem("Debug", nullptr, tab_item_flags_(UiTab::debug, tab_restore_pending))) {
+                selected_tab_ = UiTab::debug;
+                tab_restore_pending = false;
                 DebugToggles edited_debug = snapshot.debug_toggles;
                 draw_debug_section_(edited_debug);
                 if (!debug_toggles_equal_(edited_debug, snapshot.debug_toggles)) {
@@ -293,17 +466,22 @@ struct RenderSystem final {
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Performance")) {
+            if (ImGui::BeginTabItem("Performance", nullptr, tab_item_flags_(UiTab::performance, tab_restore_pending))) {
+                selected_tab_ = UiTab::performance;
+                tab_restore_pending = false;
                 draw_performance_section_(snapshot);
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("Scene")) {
+            if (ImGui::BeginTabItem("Scene", nullptr, tab_item_flags_(UiTab::scene, tab_restore_pending))) {
+                selected_tab_ = UiTab::scene;
+                tab_restore_pending = false;
                 draw_scene_section_(snapshot, commands);
                 ImGui::EndTabItem();
             }
 
             ImGui::EndTabBar();
+            ui_tab_restore_pending_ = tab_restore_pending;
         }
 
         ImGui::End();
@@ -382,7 +560,7 @@ struct RenderSystem final {
             commands.simulation_paused = !snapshot.simulation_paused;
         }
         ImGui::SameLine();
-        help_marker_("Pause or resume continuous fixed-rate simulation.");
+        help_marker_("Pause or resume continuous fixed-rate simulation. Shortcut: F5.");
 
         ImGui::SameLine();
         ImGui::BeginDisabled(!snapshot.simulation_paused);
@@ -390,13 +568,13 @@ struct RenderSystem final {
             add_requested_simulation_steps_(commands, 1u);
         }
         ImGui::SameLine();
-        help_marker_("Advance exactly one fixed simulation tick (1/60 s).");
+        help_marker_("Advance exactly one fixed simulation tick (1/60 s). Shortcut: F6.");
         ImGui::SameLine();
         if (ImGui::Button("Step x10")) {
             add_requested_simulation_steps_(commands, 10u);
         }
         ImGui::SameLine();
-        help_marker_("Queue ten fixed simulation ticks while paused.");
+        help_marker_("Queue ten fixed simulation ticks while paused. Shortcut: F7.");
         ImGui::EndDisabled();
 
         ImGui::Text("State: %s", snapshot.simulation_paused ? "Paused" : "Running");
@@ -479,7 +657,7 @@ struct RenderSystem final {
             commands.request_reset = true;
         }
         ImGui::SameLine();
-        help_marker_("Restore authored initial transforms and velocities.");
+        help_marker_("Restore authored initial transforms and velocities. Shortcut: F9.");
         ImGui::EndDisabled();
     }
 
@@ -712,6 +890,13 @@ struct RenderSystem final {
     // Last completed simulation step id that contributed a physics-dt history sample.
     // This avoids duplicating a single physics tick across many render frames.
     u64 last_physics_dt_sample_step_count_{0};
+
+    UiTab selected_tab_{UiTab::simulation};
+    bool ui_tab_restore_pending_{false};
+    bool ui_window_rect_valid_{false};
+    bool ui_window_restore_pending_{false};
+    ImVec2 ui_window_pos_{0.0f, 0.0f};
+    ImVec2 ui_window_size_{0.0f, 0.0f};
 
     bool gpu_ready_ = false;
 
