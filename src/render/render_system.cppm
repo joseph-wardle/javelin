@@ -44,6 +44,32 @@ import javelin.platform.window;
 export namespace javelin {
 
 struct RenderSystem final {
+  private:
+    struct UiSnapshot final {
+        f32 render_dt_ms{};
+        bool has_physics{};
+        bool simulation_paused{};
+        u32 pending_simulation_steps{};
+        u64 completed_simulation_steps{};
+        f32 gravity{};
+        f32 angular_damping{};
+        f32 physics_dt_ms{};
+    };
+
+    struct UiCommands final {
+        bool has_debug_toggles{};
+        DebugToggles debug_toggles{};
+        bool has_simulation_paused{};
+        bool simulation_paused{};
+        u32 requested_simulation_steps{};
+        bool has_gravity{};
+        f32 gravity{};
+        bool has_angular_damping{};
+        f32 angular_damping{};
+        bool request_reset{};
+    };
+
+  public:
     void init_cpu(const Scene &scene, PhysicsSystem &physics) noexcept {
         scene_ = &scene;
         physics_ = &physics;
@@ -126,159 +152,14 @@ struct RenderSystem final {
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
 
-            ImGui::Begin("Javelin");
             const f32 render_dt_ms = static_cast<f32>(dt * 1000.0);
             if (render_dt_ms > 0.0f) {
                 push_render_dt_sample_(render_dt_ms);
             }
-            ImGui::Checkbox("Grid", &debug_.draw_grid);
-            ImGui::Checkbox("Contacts", &debug_.draw_contacts);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                ImGui::SetTooltip("Render collision contact debug layer.");
-            }
-            ImGui::Checkbox("AABBs", &debug_.draw_aabbs);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                ImGui::SetTooltip("Render per-body axis-aligned bounding box wireframes.");
-            }
-            ImGui::Checkbox("Sleep State", &debug_.draw_sleep_state);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                ImGui::SetTooltip("Overlay sleeping bodies gray, recently-woken bodies yellow.");
-            }
-            ImGui::Checkbox("Constraints", &debug_.draw_constraints);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                ImGui::SetTooltip("Draw lines between constraint anchor points (blue-white = rigid, orange = soft).");
-            }
-            ImGui::Checkbox("Velocities", &debug_.draw_velocities);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                ImGui::SetTooltip("Draw velocity vectors from body centers (green = linear, magenta = angular).");
-            }
-            ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
-            if (physics_ != nullptr) {
-                ImGui::Separator();
-                ImGui::TextUnformatted("Physics");
-
-                ImGui::TextUnformatted("Simulation");
-                bool simulation_paused = physics_->simulation_paused();
-                if (ImGui::Button(simulation_paused ? "Resume" : "Pause")) {
-                    simulation_paused = !simulation_paused;
-                    physics_->set_simulation_paused(simulation_paused);
-                }
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                    ImGui::SetTooltip("Pause/resume continuous fixed-rate simulation.");
-                }
-
-                ImGui::SameLine();
-                ImGui::BeginDisabled(!simulation_paused);
-                if (ImGui::Button("Step")) {
-                    physics_->request_simulation_steps(1u);
-                }
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                    ImGui::SetTooltip("Advance one fixed simulation tick (1/60 s).");
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Step x10")) {
-                    physics_->request_simulation_steps(10u);
-                }
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                    ImGui::SetTooltip("Queue 10 fixed simulation ticks while paused.");
-                }
-                ImGui::EndDisabled();
-
-                ImGui::Text("State: %s", simulation_paused ? "Paused" : "Running");
-                ImGui::Text("Pending steps: %u", physics_->pending_simulation_steps());
-                const u64 completed_simulation_steps = physics_->completed_simulation_steps();
-                ImGui::Text("Completed steps: %llu", static_cast<unsigned long long>(completed_simulation_steps));
-
-                ImGui::Separator();
-                ImGui::TextUnformatted("Parameters");
-                f32 gravity = physics_->gravity();
-                if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
-                    physics_->set_gravity(gravity);
-                }
-                f32 angular_damping = physics_->angular_damping();
-                if (ImGui::DragFloat("Angular Damping", &angular_damping, 0.01f, 0.0f, 5.0f)) {
-                    physics_->set_angular_damping(angular_damping);
-                }
-
-                if (ImGui::Button("Reset Scene")) {
-                    physics_->request_reset();
-                }
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                    ImGui::SetTooltip("Restore authored initial scene state.");
-                }
-
-                ImGui::Separator();
-                ImGui::Text("Frame dt: %.3f ms", render_dt_ms);
-                const int render_history_count =
-                    render_dt_history_full_ ? static_cast<int>(kRenderDtHistory) : static_cast<int>(render_dt_cursor_);
-                if (render_history_count > 0) {
-                    const int offset = render_dt_history_full_ ? static_cast<int>(render_dt_cursor_) : 0;
-                    f32 min_v = 0.0f;
-                    f32 max_v = 0.0f;
-                    double sum = 0.0;
-                    for (int i = 0; i < render_history_count; ++i) {
-                        const usize idx = (static_cast<usize>(offset) + static_cast<usize>(i)) % kRenderDtHistory;
-                        const f32 v = render_dt_history_[idx];
-                        if (i == 0) {
-                            min_v = v;
-                            max_v = v;
-                        } else {
-                            min_v = std::min(min_v, v);
-                            max_v = std::max(max_v, v);
-                        }
-                        sum += static_cast<double>(v);
-                    }
-                    const f32 avg = static_cast<f32>(sum / static_cast<double>(render_history_count));
-                    f32 max_dev = std::max(max_v - avg, avg - min_v);
-                    if (max_dev < 0.25f) {
-                        max_dev = 0.25f;
-                    }
-                    max_dev *= 1.1f;
-                    const f32 plot_min = avg - max_dev;
-                    const f32 plot_max = avg + max_dev;
-                    ImGui::PlotLines("Frame dt (ms)", render_dt_history_.data(), render_history_count, offset, nullptr,
-                                     plot_min, plot_max, ImVec2(0, 80));
-                }
-
-                const u64 completed_steps_for_dt_sample = physics_->completed_simulation_steps();
-                const f32 physics_dt_ms = physics_->last_tick_dt_ms();
-                if (physics_dt_ms > 0.0f && completed_steps_for_dt_sample != last_physics_dt_sample_step_count_) {
-                    push_physics_dt_sample_(physics_dt_ms);
-                    last_physics_dt_sample_step_count_ = completed_steps_for_dt_sample;
-                }
-                ImGui::Text("Physics dt: %.3f ms", physics_dt_ms);
-                const int history_count = physics_dt_history_full_ ? static_cast<int>(kPhysicsDtHistory)
-                                                                   : static_cast<int>(physics_dt_cursor_);
-                if (history_count > 0) {
-                    const int offset = physics_dt_history_full_ ? static_cast<int>(physics_dt_cursor_) : 0;
-                    f32 min_v = 0.0f;
-                    f32 max_v = 0.0f;
-                    double sum = 0.0;
-                    for (int i = 0; i < history_count; ++i) {
-                        const usize idx = (static_cast<usize>(offset) + static_cast<usize>(i)) % kPhysicsDtHistory;
-                        const f32 v = physics_dt_history_[idx];
-                        if (i == 0) {
-                            min_v = v;
-                            max_v = v;
-                        } else {
-                            min_v = std::min(min_v, v);
-                            max_v = std::max(max_v, v);
-                        }
-                        sum += static_cast<double>(v);
-                    }
-                    const f32 avg = static_cast<f32>(sum / static_cast<double>(history_count));
-                    f32 max_dev = std::max(max_v - avg, avg - min_v);
-                    if (max_dev < 0.25f) {
-                        max_dev = 0.25f;
-                    }
-                    max_dev *= 1.1f;
-                    const f32 plot_min = avg - max_dev;
-                    const f32 plot_max = avg + max_dev;
-                    ImGui::PlotLines("Physics dt (ms)", physics_dt_history_.data(), history_count, offset, nullptr,
-                                     plot_min, plot_max, ImVec2(0, 80));
-                }
-            }
-            ImGui::End();
+            const UiSnapshot ui_snapshot = build_ui_snapshot_(render_dt_ms);
+            UiCommands ui_commands{};
+            build_ui_(ui_snapshot, ui_commands);
+            apply_ui_commands_(ui_commands);
 
             const ImGuiIO &io = ImGui::GetIO();
             input.end_frame(io.WantCaptureMouse, io.WantCaptureKeyboard);
@@ -353,6 +234,207 @@ struct RenderSystem final {
     }
 
   private:
+    [[nodiscard]] UiSnapshot build_ui_snapshot_(const f32 render_dt_ms) const noexcept {
+        UiSnapshot snapshot{
+            .render_dt_ms = render_dt_ms,
+        };
+
+        if (physics_ == nullptr) {
+            return snapshot;
+        }
+
+        snapshot.has_physics = true;
+        snapshot.simulation_paused = physics_->simulation_paused();
+        snapshot.pending_simulation_steps = physics_->pending_simulation_steps();
+        snapshot.completed_simulation_steps = physics_->completed_simulation_steps();
+        snapshot.gravity = physics_->gravity();
+        snapshot.angular_damping = physics_->angular_damping();
+        snapshot.physics_dt_ms = physics_->last_tick_dt_ms();
+        return snapshot;
+    }
+
+    void build_ui_(const UiSnapshot &snapshot, UiCommands &commands) {
+        ImGui::Begin("Javelin");
+
+        DebugToggles edited_debug = debug_;
+        draw_debug_section_(edited_debug);
+        if (!debug_toggles_equal_(edited_debug, debug_)) {
+            commands.has_debug_toggles = true;
+            commands.debug_toggles = edited_debug;
+        }
+
+        if (snapshot.has_physics) {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Physics");
+            draw_simulation_section_(snapshot, commands);
+            draw_parameters_section_(snapshot, commands);
+            draw_performance_section_(snapshot);
+        }
+
+        ImGui::End();
+    }
+
+    void draw_debug_section_(DebugToggles &debug) const {
+        ImGui::Checkbox("Grid", &debug.draw_grid);
+        ImGui::Checkbox("Contacts", &debug.draw_contacts);
+        tooltip_if_hovered_("Render collision contact debug layer.");
+        ImGui::Checkbox("AABBs", &debug.draw_aabbs);
+        tooltip_if_hovered_("Render per-body axis-aligned bounding box wireframes.");
+        ImGui::Checkbox("Sleep State", &debug.draw_sleep_state);
+        tooltip_if_hovered_("Overlay sleeping bodies gray, recently-woken bodies yellow.");
+        ImGui::Checkbox("Constraints", &debug.draw_constraints);
+        tooltip_if_hovered_("Draw lines between constraint anchor points (blue-white = rigid, orange = soft).");
+        ImGui::Checkbox("Velocities", &debug.draw_velocities);
+        tooltip_if_hovered_("Draw velocity vectors from body centers (green = linear, magenta = angular).");
+        ImGui::Checkbox("Color Transform", &debug.apply_color_transform);
+    }
+
+    void draw_simulation_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
+        ImGui::TextUnformatted("Simulation");
+        if (ImGui::Button(snapshot.simulation_paused ? "Resume" : "Pause")) {
+            commands.has_simulation_paused = true;
+            commands.simulation_paused = !snapshot.simulation_paused;
+        }
+        tooltip_if_hovered_("Pause/resume continuous fixed-rate simulation.");
+
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!snapshot.simulation_paused);
+        if (ImGui::Button("Step")) {
+            add_requested_simulation_steps_(commands, 1u);
+        }
+        tooltip_if_hovered_("Advance one fixed simulation tick (1/60 s).");
+        ImGui::SameLine();
+        if (ImGui::Button("Step x10")) {
+            add_requested_simulation_steps_(commands, 10u);
+        }
+        tooltip_if_hovered_("Queue 10 fixed simulation ticks while paused.");
+        ImGui::EndDisabled();
+
+        ImGui::Text("State: %s", snapshot.simulation_paused ? "Paused" : "Running");
+        ImGui::Text("Pending steps: %u", snapshot.pending_simulation_steps);
+        ImGui::Text("Completed steps: %llu", static_cast<unsigned long long>(snapshot.completed_simulation_steps));
+    }
+
+    void draw_parameters_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
+        ImGui::Separator();
+        ImGui::TextUnformatted("Parameters");
+
+        f32 gravity = snapshot.gravity;
+        if (ImGui::DragFloat("Gravity", &gravity, 0.1f, -50.0f, 0.0f)) {
+            commands.has_gravity = true;
+            commands.gravity = gravity;
+        }
+
+        f32 angular_damping = snapshot.angular_damping;
+        if (ImGui::DragFloat("Angular Damping", &angular_damping, 0.01f, 0.0f, 5.0f)) {
+            commands.has_angular_damping = true;
+            commands.angular_damping = angular_damping;
+        }
+
+        if (ImGui::Button("Reset Scene")) {
+            commands.request_reset = true;
+        }
+        tooltip_if_hovered_("Restore authored initial scene state.");
+    }
+
+    void draw_performance_section_(const UiSnapshot &snapshot) {
+        ImGui::Separator();
+        ImGui::Text("Frame dt: %.3f ms", snapshot.render_dt_ms);
+        const int render_history_count =
+            render_dt_history_full_ ? static_cast<int>(kRenderDtHistory) : static_cast<int>(render_dt_cursor_);
+        if (render_history_count > 0) {
+            const int offset = render_dt_history_full_ ? static_cast<int>(render_dt_cursor_) : 0;
+            plot_dt_history_("Frame dt (ms)", render_dt_history_.data(), render_history_count, offset,
+                             kRenderDtHistory);
+        }
+
+        if (snapshot.physics_dt_ms > 0.0f &&
+            snapshot.completed_simulation_steps != last_physics_dt_sample_step_count_) {
+            push_physics_dt_sample_(snapshot.physics_dt_ms);
+            last_physics_dt_sample_step_count_ = snapshot.completed_simulation_steps;
+        }
+
+        ImGui::Text("Physics dt: %.3f ms", snapshot.physics_dt_ms);
+        const int physics_history_count =
+            physics_dt_history_full_ ? static_cast<int>(kPhysicsDtHistory) : static_cast<int>(physics_dt_cursor_);
+        if (physics_history_count > 0) {
+            const int offset = physics_dt_history_full_ ? static_cast<int>(physics_dt_cursor_) : 0;
+            plot_dt_history_("Physics dt (ms)", physics_dt_history_.data(), physics_history_count, offset,
+                             kPhysicsDtHistory);
+        }
+    }
+
+    void apply_ui_commands_(const UiCommands &commands) noexcept {
+        if (commands.has_debug_toggles) {
+            debug_ = commands.debug_toggles;
+        }
+
+        if (physics_ == nullptr) {
+            return;
+        }
+
+        if (commands.has_simulation_paused) {
+            physics_->set_simulation_paused(commands.simulation_paused);
+        }
+        if (commands.requested_simulation_steps > 0u) {
+            physics_->request_simulation_steps(commands.requested_simulation_steps);
+        }
+        if (commands.has_gravity) {
+            physics_->set_gravity(commands.gravity);
+        }
+        if (commands.has_angular_damping) {
+            physics_->set_angular_damping(commands.angular_damping);
+        }
+        if (commands.request_reset) {
+            physics_->request_reset();
+        }
+    }
+
+    [[nodiscard]] static bool debug_toggles_equal_(const DebugToggles &a, const DebugToggles &b) noexcept {
+        return a.draw_grid == b.draw_grid && a.draw_contacts == b.draw_contacts && a.draw_aabbs == b.draw_aabbs &&
+               a.draw_sleep_state == b.draw_sleep_state && a.draw_constraints == b.draw_constraints &&
+               a.draw_velocities == b.draw_velocities && a.apply_color_transform == b.apply_color_transform;
+    }
+
+    static void add_requested_simulation_steps_(UiCommands &commands, const u32 step_count) noexcept {
+        const u32 remaining = std::numeric_limits<u32>::max() - commands.requested_simulation_steps;
+        commands.requested_simulation_steps += std::min(step_count, remaining);
+    }
+
+    static void tooltip_if_hovered_(const char *text) noexcept {
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("%s", text);
+        }
+    }
+
+    static void plot_dt_history_(const char *label, const f32 *history, const int history_count, const int offset,
+                                 const usize history_capacity) {
+        f32 min_v = 0.0f;
+        f32 max_v = 0.0f;
+        double sum = 0.0;
+        for (int i = 0; i < history_count; ++i) {
+            const usize idx = (static_cast<usize>(offset) + static_cast<usize>(i)) % history_capacity;
+            const f32 v = history[idx];
+            if (i == 0) {
+                min_v = v;
+                max_v = v;
+            } else {
+                min_v = std::min(min_v, v);
+                max_v = std::max(max_v, v);
+            }
+            sum += static_cast<double>(v);
+        }
+        const f32 avg = static_cast<f32>(sum / static_cast<double>(history_count));
+        f32 max_dev = std::max(max_v - avg, avg - min_v);
+        if (max_dev < 0.25f) {
+            max_dev = 0.25f;
+        }
+        max_dev *= 1.1f;
+        const f32 plot_min = avg - max_dev;
+        const f32 plot_max = avg + max_dev;
+        ImGui::PlotLines(label, history, history_count, offset, nullptr, plot_min, plot_max, ImVec2(0, 80));
+    }
+
     void init_imgui_() const {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
