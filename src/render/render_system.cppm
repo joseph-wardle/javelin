@@ -56,6 +56,7 @@ struct RenderSystem final {
         u32 pending_simulation_steps{};
         u64 completed_simulation_steps{};
         f32 gravity{};
+        f32 linear_damping{};
         f32 angular_damping{};
         f32 physics_dt_ms{};
     };
@@ -68,6 +69,8 @@ struct RenderSystem final {
         u32 requested_simulation_steps{};
         bool has_gravity{};
         f32 gravity{};
+        bool has_linear_damping{};
+        f32 linear_damping{};
         bool has_angular_damping{};
         f32 angular_damping{};
         bool request_reset{};
@@ -260,6 +263,7 @@ struct RenderSystem final {
         snapshot.pending_simulation_steps = physics_->pending_simulation_steps();
         snapshot.completed_simulation_steps = physics_->completed_simulation_steps();
         snapshot.gravity = physics_->gravity();
+        snapshot.linear_damping = physics_->linear_damping();
         snapshot.angular_damping = physics_->angular_damping();
         snapshot.physics_dt_ms = physics_->last_tick_dt_ms();
         return snapshot;
@@ -322,9 +326,29 @@ struct RenderSystem final {
     }
 
     void draw_debug_section_(DebugToggles &debug) const {
+        if (ImGui::Button("All On")) {
+            set_all_debug_toggles_(debug, true);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("All Off")) {
+            set_all_debug_toggles_(debug, false);
+        }
+        ImGui::SameLine();
+        help_marker_("Enable or disable every debug and display toggle in this tab.");
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Display");
+
         ImGui::Checkbox("Grid", &debug.draw_grid);
         ImGui::SameLine();
         help_marker_("Render the world-space reference grid.");
+
+        ImGui::Checkbox("Color Transform", &debug.apply_color_transform);
+        ImGui::SameLine();
+        help_marker_("Apply display color transform to the final image.");
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Overlays");
 
         ImGui::Checkbox("Contacts", &debug.draw_contacts);
         ImGui::SameLine();
@@ -345,10 +369,6 @@ struct RenderSystem final {
         ImGui::Checkbox("Velocities", &debug.draw_velocities);
         ImGui::SameLine();
         help_marker_("Draw linear (green) and angular (magenta) velocity vectors.");
-
-        ImGui::Checkbox("Color Transform", &debug.apply_color_transform);
-        ImGui::SameLine();
-        help_marker_("Apply display color transform to the final image.");
     }
 
     void draw_simulation_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
@@ -400,6 +420,14 @@ struct RenderSystem final {
         }
         ImGui::SameLine();
         help_marker_("Constant vertical acceleration applied to dynamic bodies.");
+
+        f32 linear_damping = snapshot.linear_damping;
+        if (ImGui::DragFloat("Linear Damping (1/s)", &linear_damping, 0.01f, 0.0f, 5.0f)) {
+            commands.has_linear_damping = true;
+            commands.linear_damping = linear_damping;
+        }
+        ImGui::SameLine();
+        help_marker_("Exponential damping coefficient applied to linear velocity.");
 
         f32 angular_damping = snapshot.angular_damping;
         if (ImGui::DragFloat("Angular Damping (1/s)", &angular_damping, 0.01f, 0.0f, 5.0f)) {
@@ -474,6 +502,9 @@ struct RenderSystem final {
         if (commands.has_gravity) {
             physics_->set_gravity(commands.gravity);
         }
+        if (commands.has_linear_damping) {
+            physics_->set_linear_damping(commands.linear_damping);
+        }
         if (commands.has_angular_damping) {
             physics_->set_angular_damping(commands.angular_damping);
         }
@@ -486,6 +517,16 @@ struct RenderSystem final {
         return a.draw_grid == b.draw_grid && a.draw_contacts == b.draw_contacts && a.draw_aabbs == b.draw_aabbs &&
                a.draw_sleep_state == b.draw_sleep_state && a.draw_constraints == b.draw_constraints &&
                a.draw_velocities == b.draw_velocities && a.apply_color_transform == b.apply_color_transform;
+    }
+
+    static void set_all_debug_toggles_(DebugToggles &debug, const bool enabled) noexcept {
+        debug.draw_grid = enabled;
+        debug.draw_contacts = enabled;
+        debug.draw_aabbs = enabled;
+        debug.draw_sleep_state = enabled;
+        debug.draw_constraints = enabled;
+        debug.draw_velocities = enabled;
+        debug.apply_color_transform = enabled;
     }
 
     static void add_requested_simulation_steps_(UiCommands &commands, const u32 step_count) noexcept {
