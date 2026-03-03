@@ -270,6 +270,7 @@ struct RenderSystem final {
     }
 
     void build_ui_(const UiSnapshot &snapshot, UiCommands &commands) {
+        ImGui::SetNextWindowSize(ImVec2(460.0f, 620.0f), ImGuiCond_FirstUseEver);
         ImGui::Begin("Javelin");
 
         draw_status_row_(snapshot);
@@ -336,8 +337,7 @@ struct RenderSystem final {
         ImGui::SameLine();
         help_marker_("Enable or disable every debug and display toggle in this tab.");
 
-        ImGui::Separator();
-        ImGui::TextUnformatted("Display");
+        section_header_("Display");
 
         ImGui::Checkbox("Grid", &debug.draw_grid);
         ImGui::SameLine();
@@ -347,8 +347,7 @@ struct RenderSystem final {
         ImGui::SameLine();
         help_marker_("Apply display color transform to the final image.");
 
-        ImGui::Separator();
-        ImGui::TextUnformatted("Overlays");
+        section_header_("Overlays");
 
         ImGui::Checkbox("Contacts", &debug.draw_contacts);
         ImGui::SameLine();
@@ -377,7 +376,7 @@ struct RenderSystem final {
             return;
         }
 
-        ImGui::TextUnformatted("Simulation");
+        section_header_("Simulation");
         if (ImGui::Button(snapshot.simulation_paused ? "Resume" : "Pause")) {
             commands.has_simulation_paused = true;
             commands.simulation_paused = !snapshot.simulation_paused;
@@ -410,8 +409,7 @@ struct RenderSystem final {
             return;
         }
 
-        ImGui::Separator();
-        ImGui::TextUnformatted("Parameters");
+        section_header_("Parameters");
 
         f32 gravity = snapshot.gravity;
         if (ImGui::DragFloat("Gravity (m/s²)", &gravity, 0.1f, -50.0f, 0.0f)) {
@@ -470,11 +468,12 @@ struct RenderSystem final {
     }
 
     void draw_scene_section_(const UiSnapshot &snapshot, UiCommands &commands) const {
+        section_header_("Scene Stats");
         ImGui::Text("Bodies: %u", snapshot.scene_body_count);
         ImGui::Text("Shapes: %u", snapshot.scene_shape_count);
         ImGui::Text("Constraints: %u", snapshot.scene_constraint_count);
 
-        ImGui::Separator();
+        section_header_("Actions");
         ImGui::BeginDisabled(!snapshot.has_physics);
         if (ImGui::Button("Reset Scene")) {
             commands.request_reset = true;
@@ -545,6 +544,11 @@ struct RenderSystem final {
         }
     }
 
+    static void section_header_(const char *label) noexcept {
+        ImGui::Spacing();
+        ImGui::SeparatorText(label);
+    }
+
     static void plot_dt_history_(const char *label, const f32 *history, const int history_count, const int offset,
                                  const usize history_capacity) {
         f32 min_v = 0.0f;
@@ -576,10 +580,65 @@ struct RenderSystem final {
     void init_imgui_() const {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        ImGui::StyleColorsDark();
+        apply_imgui_theme_();
 
         ImGui_ImplGlfw_InitForOpenGL(window_.native, /*install_callbacks=*/true);
         ImGui_ImplOpenGL3_Init("#version 460");
+    }
+
+    static void apply_imgui_theme_() noexcept {
+        ImGui::StyleColorsDark();
+        ImGuiStyle &style = ImGui::GetStyle();
+
+        // Lightweight, readable defaults for control-heavy tooling UI.
+        style.WindowPadding = ImVec2(12.0f, 10.0f);
+        style.FramePadding = ImVec2(8.0f, 5.0f);
+        style.CellPadding = ImVec2(8.0f, 4.0f);
+        style.ItemSpacing = ImVec2(10.0f, 8.0f);
+        style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
+        style.TouchExtraPadding = ImVec2(0.0f, 0.0f);
+        style.IndentSpacing = 18.0f;
+        style.ScrollbarSize = 14.0f;
+        style.GrabMinSize = 11.0f;
+
+        style.WindowRounding = 8.0f;
+        style.ChildRounding = 6.0f;
+        style.FrameRounding = 6.0f;
+        style.PopupRounding = 6.0f;
+        style.ScrollbarRounding = 8.0f;
+        style.GrabRounding = 6.0f;
+        style.TabRounding = 6.0f;
+
+        style.WindowBorderSize = 1.0f;
+        style.ChildBorderSize = 1.0f;
+        style.PopupBorderSize = 1.0f;
+        style.FrameBorderSize = 0.0f;
+        style.TabBorderSize = 0.0f;
+
+        style.WindowTitleAlign = ImVec2(0.04f, 0.5f);
+        style.SeparatorTextBorderSize = 1.0f;
+        style.SeparatorTextAlign = ImVec2(0.0f, 0.5f);
+        style.SeparatorTextPadding = ImVec2(6.0f, 3.0f);
+
+        ImVec4 *colors = style.Colors;
+        colors[ImGuiCol_WindowBg] = ImVec4(0.11f, 0.12f, 0.14f, 1.0f);
+        colors[ImGuiCol_TitleBg] = ImVec4(0.10f, 0.11f, 0.13f, 1.0f);
+        colors[ImGuiCol_TitleBgActive] = ImVec4(0.16f, 0.18f, 0.22f, 1.0f);
+        colors[ImGuiCol_FrameBg] = ImVec4(0.19f, 0.21f, 0.25f, 1.0f);
+        colors[ImGuiCol_FrameBgHovered] = ImVec4(0.24f, 0.28f, 0.34f, 1.0f);
+        colors[ImGuiCol_FrameBgActive] = ImVec4(0.27f, 0.33f, 0.40f, 1.0f);
+        colors[ImGuiCol_Button] = ImVec4(0.23f, 0.30f, 0.41f, 1.0f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.31f, 0.40f, 0.54f, 1.0f);
+        colors[ImGuiCol_ButtonActive] = ImVec4(0.19f, 0.26f, 0.36f, 1.0f);
+        colors[ImGuiCol_Tab] = ImVec4(0.17f, 0.19f, 0.24f, 1.0f);
+        colors[ImGuiCol_TabHovered] = ImVec4(0.30f, 0.37f, 0.49f, 1.0f);
+        colors[ImGuiCol_TabActive] = ImVec4(0.24f, 0.31f, 0.43f, 1.0f);
+        colors[ImGuiCol_CheckMark] = ImVec4(0.56f, 0.78f, 0.98f, 1.0f);
+        colors[ImGuiCol_SliderGrab] = ImVec4(0.51f, 0.72f, 0.93f, 1.0f);
+        colors[ImGuiCol_SliderGrabActive] = ImVec4(0.67f, 0.84f, 0.99f, 1.0f);
+        colors[ImGuiCol_Header] = ImVec4(0.23f, 0.30f, 0.41f, 1.0f);
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.30f, 0.39f, 0.52f, 1.0f);
+        colors[ImGuiCol_HeaderActive] = ImVec4(0.20f, 0.28f, 0.38f, 1.0f);
     }
 
     static void shutdown_imgui_() noexcept {
