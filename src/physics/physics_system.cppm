@@ -13,6 +13,7 @@ import javelin.physics.aabb;
 import javelin.physics.bvh_dynamic;
 import javelin.physics.bvh_static;
 import javelin.physics.broad_phase;
+import javelin.physics.aabb_debug;
 import javelin.physics.contact_debug;
 import javelin.physics.integrate;
 import javelin.physics.narrow_phase;
@@ -52,6 +53,9 @@ struct PhysicsSystem final {
         const u32 estimated_point_capacity = std::max<u32>(body_count * 16u, 64u);
         contact_debug_channel_.reserve(estimated_point_capacity);
         contact_debug_channel_.publish_empty(0u);
+        // AABB debug payload: one Aabb per body, fixed size.
+        aabb_debug_channel_.reserve(body_count);
+        aabb_debug_channel_.publish_empty(0u);
     }
 
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
@@ -65,6 +69,9 @@ struct PhysicsSystem final {
     }
     void set_contact_debug_enabled(const bool enabled) noexcept {
         contact_debug_enabled_.store(enabled, std::memory_order_release);
+    }
+    void set_aabb_debug_enabled(const bool enabled) noexcept {
+        aabb_debug_enabled_.store(enabled, std::memory_order_release);
     }
     // Thread-safe control request consumed by the physics thread.
     // Reset is serviced even while simulation is paused.
@@ -111,6 +118,10 @@ struct PhysicsSystem final {
         return contact_debug_enabled_.load(std::memory_order_acquire);
     }
     [[nodiscard]] ContactDebugSnapshot contact_debug_snapshot() const noexcept { return contact_debug_channel_.snapshot(); }
+    [[nodiscard]] bool aabb_debug_enabled() const noexcept {
+        return aabb_debug_enabled_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] AabbDebugSnapshot aabb_debug_snapshot() const noexcept { return aabb_debug_channel_.snapshot(); }
     [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
     [[nodiscard]] bool simulation_paused() const noexcept {
         return simulation_paused_.load(std::memory_order_acquire);
@@ -231,6 +242,7 @@ struct PhysicsSystem final {
     std::atomic<f32> linear_damping_{0.1f};
     std::atomic<f32> angular_damping_{0.4f};
     std::atomic<bool> contact_debug_enabled_{false};
+    std::atomic<bool> aabb_debug_enabled_{false};
     std::atomic<f32> last_tick_dt_ms_{0.0f};
     std::atomic<bool> reset_requested_{false};
     // Simulation control invariants:
@@ -312,9 +324,11 @@ struct PhysicsSystem final {
     // Byte mask indexed by body id; set when body participates in any active contact this tick.
     std::vector<u8> contact_activity_mask_{};
     ContactDebugChannel contact_debug_channel_{};
+    AabbDebugChannel aabb_debug_channel_{};
     // Physics-thread state: tracks enable->disable transitions so we can clear
     // stale snapshots once without paying per-tick writes while disabled.
     bool contact_debug_enabled_last_tick_{false};
+    bool aabb_debug_enabled_last_tick_{false};
 
     struct PersistenceRefreshStats final {
         u32 previous_point_count{};
@@ -374,7 +388,9 @@ struct PhysicsSystem final {
             static_dirty_ = true;
             clear_manifold_state_();
             contact_debug_channel_.publish_empty(completed_sim_step_count_.load(std::memory_order_relaxed));
+            aabb_debug_channel_.publish_empty(completed_sim_step_count_.load(std::memory_order_relaxed));
             contact_debug_enabled_last_tick_ = false;
+            aabb_debug_enabled_last_tick_ = false;
         }
         return true;
     }
@@ -551,6 +567,15 @@ struct PhysicsSystem final {
             contact_debug_channel_.publish_empty(next_completed_step_id_());
         }
         contact_debug_enabled_last_tick_ = publish_contact_debug;
+
+        const bool publish_aabb_debug = aabb_debug_enabled_.load(std::memory_order_acquire);
+        if (publish_aabb_debug) {
+            publish_aabb_debug_snapshot_(count, next_completed_step_id_());
+        } else if (aabb_debug_enabled_last_tick_) {
+            aabb_debug_channel_.publish_empty(next_completed_step_id_());
+        }
+        aabb_debug_enabled_last_tick_ = publish_aabb_debug;
+
         publish_poses(view.poses, view.position, view.orientation, view.asleep, count);
         return true;
     }
@@ -742,6 +767,16 @@ struct PhysicsSystem final {
         }
 #endif
         contact_debug_channel_.publish(out_index, step_id);
+    }
+
+    // Copies bounds_cache_ into the aabb_debug_channel_.
+    // bounds_cache_ holds tight per-body AABBs computed from pre-integration positions
+    // at the start of this tick.  The one-tick positional lag relative to published
+    // poses is imperceptible at 60 Hz and avoids recomputing bounds a second time.
+    void publish_aabb_debug_snapshot_(const u32 count, const u64 step_id) {
+        AabbDebugWrite out = aabb_debug_channel_.write_aabbs(count);
+        std::copy_n(bounds_cache_.data(), count, out.aabbs.data());
+        aabb_debug_channel_.publish(count, step_id);
     }
 
     [[nodiscard]] static bool body_pair_less_(const BodyPair lhs, const BodyPair rhs) noexcept {

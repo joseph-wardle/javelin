@@ -22,12 +22,14 @@ import javelin.render.pipeline;
 import javelin.render.render_context;
 import javelin.render.render_device;
 import javelin.render.render_targets;
+import javelin.render.passes.aabb_debug_pass;
 import javelin.render.passes.contact_debug_pass;
 import javelin.render.passes.display_pass;
 import javelin.render.passes.geometry_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
 import javelin.render.types;
+import javelin.physics.aabb_debug;
 import javelin.physics.contact_debug;
 import javelin.physics.physics_system;
 import javelin.scene;
@@ -288,9 +290,12 @@ struct RenderSystem final {
         const PoseSnapshot poses = scene_->pose_snapshot();
         if (physics_ != nullptr) {
             physics_->set_contact_debug_enabled(debug_.draw_contacts);
+            physics_->set_aabb_debug_enabled(debug_.draw_aabbs);
         }
         const ContactDebugSnapshot contacts =
             (physics_ != nullptr) ? physics_->contact_debug_snapshot() : ContactDebugSnapshot{};
+        const AabbDebugSnapshot aabbs =
+            (physics_ != nullptr) ? physics_->aabb_debug_snapshot() : AabbDebugSnapshot{};
         const f32 pose_alpha = compute_pose_alpha_(poses);
 
         RenderContext ctx{
@@ -299,6 +304,7 @@ struct RenderSystem final {
             .view = scene_->render_view(),
             .poses = poses,
             .contacts = contacts,
+            .aabbs = aabbs,
             .pose_alpha = pose_alpha,
             .targets = targets_,
             .debug = debug_,
@@ -382,7 +388,7 @@ struct RenderSystem final {
     }
 
   private:
-    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, ContactDebugPass, DisplayPass>;
+    using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, ContactDebugPass, AabbDebugPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     PhysicsSystem *physics_ = nullptr;
