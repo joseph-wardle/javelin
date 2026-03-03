@@ -22,6 +22,7 @@ target_sources(javelin
             math/vec3.cppm
             math/vec4.cppm
             physics/aabb.cppm
+            physics/aabb_debug.cppm
             physics/bvh_dynamic.cppm
             physics/bvh_static.cppm
             physics/broad_phase.cppm
