@@ -25,6 +25,7 @@ import javelin.render.render_targets;
 import javelin.render.passes.aabb_debug_pass;
 import javelin.render.passes.contact_debug_pass;
 import javelin.render.passes.constraint_debug_pass;
+import javelin.render.passes.velocity_debug_pass;
 import javelin.render.passes.display_pass;
 import javelin.render.passes.geometry_pass;
 import javelin.render.passes.sleep_debug_pass;
@@ -146,6 +147,10 @@ struct RenderSystem final {
             ImGui::Checkbox("Constraints", &debug_.draw_constraints);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 ImGui::SetTooltip("Draw lines between constraint anchor points (blue-white = rigid, orange = soft).");
+            }
+            ImGui::Checkbox("Velocities", &debug_.draw_velocities);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                ImGui::SetTooltip("Draw velocity vectors from body centers (green = linear, magenta = angular).");
             }
             ImGui::Checkbox("Color Transform", &debug_.apply_color_transform);
             if (physics_ != nullptr) {
@@ -405,7 +410,7 @@ struct RenderSystem final {
     // x-ray passes (ContactDebugPass, AabbDebugPass, ConstraintDebugPass) which disable
     // depth testing.
     using Pipeline = RenderPipeline<GeometryPass, WorldGridPass, SleepDebugPass, ContactDebugPass, AabbDebugPass,
-                                    ConstraintDebugPass, DisplayPass>;
+                                    ConstraintDebugPass, VelocityDebugPass, DisplayPass>;
 
     const Scene *scene_ = nullptr;
     PhysicsSystem *physics_ = nullptr;

@@ -49,6 +49,7 @@ target_sources(javelin
             render/passes/aabb_debug_pass.cppm
             render/passes/contact_debug_pass.cppm
             render/passes/constraint_debug_pass.cppm
+            render/passes/velocity_debug_pass.cppm
             render/passes/sleep_debug_pass.cppm
             render/passes/display_pass.cppm
             render/passes/world_grid_pass.cppm
