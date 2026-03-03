@@ -524,6 +524,9 @@ struct PhysicsSystem final {
         solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
                                   std::span<const ContactManifold>{manifolds_},
                                   std::span<const u8>{view.asleep});
+        solve_distance_constraints(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
+                                   view.orientation, view.position, view.constraints, dt,
+                                   std::span<const u8>{view.asleep});
         apply_linear_damping(view.velocity, view.inv_mass, view.asleep, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, view.asleep, angular_damping, dt);
         // Clamp near-zero velocities on awake resting contacts to zero.

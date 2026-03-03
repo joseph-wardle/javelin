@@ -26,6 +26,7 @@ target_sources(javelin
             physics/bvh_static.cppm
             physics/broad_phase.cppm
             physics/contact_debug.cppm
+            physics/constraint_types.cppm
             physics/integrate.cppm
             physics/narrow_phase.cppm
             physics/publish.cppm

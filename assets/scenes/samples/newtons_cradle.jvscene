@@ -1,0 +1,56 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# scene: Newton's cradle — 5 steel spheres on rigid pendulum rods.
+# Ball 0 is pulled up 45° from vertical to start the swing.
+# Each sphere is held by two distance constraints (front and back pivot) so
+# the pendulum motion stays planar and Z-drift is eliminated.
+#
+# Geometry:
+#   sphere radius     r  = 0.1 m   (spheres touch at rest: spacing = 2r = 0.2 m)
+#   steel density     ρ  = 7800    (mass = ρ × r³ = 7800 × 0.001 = 7.8 per ball)
+#   string length     L  = 1.0 m   (pivot frame y=2.0, ball centres y=1.0 at rest)
+#   pivot Z offset    dz = 0.1 m   (pivot_f at z=-0.1, pivot_b at z=+0.1)
+#   constraint rest        = sqrt(L^2 + dz^2) = sqrt(1.01) ≈ 1.00499 m
+#   ball_0 displacement    = 45° from vertical → px = -0.4 - sin(45°) ≈ -1.107
+#                                                 py = 2.0 - cos(45°) ≈  1.293
+scene version=1 units=m
+
+# physics_materials
+# id=1  steel: near-elastic, low friction, high density — preserves momentum across collisions
+physics_material id=1 restitution=0.99 friction=0.05 density=7800
+
+# shapes
+# pivot: tiny anchor sphere; kept small so it never contacts the pendulum balls
+shape id=pivot kind=sphere r=0.01
+shape id=ball  kind=sphere r=0.1
+
+# pivot bodies (static) — two per pendulum at the top frame (y=2.0), separated in Z
+body id=pivot_0f shape=pivot motion=static material=0 mesh=0 px=-0.4 py=2.0 pz=-0.1
+body id=pivot_0b shape=pivot motion=static material=0 mesh=0 px=-0.4 py=2.0 pz=0.1
+body id=pivot_1f shape=pivot motion=static material=0 mesh=0 px=-0.2 py=2.0 pz=-0.1
+body id=pivot_1b shape=pivot motion=static material=0 mesh=0 px=-0.2 py=2.0 pz=0.1
+body id=pivot_2f shape=pivot motion=static material=0 mesh=0 px=0.0  py=2.0 pz=-0.1
+body id=pivot_2b shape=pivot motion=static material=0 mesh=0 px=0.0  py=2.0 pz=0.1
+body id=pivot_3f shape=pivot motion=static material=0 mesh=0 px=0.2  py=2.0 pz=-0.1
+body id=pivot_3b shape=pivot motion=static material=0 mesh=0 px=0.2  py=2.0 pz=0.1
+body id=pivot_4f shape=pivot motion=static material=0 mesh=0 px=0.4  py=2.0 pz=-0.1
+body id=pivot_4b shape=pivot motion=static material=0 mesh=0 px=0.4  py=2.0 pz=0.1
+
+# pendulum balls (dynamic) — balls 1-4 hang at rest; ball_0 displaced 45° to start
+body id=ball_0 shape=ball motion=dynamic material=1 mesh=0 px=-1.107 py=1.293 pz=0
+body id=ball_1 shape=ball motion=dynamic material=1 mesh=0 px=-0.2   py=1.0   pz=0
+body id=ball_2 shape=ball motion=dynamic material=1 mesh=0 px=0.0    py=1.0   pz=0
+body id=ball_3 shape=ball motion=dynamic material=1 mesh=0 px=0.2    py=1.0   pz=0
+body id=ball_4 shape=ball motion=dynamic material=1 mesh=0 px=0.4    py=1.0   pz=0
+
+# constraints — rigid rods (compliance=0), rest=sqrt(1.01)≈1.00499 m
+constraint id=c_0f kind=distance body_a=pivot_0f body_b=ball_0 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_0b kind=distance body_a=pivot_0b body_b=ball_0 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_1f kind=distance body_a=pivot_1f body_b=ball_1 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_1b kind=distance body_a=pivot_1b body_b=ball_1 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_2f kind=distance body_a=pivot_2f body_b=ball_2 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_2b kind=distance body_a=pivot_2b body_b=ball_2 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_3f kind=distance body_a=pivot_3f body_b=ball_3 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_3b kind=distance body_a=pivot_3b body_b=ball_3 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_4f kind=distance body_a=pivot_4f body_b=ball_4 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0
+constraint id=c_4b kind=distance body_a=pivot_4b body_b=ball_4 ax=0 ay=0 az=0 bx=0 by=0 bz=0 rest=1.00499 compliance=0

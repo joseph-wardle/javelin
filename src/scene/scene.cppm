@@ -10,6 +10,7 @@ import javelin.core.logging;
 import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
+import javelin.physics.constraint_types;
 import javelin.scene.entity;
 import javelin.scene.physics_materials;
 import javelin.scene.physics_view;
@@ -20,17 +21,16 @@ import javelin.scene.shapes;
 
 export namespace javelin {
 namespace detail {
-[[nodiscard]] inline f32 dynamic_inv_mass_for_sphere(const f32 radius) noexcept {
-    // Scene-file contract (v1): dynamic sphere mass uses unit density and r^3
-    // proportional volume.
-    const f32 mass = radius * radius * radius;
+[[nodiscard]] inline f32 dynamic_inv_mass_for_sphere(const f32 radius, const f32 density) noexcept {
+    // mass = density * r^3 (r^3 is proportional to the true sphere volume 4/3*pi*r^3;
+    // the constant factor is absorbed into the unit system and kept consistent across shapes).
+    const f32 mass = density * radius * radius * radius;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
-[[nodiscard]] inline f32 dynamic_inv_mass_for_box(const Vec3 half_extents) noexcept {
-    // Scene-file contract (v1): dynamic box mass uses unit density and full box
-    // volume.
-    const f32 mass = 8.0f * half_extents.x * half_extents.y * half_extents.z;
+[[nodiscard]] inline f32 dynamic_inv_mass_for_box(const Vec3 half_extents, const f32 density) noexcept {
+    // mass = density * full box volume = density * 8 * hx * hy * hz.
+    const f32 mass = density * 8.0f * half_extents.x * half_extents.y * half_extents.z;
     return (mass > 1e-6f) ? (1.0f / mass) : 0.0f;
 }
 
@@ -78,15 +78,16 @@ namespace detail {
     return Vec3{};
 }
 
-[[nodiscard]] inline f32 shape_inv_mass(const SceneFileBodyMotion motion, const ShapeData &shape) noexcept {
+[[nodiscard]] inline f32 shape_inv_mass(const SceneFileBodyMotion motion, const ShapeData &shape,
+                                       const f32 density) noexcept {
     if (motion == SceneFileBodyMotion::static_body) {
         return 0.0f;
     }
     switch (shape.kind) {
     case ShapeKind::sphere:
-        return dynamic_inv_mass_for_sphere(shape_sphere(shape).radius);
+        return dynamic_inv_mass_for_sphere(shape_sphere(shape).radius, density);
     case ShapeKind::box:
-        return dynamic_inv_mass_for_box(shape_box(shape).half_extents);
+        return dynamic_inv_mass_for_box(shape_box(shape).half_extents, density);
     }
     return 0.0f;
 }
@@ -115,6 +116,10 @@ struct Scene final {
     - sleep state: sleep_timer_ counts consecutive ticks a body has been below the
       sleep velocity threshold; asleep_ (u8, 0=awake/1=asleep) is set once the timer
       reaches the threshold. Both reset to 0 on restore_simulation_from_initial_().
+    - constraint definitions: constraints_ holds authored DistanceConstraints (body
+      pairs, local anchors, rest length, compliance). constraint_ids_ preserves the
+      authored string ids for round-trip scene-file export. Constraints reference
+      bodies by scene index and carry no simulation state of their own.
     - transient runtime state: capacity_, count_, pose channel buffers/timestamps.
 
     Notes:
@@ -185,6 +190,7 @@ struct Scene final {
             .angular_velocity = std::span<Vec3>{angular_velocity_.data(), count_},
             .sleep_timer = std::span<u32>{sleep_timer_.data(), count_},
             .asleep = std::span<u8>{asleep_.data(), count_},
+            .constraints = std::span<const DistanceConstraint>{constraints_.data(), constraints_.size()},
             .poses = poses_,
         };
     }
@@ -208,10 +214,12 @@ struct Scene final {
         };
     }
 
-    // Updates a physics material in the runtime pool by id.
+    // Updates restitution and friction for a physics material in the runtime pool by id.
     // id=0 (the implicit default) is always present; ids beyond the pool size are ignored.
     // Intended for live overrides: the global ImGui sliders call this each tick to push
     // their current values into material 0, which any body with no explicit material uses.
+    // density is intentionally NOT updated here: it is baked into inv_mass_ at load time
+    // and has no effect on body masses at runtime.
     void set_physics_material(const u32 id, const PhysicsMaterial material) noexcept {
         if (id >= physics_material_restitution_.size()) {
             return;
@@ -257,26 +265,32 @@ struct Scene final {
         out.clear();
 
         // Export any physics_material pool entries that differ from the default.
-        // Material id=0 equal to kDefaultPhysicsMaterial is implicit and skipped.
+        // Material id=0 equal to kDefaultPhysicsMaterial with default density is implicit and skipped.
+        const usize pool_size = physics_material_restitution_.size();
+        auto is_default_material = [&](const u32 i) {
+            const f32 density = (i < physics_material_density_.size()) ? physics_material_density_[i]
+                                                                        : kDefaultMaterialDensity;
+            return physics_material_restitution_[i] == kDefaultPhysicsMaterial.restitution &&
+                   physics_material_friction_[i]    == kDefaultPhysicsMaterial.friction    &&
+                   density                          == kDefaultMaterialDensity;
+        };
         u32 authored_material_count = 0u;
-        for (u32 i = 0; i < physics_material_restitution_.size(); ++i) {
-            if (physics_material_restitution_[i] != kDefaultPhysicsMaterial.restitution ||
-                physics_material_friction_[i] != kDefaultPhysicsMaterial.friction) {
-                ++authored_material_count;
-            }
+        for (u32 i = 0; i < pool_size; ++i) {
+            if (!is_default_material(i)) { ++authored_material_count; }
         }
-        out.reserve(static_cast<u32>(shapes_.size()), count_, authored_material_count);
-        for (u32 i = 0; i < physics_material_restitution_.size(); ++i) {
-            if (physics_material_restitution_[i] == kDefaultPhysicsMaterial.restitution &&
-                physics_material_friction_[i] == kDefaultPhysicsMaterial.friction) {
-                continue;
-            }
+        out.reserve(static_cast<u32>(shapes_.size()), count_, authored_material_count,
+                    static_cast<u32>(constraints_.size()));
+        for (u32 i = 0; i < pool_size; ++i) {
+            if (is_default_material(i)) { continue; }
+            const f32 density = (i < physics_material_density_.size()) ? physics_material_density_[i]
+                                                                        : kDefaultMaterialDensity;
             out.physics_materials.push_back(SceneFilePhysicsMaterial{
-                .id = i,
+                .id      = i,
                 .material = PhysicsMaterial{
                     .restitution = physics_material_restitution_[i],
                     .friction    = physics_material_friction_[i],
                 },
+                .density = density,
             });
         }
 
@@ -296,6 +310,9 @@ struct Scene final {
             });
         }
 
+        // Collect effective body string ids in scene-index order; constraints reference them by name.
+        std::vector<std::string> out_body_ids{};
+        out_body_ids.reserve(count_);
         for (u32 i = 0; i < count_; ++i) {
             if (shape_index_[i] >= shape_ids.size()) {
                 return error(std::format("Cannot export body {}: shape_index={} is out "
@@ -310,6 +327,7 @@ struct Scene final {
                 body_id = std::format("body_{:05}", i);
             }
 
+            out_body_ids.push_back(body_id);
             out.bodies.push_back(SceneFileBody{
                 .id = std::move(body_id),
                 .shape_id = shape_ids[shape_index_[i]],
@@ -323,13 +341,38 @@ struct Scene final {
             });
         }
 
+        // Export distance constraints: map numeric body indices back to string ids.
+        for (usize i = 0; i < constraints_.size(); ++i) {
+            const DistanceConstraint &c = constraints_[i];
+            if (c.body_a >= out_body_ids.size() || c.body_b >= out_body_ids.size()) {
+                return error(std::format("Cannot export constraint {}: body index out of range "
+                                         "(body_a={} body_b={} body_count={})",
+                                         i, c.body_a, c.body_b, out_body_ids.size()));
+            }
+            std::string constraint_id{};
+            if (i < constraint_ids_.size() && !constraint_ids_[i].empty()) {
+                constraint_id = constraint_ids_[i];
+            } else {
+                constraint_id = std::format("constraint_{:05}", i);
+            }
+            out.constraints.push_back(SceneFileConstraint{
+                .id = std::move(constraint_id),
+                .body_a_id = out_body_ids[c.body_a],
+                .body_b_id = out_body_ids[c.body_b],
+                .anchor_a = c.anchor_a,
+                .anchor_b = c.anchor_b,
+                .rest_length = c.rest_length,
+                .compliance = c.compliance,
+            });
+        }
+
         auto save_result = out.save(scene_path, save_options);
         if (!save_result) {
             return std::unexpected(save_result.error());
         }
 
-        log::info(scene, "Saved scene file '{}' (shapes={}, bodies={})", scene_path.string(), out.shapes.size(),
-                  out.bodies.size());
+        log::info(scene, "Saved scene file '{}' (shapes={}, bodies={}, constraints={})", scene_path.string(),
+                  out.shapes.size(), out.bodies.size(), out.constraints.size());
         return {};
     }
 
@@ -391,6 +434,16 @@ struct Scene final {
             shape_lookup.emplace(shape.id, shape_index);
         }
 
+        // Build a density lookup keyed by MaterialId.value before the body loop.
+        // Most scenes have few materials so a small lambda with linear search is sufficient.
+        // Unlisted materials default to kDefaultMaterialDensity (1.0).
+        auto material_density = [&](const u32 mat_id) -> f32 {
+            for (const SceneFilePhysicsMaterial &mat : in.physics_materials) {
+                if (mat.id == mat_id) { return mat.density; }
+            }
+            return kDefaultMaterialDensity;
+        };
+
         for (u32 idx = 0; idx < out.count_; ++idx) {
             const SceneFileBody &body = in.bodies[idx];
             const auto shape_it = shape_lookup.find(body.shape_id);
@@ -407,7 +460,8 @@ struct Scene final {
             out.shape_kind_[idx] = kind;
             out.shape_index_[idx] = shape_index;
 
-            const f32 inv_mass = detail::shape_inv_mass(body.motion, shape);
+            const f32 density = material_density(body.material.value);
+            const f32 inv_mass = detail::shape_inv_mass(body.motion, shape, density);
             out.inv_mass_[idx] = inv_mass;
             out.inv_inertia_[idx] = detail::shape_inv_inertia(kind, shape, inv_mass);
 
@@ -447,19 +501,56 @@ struct Scene final {
         }
         out.physics_material_restitution_.assign(max_material_value + 1u, kDefaultPhysicsMaterial.restitution);
         out.physics_material_friction_.assign(max_material_value + 1u, kDefaultPhysicsMaterial.friction);
+        out.physics_material_density_.assign(max_material_value + 1u, kDefaultMaterialDensity);
         for (const SceneFilePhysicsMaterial &authored : in.physics_materials) {
             out.physics_material_restitution_[authored.id] = authored.material.restitution;
             out.physics_material_friction_[authored.id] = authored.material.friction;
+            out.physics_material_density_[authored.id]  = authored.density;
+        }
+
+        // Resolve constraint body string ids to scene body indices.
+        out.constraints_.clear();
+        out.constraint_ids_.clear();
+        if (!in.constraints.empty()) {
+            // Build a body-id → scene index map.  The body order in in.bodies matches
+            // the scene SoA order established by the loop above.
+            std::unordered_map<std::string_view, u32> body_lookup{};
+            body_lookup.reserve(out.count_ * 2u + 1u);
+            for (u32 idx = 0; idx < out.count_; ++idx) {
+                body_lookup.emplace(out.body_ids_[idx], idx);
+            }
+
+            out.constraints_.reserve(in.constraints.size());
+            out.constraint_ids_.reserve(in.constraints.size());
+            for (const SceneFileConstraint &c : in.constraints) {
+                const auto a_it = body_lookup.find(c.body_a_id);
+                const auto b_it = body_lookup.find(c.body_b_id);
+                // Body refs were already cross-validated by SceneFile::load(); this is a safety net.
+                if (a_it == body_lookup.end() || b_it == body_lookup.end()) {
+                    log::error(scene,
+                               "Constraint '{}' references unknown body (body_a='{}' body_b='{}')",
+                               c.id, c.body_a_id, c.body_b_id);
+                    std::terminate();
+                }
+                out.constraints_.push_back(DistanceConstraint{
+                    .body_a = a_it->second,
+                    .body_b = b_it->second,
+                    .anchor_a = c.anchor_a,
+                    .anchor_b = c.anchor_b,
+                    .rest_length = c.rest_length,
+                    .compliance = c.compliance,
+                });
+                out.constraint_ids_.push_back(c.id);
+            }
         }
 
         out.snapshot_initial_state_from_sim_();
         out.publish_poses_from_sim();
         log::info(scene,
                   "Loaded scene file '{}' version={} units={} shapes={} bodies={} "
-                  "(dynamic={}, static={}, spheres={}, "
-                  "boxes={})",
+                  "(dynamic={}, static={}, spheres={}, boxes={}) constraints={}",
                   scene_path.string(), in.version, in.units, in.shapes.size(), out.count_, dynamic_count, static_count,
-                  sphere_count, box_count);
+                  sphere_count, box_count, out.constraints_.size());
         return out;
     }
 
@@ -482,6 +573,12 @@ struct Scene final {
     std::vector<std::string> shape_ids_{};
     std::vector<std::string> body_ids_{};
 
+    // Authored constraints (serialized values, preserved for round-trip export).
+    // constraints_:     distance constraint definitions (body pairs, anchors, rest length, compliance).
+    // constraint_ids_:  per-constraint string ids, parallel to constraints_.
+    std::vector<DistanceConstraint> constraints_{};
+    std::vector<std::string> constraint_ids_{};
+
     // Authored motion intent (serialized values, preserved for round-trip export).
     std::vector<SceneFileBodyMotion> body_motion_{};
 
@@ -492,8 +589,11 @@ struct Scene final {
     // Physics material pool: indexed by MaterialId.value.
     // Always contains kDefaultPhysicsMaterial at index 0; sized to cover the
     // maximum MaterialId.value used by any body in the scene.
+    // restitution and friction are live-overrideable per tick via set_physics_material().
+    // density is load-time only; it is stored here solely for the save round-trip.
     std::vector<f32> physics_material_restitution_{};
     std::vector<f32> physics_material_friction_{};
+    std::vector<f32> physics_material_density_{};
 
     // Physics derived values (recomputed during load/build).
     std::vector<f32> inv_mass_{};

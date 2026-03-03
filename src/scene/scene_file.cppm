@@ -9,6 +9,7 @@ import std;
 import javelin.core.types;
 import javelin.math.quat;
 import javelin.math.vec3;
+import javelin.physics.constraint_types;
 import javelin.scene.entity;
 import javelin.scene.physics_materials;
 import javelin.scene.shapes;
@@ -23,13 +24,21 @@ Scene file text schema (v1, .jvscene):
 - One record per line, key=value pairs, '#' comments.
 - Core records:
   - scene version=<u32> units=m
-  - physics_material id=<u32> restitution=<f32> friction=<f32>
+  - physics_material id=<u32> restitution=<f32> friction=<f32> [density=<f32>]
   - shape id=<id> kind=sphere r=<f32>
   - shape id=<id> kind=box hx=<f32> hy=<f32> hz=<f32>
   - body id=<id> shape=<shape_id> motion=<dynamic|static> material=<u32>
          mesh=<u32> px=<f32> py=<f32> pz=<f32> [ox=<f32> oy=<f32> oz=<f32> ow=<f32>]
          [vx=<f32> vy=<f32> vz=<f32>]
          [wx=<f32> wy=<f32> wz=<f32>]
+  - constraint id=<id> kind=distance body_a=<body_id> body_b=<body_id>
+              ax=<f32> ay=<f32> az=<f32> bx=<f32> by=<f32> bz=<f32>
+              rest=<f32> compliance=<f32>
+    Enforces |p_b - p_a| = rest between world-space anchor points.
+    ax/ay/az: anchor on body_a in its local space (metres).
+    bx/by/bz: anchor on body_b in its local space (metres).
+    rest:       target distance (metres, >= 0).
+    compliance: XPBD alpha (m/N); 0 = rigid link.
 - Defaults:
   - physics_material: material id=0 always exists as kDefaultPhysicsMaterial; only
     non-default materials need explicit records.
@@ -127,9 +136,29 @@ struct SceneFileBody final {
 
 // A physics_material record as authored in the scene file.
 // id is the MaterialId.value shared with body records' material=<u32> field.
+// density (kg/m³, default=1.0) scales the mass computed from shape volume at load time.
+// It is a load-time property only: changing density at runtime has no effect until the
+// scene is reloaded. It is intentionally not part of PhysicsMaterial so that the per-tick
+// set_physics_material() override path (used by the ImGui restitution/friction sliders)
+// cannot accidentally reset an authored density.
+inline constexpr f32 kDefaultMaterialDensity = 1.0f;
 struct SceneFilePhysicsMaterial final {
     u32 id{};
     PhysicsMaterial material{};
+    f32 density{kDefaultMaterialDensity};
+};
+
+// A distance constraint record as authored in the scene file.
+// body_a_id and body_b_id are resolved to numeric scene body indices at load time.
+// Anchors are in each body's local space; the solver rotates them to world space each tick.
+struct SceneFileConstraint final {
+    std::string id{};
+    std::string body_a_id{};
+    std::string body_b_id{};
+    Vec3 anchor_a{};      // attachment point in body A local space (metres)
+    Vec3 anchor_b{};      // attachment point in body B local space (metres)
+    f32 rest_length{};    // target distance (metres, >= 0)
+    f32 compliance{};     // XPBD alpha (m/N); 0 = rigid link
 };
 
 struct SceneFileLoadOptions final {
@@ -275,6 +304,14 @@ template <class Number>
 }
 
 [[nodiscard]] inline std::vector<usize> sorted_indices_by_id(const std::vector<SceneFileBody> &items) {
+    std::vector<usize> indices(items.size());
+    std::iota(indices.begin(), indices.end(), static_cast<usize>(0));
+    std::stable_sort(indices.begin(), indices.end(),
+                     [&items](const usize a, const usize b) { return items[a].id < items[b].id; });
+    return indices;
+}
+
+[[nodiscard]] inline std::vector<usize> sorted_indices_by_id(const std::vector<SceneFileConstraint> &items) {
     std::vector<usize> indices(items.size());
     std::iota(indices.begin(), indices.end(), static_cast<usize>(0));
     std::stable_sort(indices.begin(), indices.end(),
@@ -836,6 +873,7 @@ parse_physics_material_record(const std::string_view payload) {
     bool has_id = false;
     bool has_restitution = false;
     bool has_friction = false;
+    bool has_density = false;
 
     TokenCursor cursor{payload};
     while (const auto token_opt = cursor.next()) {
@@ -887,6 +925,21 @@ parse_physics_material_record(const std::string_view payload) {
             out.material.friction = *parsed;
             continue;
         }
+        if (kv->key == "density") {
+            if (has_density) {
+                return std::unexpected("Duplicate key 'density'");
+            }
+            has_density = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) {
+                return std::unexpected(std::move(parsed.error()));
+            }
+            if (!std::isfinite(*parsed) || *parsed <= 0.0f) {
+                return std::unexpected(std::format("Invalid density {} (expected finite > 0)", *parsed));
+            }
+            out.density = *parsed;
+            continue;
+        }
 
         return std::unexpected(std::format("Unknown physics_material key '{}'", kv->key));
     }
@@ -904,6 +957,164 @@ parse_physics_material_record(const std::string_view payload) {
     return out;
 }
 
+[[nodiscard]] inline std::expected<SceneFileConstraint, std::string>
+parse_constraint_record(const std::string_view payload) {
+    SceneFileConstraint out{};
+    bool has_id = false;
+    bool has_kind = false;
+    bool has_body_a = false;
+    bool has_body_b = false;
+    bool has_ax = false;
+    bool has_ay = false;
+    bool has_az = false;
+    bool has_bx = false;
+    bool has_by = false;
+    bool has_bz = false;
+    bool has_rest = false;
+    bool has_compliance = false;
+
+    f32 ax = 0.0f, ay = 0.0f, az = 0.0f;
+    f32 bx = 0.0f, by = 0.0f, bz = 0.0f;
+
+    TokenCursor cursor{payload};
+    while (const auto token_opt = cursor.next()) {
+        const std::string_view token = *token_opt;
+        const auto kv = split_key_value_token(token);
+        if (!kv) {
+            return std::unexpected(std::format("Expected key=value token, got '{}'", token));
+        }
+
+        if (kv->key == "id") {
+            if (has_id) { return std::unexpected("Duplicate key 'id'"); }
+            has_id = true;
+            if (!is_valid_identifier(kv->value)) {
+                return std::unexpected(std::format("Invalid constraint id '{}'", kv->value));
+            }
+            out.id = std::string{kv->value};
+            continue;
+        }
+        if (kv->key == "kind") {
+            if (has_kind) { return std::unexpected("Duplicate key 'kind'"); }
+            has_kind = true;
+            if (kv->value != "distance") {
+                return std::unexpected(
+                    std::format("Unknown constraint kind '{}' (expected 'distance')", kv->value));
+            }
+            continue;
+        }
+        if (kv->key == "body_a") {
+            if (has_body_a) { return std::unexpected("Duplicate key 'body_a'"); }
+            has_body_a = true;
+            if (!is_valid_identifier(kv->value)) {
+                return std::unexpected(std::format("Invalid body_a id '{}'", kv->value));
+            }
+            out.body_a_id = std::string{kv->value};
+            continue;
+        }
+        if (kv->key == "body_b") {
+            if (has_body_b) { return std::unexpected("Duplicate key 'body_b'"); }
+            has_body_b = true;
+            if (!is_valid_identifier(kv->value)) {
+                return std::unexpected(std::format("Invalid body_b id '{}'", kv->value));
+            }
+            out.body_b_id = std::string{kv->value};
+            continue;
+        }
+        if (kv->key == "ax") {
+            if (has_ax) { return std::unexpected("Duplicate key 'ax'"); }
+            has_ax = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            ax = *parsed;
+            continue;
+        }
+        if (kv->key == "ay") {
+            if (has_ay) { return std::unexpected("Duplicate key 'ay'"); }
+            has_ay = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            ay = *parsed;
+            continue;
+        }
+        if (kv->key == "az") {
+            if (has_az) { return std::unexpected("Duplicate key 'az'"); }
+            has_az = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            az = *parsed;
+            continue;
+        }
+        if (kv->key == "bx") {
+            if (has_bx) { return std::unexpected("Duplicate key 'bx'"); }
+            has_bx = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            bx = *parsed;
+            continue;
+        }
+        if (kv->key == "by") {
+            if (has_by) { return std::unexpected("Duplicate key 'by'"); }
+            has_by = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            by = *parsed;
+            continue;
+        }
+        if (kv->key == "bz") {
+            if (has_bz) { return std::unexpected("Duplicate key 'bz'"); }
+            has_bz = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            bz = *parsed;
+            continue;
+        }
+        if (kv->key == "rest") {
+            if (has_rest) { return std::unexpected("Duplicate key 'rest'"); }
+            has_rest = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!std::isfinite(*parsed) || *parsed < 0.0f) {
+                return std::unexpected(
+                    std::format("Invalid rest_length {} (expected finite >= 0)", *parsed));
+            }
+            out.rest_length = *parsed;
+            continue;
+        }
+        if (kv->key == "compliance") {
+            if (has_compliance) { return std::unexpected("Duplicate key 'compliance'"); }
+            has_compliance = true;
+            auto parsed = parse_numeric_field<f32>(kv->key, kv->value);
+            if (!parsed) { return std::unexpected(std::move(parsed.error())); }
+            if (!std::isfinite(*parsed) || *parsed < 0.0f) {
+                return std::unexpected(
+                    std::format("Invalid compliance {} (expected finite >= 0)", *parsed));
+            }
+            out.compliance = *parsed;
+            continue;
+        }
+
+        return std::unexpected(std::format("Unknown constraint key '{}'", kv->key));
+    }
+
+    if (!has_id)         { return std::unexpected("Missing required key 'id'"); }
+    if (!has_kind)       { return std::unexpected("Missing required key 'kind'"); }
+    if (!has_body_a)     { return std::unexpected("Missing required key 'body_a'"); }
+    if (!has_body_b)     { return std::unexpected("Missing required key 'body_b'"); }
+    if (!has_ax || !has_ay || !has_az) {
+        return std::unexpected("Constraint missing required anchor A fields (ax/ay/az)");
+    }
+    if (!has_bx || !has_by || !has_bz) {
+        return std::unexpected("Constraint missing required anchor B fields (bx/by/bz)");
+    }
+    if (!has_rest)       { return std::unexpected("Missing required key 'rest'"); }
+    if (!has_compliance) { return std::unexpected("Missing required key 'compliance'"); }
+
+    out.anchor_a = Vec3{ax, ay, az};
+    out.anchor_b = Vec3{bx, by, bz};
+
+    return out;
+}
+
 } // namespace detail
 
 struct SceneFile final {
@@ -912,6 +1123,7 @@ struct SceneFile final {
     std::vector<SceneFilePhysicsMaterial> physics_materials{};
     std::vector<SceneFileShape> shapes{};
     std::vector<SceneFileBody> bodies{};
+    std::vector<SceneFileConstraint> constraints{};
 
     void clear() {
         version = kSceneFileVersion;
@@ -919,16 +1131,19 @@ struct SceneFile final {
         physics_materials.clear();
         shapes.clear();
         bodies.clear();
+        constraints.clear();
     }
 
-    void reserve(const u32 shape_count, const u32 body_count, const u32 physics_material_count = 0u) {
+    void reserve(const u32 shape_count, const u32 body_count, const u32 physics_material_count = 0u,
+                 const u32 constraint_count = 0u) {
         physics_materials.reserve(physics_material_count);
         shapes.reserve(shape_count);
         bodies.reserve(body_count);
+        constraints.reserve(constraint_count);
     }
 
     [[nodiscard]] bool empty() const noexcept {
-        return physics_materials.empty() && shapes.empty() && bodies.empty();
+        return physics_materials.empty() && shapes.empty() && bodies.empty() && constraints.empty();
     }
 
     [[nodiscard]] std::expected<void, SceneFileError>
@@ -960,6 +1175,10 @@ struct SceneFile final {
             if (!std::isfinite(mat.material.friction) || mat.material.friction < 0.0f) {
                 return error(std::format("physics_material id={} has invalid friction {} (expected >= 0)", mat.id,
                                          mat.material.friction));
+            }
+            if (!std::isfinite(mat.density) || mat.density <= 0.0f) {
+                return error(std::format("physics_material id={} has invalid density {} (expected finite > 0)", mat.id,
+                                         mat.density));
             }
         }
 
@@ -1031,6 +1250,47 @@ struct SceneFile final {
             }
         }
 
+        std::unordered_set<std::string_view> constraint_ids{};
+        constraint_ids.reserve(constraints.size() * 2u + 1u);
+        for (u32 i = 0; i < constraints.size(); ++i) {
+            const SceneFileConstraint &c = constraints[i];
+            if (c.id.empty()) {
+                return error(std::format("constraint[{}] has empty id", i));
+            }
+            if (!detail::is_valid_identifier(c.id)) {
+                return error(std::format("constraint[{}] has invalid id '{}'", i, c.id));
+            }
+            if (!constraint_ids.insert(c.id).second) {
+                return error(std::format("Duplicate constraint id '{}'", c.id));
+            }
+            if (c.body_a_id.empty() || !detail::is_valid_identifier(c.body_a_id)) {
+                return error(std::format("constraint '{}' has invalid body_a id '{}'", c.id, c.body_a_id));
+            }
+            if (!body_ids.contains(c.body_a_id)) {
+                return error(std::format("constraint '{}' references unknown body_a '{}'", c.id, c.body_a_id));
+            }
+            if (c.body_b_id.empty() || !detail::is_valid_identifier(c.body_b_id)) {
+                return error(std::format("constraint '{}' has invalid body_b id '{}'", c.id, c.body_b_id));
+            }
+            if (!body_ids.contains(c.body_b_id)) {
+                return error(std::format("constraint '{}' references unknown body_b '{}'", c.id, c.body_b_id));
+            }
+            if (!c.anchor_a.is_finite()) {
+                return error(std::format("constraint '{}' has non-finite anchor_a", c.id));
+            }
+            if (!c.anchor_b.is_finite()) {
+                return error(std::format("constraint '{}' has non-finite anchor_b", c.id));
+            }
+            if (!std::isfinite(c.rest_length) || c.rest_length < 0.0f) {
+                return error(
+                    std::format("constraint '{}' has invalid rest_length {} (expected finite >= 0)", c.id, c.rest_length));
+            }
+            if (!std::isfinite(c.compliance) || c.compliance < 0.0f) {
+                return error(
+                    std::format("constraint '{}' has invalid compliance {} (expected finite >= 0)", c.id, c.compliance));
+            }
+        }
+
         return {};
     }
 
@@ -1060,6 +1320,8 @@ struct SceneFile final {
         std::unordered_map<std::string, u32> shape_line_by_id{};
         std::unordered_map<std::string, u32> body_line_by_id{};
         std::vector<u32> body_lines{};
+        std::unordered_map<std::string, u32> constraint_line_by_id{};
+        std::vector<u32> constraint_lines{};
         std::string line{};
         line.reserve(256);
 
@@ -1144,6 +1406,22 @@ struct SceneFile final {
                 continue;
             }
 
+            if (record == "constraint") {
+                auto parsed = detail::parse_constraint_record(payload);
+                if (!parsed) {
+                    return error(line_no, std::move(parsed.error()));
+                }
+                auto [it, inserted] = constraint_line_by_id.emplace(parsed->id, line_no);
+                if (!inserted) {
+                    return error(line_no,
+                                 std::format("Duplicate constraint id '{}' (first declared on line {})", parsed->id,
+                                             it->second));
+                }
+                constraint_lines.push_back(line_no);
+                out.constraints.push_back(std::move(*parsed));
+                continue;
+            }
+
             return error(line_no, std::format("Unknown record '{}'", record));
         }
 
@@ -1162,6 +1440,18 @@ struct SceneFile final {
             }
         }
 
+        for (usize i = 0; i < out.constraints.size(); ++i) {
+            const SceneFileConstraint &c = out.constraints[i];
+            if (!body_line_by_id.contains(c.body_a_id)) {
+                return error(constraint_lines[i],
+                             std::format("constraint '{}' references unknown body_a '{}'", c.id, c.body_a_id));
+            }
+            if (!body_line_by_id.contains(c.body_b_id)) {
+                return error(constraint_lines[i],
+                             std::format("constraint '{}' references unknown body_b '{}'", c.id, c.body_b_id));
+            }
+        }
+
         if (options.validate_after_parse) {
             auto valid = out.validate(path);
             if (!valid) {
@@ -1173,6 +1463,7 @@ struct SceneFile final {
         TracyPlot("scenefile_physics_materials", static_cast<i64>(out.physics_materials.size()));
         TracyPlot("scenefile_shapes", static_cast<i64>(out.shapes.size()));
         TracyPlot("scenefile_bodies", static_cast<i64>(out.bodies.size()));
+        TracyPlot("scenefile_constraints", static_cast<i64>(out.constraints.size()));
         return out;
     }
 
@@ -1204,7 +1495,8 @@ struct SceneFile final {
         }
 
         std::string out_text{};
-        out_text.reserve(256 + physics_materials.size() * 64 + shapes.size() * 64 + bodies.size() * 220);
+        out_text.reserve(256 + physics_materials.size() * 64 + shapes.size() * 64 + bodies.size() * 220 +
+                         constraints.size() * 160);
         out_text.append("# javelin scene file (.jvscene)\n");
         out_text.append("# schema=v1 units=m one-record-per-line key=value\n");
 
@@ -1234,6 +1526,9 @@ struct SceneFile final {
                 detail::append_key_value_u32(line, "id", mat.id);
                 detail::append_key_value_f32(line, "restitution", mat.material.restitution);
                 detail::append_key_value_f32(line, "friction", mat.material.friction);
+                if (mat.density != kDefaultMaterialDensity) {
+                    detail::append_key_value_f32(line, "density", mat.density);
+                }
                 out_text.append(line);
                 out_text.push_back('\n');
             }
@@ -1301,6 +1596,31 @@ struct SceneFile final {
             }
         }
 
+        const std::vector<usize> sorted_constraint_indices = detail::sorted_indices_by_id(constraints);
+        if (!sorted_constraint_indices.empty()) {
+            out_text.push_back('\n');
+            out_text.append("# constraints\n");
+            for (const usize idx : sorted_constraint_indices) {
+                const SceneFileConstraint &c = constraints[idx];
+                line.clear();
+                detail::append_token(line, "constraint");
+                detail::append_key_value(line, "id", c.id);
+                detail::append_key_value(line, "kind", "distance");
+                detail::append_key_value(line, "body_a", c.body_a_id);
+                detail::append_key_value(line, "body_b", c.body_b_id);
+                detail::append_key_value_f32(line, "ax", c.anchor_a.x);
+                detail::append_key_value_f32(line, "ay", c.anchor_a.y);
+                detail::append_key_value_f32(line, "az", c.anchor_a.z);
+                detail::append_key_value_f32(line, "bx", c.anchor_b.x);
+                detail::append_key_value_f32(line, "by", c.anchor_b.y);
+                detail::append_key_value_f32(line, "bz", c.anchor_b.z);
+                detail::append_key_value_f32(line, "rest", c.rest_length);
+                detail::append_key_value_f32(line, "compliance", c.compliance);
+                out_text.append(line);
+                out_text.push_back('\n');
+            }
+        }
+
         std::ofstream file{path, std::ios::binary | std::ios::trunc};
         if (!file.is_open()) {
             return error("Unable to open scene file for writing");
@@ -1318,6 +1638,7 @@ struct SceneFile final {
         TracyPlot("scenefile_write_physics_materials", static_cast<i64>(physics_materials.size()));
         TracyPlot("scenefile_write_shapes", static_cast<i64>(shapes.size()));
         TracyPlot("scenefile_write_bodies", static_cast<i64>(bodies.size()));
+        TracyPlot("scenefile_write_constraints", static_cast<i64>(constraints.size()));
         return {};
     }
 };
