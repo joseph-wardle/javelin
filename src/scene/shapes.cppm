@@ -18,6 +18,7 @@ struct BoxShape final {
 
 struct ShapeData final {
     ShapeKind kind{ShapeKind::sphere};
+    // Intentional: not UB — kind is a separate field, not a union member.
     union {
         SphereShape sphere;
         BoxShape box;

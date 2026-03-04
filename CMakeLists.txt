@@ -33,3 +33,8 @@ endif()
 if(JAVELIN_BUILD_BENCH)
     add_subdirectory(bench)
 endif()
+
+if(JAVELIN_ENABLE_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

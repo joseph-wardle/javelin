@@ -51,6 +51,8 @@ void apply_linear_damping(std::span<Vec3> velocity, std::span<const f32> inv_mas
     if (damping <= 0.0f) {
         return;
     }
+    // Continuous drag integrates to v *= exp(-damping * dt). For fixed small dt we use
+    // the first-order form (1 - damping * dt), then clamp to [0, 1] for stable decay.
     const f32 scale = std::clamp(1.0f - damping * dt, 0.0f, 1.0f);
     const u32 count = static_cast<u32>(velocity.size());
     for (u32 i = 0; i < count; ++i) {
@@ -155,6 +157,8 @@ void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32
     if (damping <= 0.0f) {
         return;
     }
+    // Continuous drag integrates to omega *= exp(-damping * dt). For fixed small dt we use
+    // the first-order form (1 - damping * dt), then clamp to [0, 1] for stable decay.
     const f32 scale = std::clamp(1.0f - damping * dt, 0.0f, 1.0f);
     const u32 count = static_cast<u32>(angular_velocity.size());
     for (u32 i = 0; i < count; ++i) {
