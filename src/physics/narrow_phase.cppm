@@ -1181,11 +1181,29 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
                            std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                            std::span<const u32> shape_index, std::span<const f32> inv_mass,
                            std::span<const BodyPair> pairs, std::span<const ContactManifold> previous_manifolds,
-                           const std::unordered_map<u64, u32> &previous_manifold_lookup,
-                           std::vector<ContactManifold> &manifolds) {
+                           std::span<const u32> awake_dynamic_ids, std::vector<ContactManifold> &manifolds) {
     ZoneScopedN("Physics narrow phase");
     manifolds.clear();
-    manifolds.reserve(pairs.size() + position.size());
+    manifolds.reserve(pairs.size() + awake_dynamic_ids.size());
+
+    // previous_manifolds are pair-sorted by the physics system.
+    // Track one monotonic cursor to avoid per-pair hash lookups.
+    u32 previous_cursor = 0u;
+#ifndef NDEBUG
+    for (u32 i = 1; i < previous_manifolds.size(); ++i) {
+        const ContactManifold &prev = previous_manifolds[i - 1];
+        const ContactManifold &curr = previous_manifolds[i];
+        if (curr.a < prev.a || (curr.a == prev.a && curr.b < prev.b)) {
+            log::error(physics, "Previous manifolds are not pair-sorted (index={} prev=({}, {}) curr=({}, {}))", i,
+                       prev.a, prev.b, curr.a, curr.b);
+            std::terminate();
+        }
+        if (curr.a == prev.a && curr.b == prev.b) {
+            log::error(physics, "Duplicate previous manifold pair (index={} pair=({}, {}))", i, curr.a, curr.b);
+            std::terminate();
+        }
+    }
+#endif
 
     for (const BodyPair pair : pairs) {
         const u32 a = pair.a;
@@ -1206,29 +1224,46 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
         } else if (kind_a == ShapeKind::box && kind_b == ShapeKind::box) {
             const BodyPair canonical_pair = canonical_body_pair(a, b);
             const ContactManifold *previous_manifold = nullptr;
-            if (const auto it = previous_manifold_lookup.find(body_pair_key(canonical_pair));
-                it != previous_manifold_lookup.end()) {
+            while (previous_cursor < previous_manifolds.size()) {
+                const ContactManifold &candidate = previous_manifolds[previous_cursor];
+                if (candidate.a < canonical_pair.a ||
+                    (candidate.a == canonical_pair.a && candidate.b < canonical_pair.b)) {
+                    ++previous_cursor;
+                    continue;
+                }
+                if (candidate.a == canonical_pair.a && candidate.b == canonical_pair.b) {
+                    previous_manifold = &candidate;
+                }
+                break;
+            }
 #ifndef NDEBUG
-                if (it->second >= previous_manifolds.size()) {
-                    log::error(physics, "Previous manifold lookup out of range (a={} b={} index={} size={})",
-                               canonical_pair.a, canonical_pair.b, it->second, previous_manifolds.size());
+            if (previous_manifold != nullptr && previous_cursor + 1u < previous_manifolds.size()) {
+                const ContactManifold &next = previous_manifolds[previous_cursor + 1u];
+                if (next.a == canonical_pair.a && next.b == canonical_pair.b) {
+                    log::error(physics, "Duplicate previous manifold pair during narrow phase (a={} b={})",
+                               canonical_pair.a, canonical_pair.b);
                     std::terminate();
                 }
-#endif
-                previous_manifold = &previous_manifolds[it->second];
             }
+#endif
             detail::add_box_box_contact(position, orientation, shape_kind, shapes, shape_index, canonical_pair.a,
                                         canonical_pair.b, previous_manifold, manifolds);
         }
     }
 
-    const u32 count = static_cast<u32>(position.size());
-    for (u32 i = 0; i < count; ++i) {
-        if (shape_kind[i] == ShapeKind::sphere) {
-            detail::add_sphere_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, i,
+    for (const u32 id : awake_dynamic_ids) {
+#ifndef NDEBUG
+        if (id >= position.size()) {
+            log::error(physics, "Awake dynamic id out of range during narrow phase (id={} count={})", id,
+                       position.size());
+            std::terminate();
+        }
+#endif
+        if (shape_kind[id] == ShapeKind::sphere) {
+            detail::add_sphere_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, id,
                                               manifolds);
-        } else if (shape_kind[i] == ShapeKind::box) {
-            detail::add_box_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, i,
+        } else if (shape_kind[id] == ShapeKind::box) {
+            detail::add_box_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, id,
                                            manifolds);
         }
     }

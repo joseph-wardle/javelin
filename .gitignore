@@ -5,9 +5,10 @@
 
 build
 
-.DS_Store
-imgui.ini
+*.DS_Store
+*.ini
+*.tracy
 compile_commands.json
 
-# Generated scene artifacts (keep source script and curated samples in git).
+# Generated scene artifacts
 assets/scenes/procedural/*.jvscene

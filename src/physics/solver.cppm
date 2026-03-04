@@ -60,6 +60,15 @@ inline constexpr f32 kAngularCorrectionEpsSq = 1e-12f;
 // Below this threshold the contact is treated as resting and should not bounce.
 inline constexpr f32 kRestitutionVelocityThreshold = 1.0f;
 
+[[nodiscard]] inline usize grown_capacity(const usize current_capacity, const usize required_capacity) noexcept {
+    if (required_capacity <= current_capacity) {
+        return current_capacity;
+    }
+    const usize base = std::max<usize>(current_capacity, 64u);
+    const usize grown = base + base / 2u;
+    return std::max(grown, required_capacity);
+}
+
 [[nodiscard]] inline Vec3 to_body_space(const Quat q, const Vec3 v) noexcept { return rotate(inverse_unit(q), v); }
 
 [[nodiscard]] inline Vec3 to_world_space(const Quat q, const Vec3 v) noexcept { return rotate(q, v); }
@@ -75,25 +84,32 @@ inline constexpr f32 kRestitutionVelocityThreshold = 1.0f;
     return to_world_space(q, scaled);
 }
 
-// Per-contact-point pre-step data reused across solver iterations.
-struct SolverPoint final {
-    u32 manifold_index{};
-    u32 point_index{};
-    u32 a{};
-    u32 b{kInvalidBody};
-    Vec3 normal{};
-    Vec3 tangent_u{};
-    Vec3 tangent_v{};
-    Vec3 r_a{};
-    Vec3 r_b{};
-    f32 normal_mass{};
-    f32 tangent_mass_u{};
-    f32 tangent_mass_v{};
-    f32 velocity_bias{};
-    f32 friction_coeff{}; // combined per-contact friction (min of two body materials)
+// World-space inverse inertia tensor cached per awake body for this tick:
+// apply(v) = col0 * v.x + col1 * v.y + col2 * v.z.
+// Caching avoids repeated rotate-to-body / rotate-to-world for every solver
+// point impulse application and effective-mass query.
+struct WorldInvInertia final {
+    Vec3 col0{};
+    Vec3 col1{};
+    Vec3 col2{};
 };
 
-[[nodiscard]] inline bool has_body_b(const SolverPoint &point) noexcept { return point.b != kInvalidBody; }
+enum class WorldInvInertiaBodyState : u8 {
+    passive = 0u, // static or sleeping: contributes zero angular response
+    dynamic = 1u, // awake dynamic body: uses cached world inverse inertia
+};
+
+struct WorldInvInertiaCache final {
+    std::vector<WorldInvInertia> tensors{};
+    std::vector<WorldInvInertiaBodyState> state{};
+};
+
+[[nodiscard]] inline WorldInvInertiaCache &world_inv_inertia_cache() {
+    static thread_local WorldInvInertiaCache cache{};
+    return cache;
+}
+
+[[nodiscard]] inline bool has_body_b(const u32 body_b) noexcept { return body_b != kInvalidBody; }
 
 [[nodiscard]] inline f32 restitution_bias(const f32 normal_velocity, const f32 restitution_coeff) noexcept {
     if (normal_velocity >= -kRestitutionVelocityThreshold) {
@@ -142,28 +158,6 @@ struct SolverPoint final {
     return std::pair{tangent_u, tangent_v};
 }
 
-[[nodiscard]] inline f32 axis_effective_mass_inverse(const SolverPoint &point, std::span<const f32> inv_mass,
-                                                     std::span<const Vec3> inv_inertia_body,
-                                                     std::span<const Quat> orientation, const Vec3 axis) noexcept {
-    const f32 inv_mass_a = inv_mass[point.a];
-    const f32 inv_mass_b = has_body_b(point) ? inv_mass[point.b] : 0.0f;
-    const f32 inv_mass_sum = inv_mass_a + inv_mass_b;
-    if (inv_mass_sum <= kMassEps) {
-        return 0.0f;
-    }
-
-    const Vec3 ra_cross_axis = cross(point.r_a, axis);
-    const f32 ang_term_a = inv_inertia_term(inv_inertia_body[point.a], orientation[point.a], ra_cross_axis);
-    f32 ang_term_b = 0.0f;
-    if (has_body_b(point)) {
-        const Vec3 rb_cross_axis = cross(point.r_b, axis);
-        ang_term_b = inv_inertia_term(inv_inertia_body[point.b], orientation[point.b], rb_cross_axis);
-    }
-
-    const f32 denom = inv_mass_sum + ang_term_a + ang_term_b;
-    return (denom > kMassEps) ? (1.0f / denom) : 0.0f;
-}
-
 [[nodiscard]] inline f32 axis_effective_mass_inverse(const u32 a, const u32 b, const Vec3 r_a, const Vec3 r_b,
                                                      std::span<const f32> inv_mass,
                                                      std::span<const Vec3> inv_inertia_body,
@@ -196,49 +190,213 @@ inline void apply_orientation_correction(Quat &orientation, const Vec3 delta_ang
     orientation.try_normalize();
 }
 
-[[nodiscard]] inline Vec3 relative_velocity_at_point(const SolverPoint &point, std::span<const Vec3> velocity,
+// Solver-point data streams. Hot fields are stored as independent contiguous
+// arrays to reduce per-point cache footprint inside the PGS iterations.
+struct SolverPointStreams final {
+    std::vector<ContactPoint *> contact_point{};
+    std::vector<u32> body_a{};
+    std::vector<u32> body_b{};
+    std::vector<Vec3> normal{};
+    std::vector<Vec3> tangent_u{};
+    std::vector<Vec3> tangent_v{};
+    std::vector<Vec3> r_a{};
+    std::vector<Vec3> r_b{};
+    std::vector<f32> normal_mass{};
+    std::vector<f32> tangent_mass_u{};
+    std::vector<f32> tangent_mass_v{};
+    std::vector<f32> velocity_bias{};
+    std::vector<f32> friction_coeff{};
+
+    [[nodiscard]] bool clear_and_reserve(const usize required_capacity) {
+        contact_point.clear();
+        body_a.clear();
+        body_b.clear();
+        normal.clear();
+        tangent_u.clear();
+        tangent_v.clear();
+        r_a.clear();
+        r_b.clear();
+        normal_mass.clear();
+        tangent_mass_u.clear();
+        tangent_mass_v.clear();
+        velocity_bias.clear();
+        friction_coeff.clear();
+
+        if (contact_point.capacity() >= required_capacity) {
+            return false;
+        }
+
+        const usize new_capacity = grown_capacity(contact_point.capacity(), required_capacity);
+        contact_point.reserve(new_capacity);
+        body_a.reserve(new_capacity);
+        body_b.reserve(new_capacity);
+        normal.reserve(new_capacity);
+        tangent_u.reserve(new_capacity);
+        tangent_v.reserve(new_capacity);
+        r_a.reserve(new_capacity);
+        r_b.reserve(new_capacity);
+        normal_mass.reserve(new_capacity);
+        tangent_mass_u.reserve(new_capacity);
+        tangent_mass_v.reserve(new_capacity);
+        velocity_bias.reserve(new_capacity);
+        friction_coeff.reserve(new_capacity);
+        return true;
+    }
+
+    [[nodiscard]] usize push_back(ContactPoint *point_ptr, const u32 a, const u32 b, const Vec3 normal_axis,
+                                  const Vec3 tangent_axis_u, const Vec3 tangent_axis_v, const Vec3 world_anchor_a,
+                                  const Vec3 world_anchor_b, const f32 friction) {
+        const usize index = contact_point.size();
+        contact_point.push_back(point_ptr);
+        body_a.push_back(a);
+        body_b.push_back(b);
+        normal.push_back(normal_axis);
+        tangent_u.push_back(tangent_axis_u);
+        tangent_v.push_back(tangent_axis_v);
+        r_a.push_back(world_anchor_a);
+        r_b.push_back(world_anchor_b);
+        normal_mass.push_back(0.0f);
+        tangent_mass_u.push_back(0.0f);
+        tangent_mass_v.push_back(0.0f);
+        velocity_bias.push_back(0.0f);
+        friction_coeff.push_back(friction);
+        return index;
+    }
+
+    [[nodiscard]] usize size() const noexcept { return contact_point.size(); }
+    [[nodiscard]] usize capacity() const noexcept { return contact_point.capacity(); }
+};
+
+[[nodiscard]] inline SolverPointStreams &solver_points_cache() {
+    static thread_local SolverPointStreams cache{};
+    return cache;
+}
+
+void build_world_inv_inertia_cache(std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
+                                   std::span<const Quat> orientation, std::span<const u8> asleep) {
+    ZoneScopedN("Physics build world inv inertia cache");
+    WorldInvInertiaCache &cache = world_inv_inertia_cache();
+    const u32 body_count = static_cast<u32>(inv_mass.size());
+    bool cache_grew = false;
+    if (cache.tensors.size() < body_count) {
+        const usize new_capacity = grown_capacity(cache.tensors.capacity(), body_count);
+        if (cache.tensors.capacity() < new_capacity) {
+            cache.tensors.reserve(new_capacity);
+            cache.state.reserve(new_capacity);
+            cache_grew = true;
+        }
+        cache.tensors.resize(body_count);
+        cache.state.resize(body_count);
+    }
+    TracyPlot("physics_world_inv_inertia_capacity", static_cast<i64>(cache.tensors.capacity()));
+    TracyPlot("physics_world_inv_inertia_capacity_grew", cache_grew ? static_cast<i64>(1) : static_cast<i64>(0));
+
+    constexpr Vec3 unit_x = Vec3{1.0f, 0.0f, 0.0f};
+    constexpr Vec3 unit_y = Vec3{0.0f, 1.0f, 0.0f};
+    constexpr Vec3 unit_z = Vec3{0.0f, 0.0f, 1.0f};
+
+    for (u32 i = 0u; i < body_count; ++i) {
+        if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
+            cache.state[i] = WorldInvInertiaBodyState::passive;
+            cache.tensors[i] = WorldInvInertia{};
+            continue;
+        }
+
+        cache.state[i] = WorldInvInertiaBodyState::dynamic;
+        cache.tensors[i] = WorldInvInertia{
+            .col0 = apply_inv_inertia(inv_inertia_body[i], orientation[i], unit_x),
+            .col1 = apply_inv_inertia(inv_inertia_body[i], orientation[i], unit_y),
+            .col2 = apply_inv_inertia(inv_inertia_body[i], orientation[i], unit_z),
+        };
+    }
+}
+
+[[nodiscard]] inline const WorldInvInertiaCache &world_inv_inertia_view() { return world_inv_inertia_cache(); }
+
+[[nodiscard]] inline Vec3 apply_world_inv_inertia(const WorldInvInertiaCache &cache, const u32 body,
+                                                  const Vec3 v_world) noexcept {
+    // Passive participants (static or sleeping) have zero angular response.
+    if (cache.state[body] != WorldInvInertiaBodyState::dynamic) {
+        return Vec3{};
+    }
+    const WorldInvInertia &world_inv = cache.tensors[body];
+    return world_inv.col0 * v_world.x + world_inv.col1 * v_world.y + world_inv.col2 * v_world.z;
+}
+
+[[nodiscard]] inline f32 inv_inertia_term_world(const WorldInvInertiaCache &cache, const u32 body,
+                                                const Vec3 v_world) noexcept {
+    const Vec3 scaled = apply_world_inv_inertia(cache, body, v_world);
+    return dot(scaled, v_world);
+}
+
+[[nodiscard]] inline f32 axis_effective_mass_inverse(const SolverPointStreams &points, const usize index,
+                                                     std::span<const f32> inv_mass,
+                                                     const WorldInvInertiaCache &world_inv_inertia,
+                                                     const Vec3 axis) noexcept {
+    const u32 a = points.body_a[index];
+    const u32 b = points.body_b[index];
+    const f32 inv_mass_a = inv_mass[a];
+    const f32 inv_mass_b = has_body_b(b) ? inv_mass[b] : 0.0f;
+    const f32 inv_mass_sum = inv_mass_a + inv_mass_b;
+    if (inv_mass_sum <= kMassEps) {
+        return 0.0f;
+    }
+
+    const Vec3 ra_cross_axis = cross(points.r_a[index], axis);
+    const f32 ang_term_a = inv_inertia_term_world(world_inv_inertia, a, ra_cross_axis);
+    f32 ang_term_b = 0.0f;
+    if (has_body_b(b)) {
+        const Vec3 rb_cross_axis = cross(points.r_b[index], axis);
+        ang_term_b = inv_inertia_term_world(world_inv_inertia, b, rb_cross_axis);
+    }
+
+    const f32 denom = inv_mass_sum + ang_term_a + ang_term_b;
+    return (denom > kMassEps) ? (1.0f / denom) : 0.0f;
+}
+
+[[nodiscard]] inline Vec3 relative_velocity_at_point(const SolverPointStreams &points, const usize index,
+                                                     std::span<const Vec3> velocity,
                                                      std::span<const Vec3> angular_velocity) noexcept {
-    const Vec3 v_a = velocity[point.a] + cross(angular_velocity[point.a], point.r_a);
-    if (!has_body_b(point)) {
+    const u32 a = points.body_a[index];
+    const u32 b = points.body_b[index];
+    const Vec3 v_a = velocity[a] + cross(angular_velocity[a], points.r_a[index]);
+    if (!has_body_b(b)) {
         return -v_a;
     }
-    const Vec3 v_b = velocity[point.b] + cross(angular_velocity[point.b], point.r_b);
+    const Vec3 v_b = velocity[b] + cross(angular_velocity[b], points.r_b[index]);
     return v_b - v_a;
 }
 
-inline void apply_impulse_at_point(const SolverPoint &point, const Vec3 impulse, std::span<Vec3> velocity,
-                                   std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
-                                   std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation) noexcept {
-    velocity[point.a] -= impulse * inv_mass[point.a];
-    angular_velocity[point.a] -=
-        apply_inv_inertia(inv_inertia_body[point.a], orientation[point.a], cross(point.r_a, impulse));
+inline void apply_impulse_at_point(const SolverPointStreams &points, const usize index, const Vec3 impulse,
+                                   std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
+                                   std::span<const f32> inv_mass,
+                                   const WorldInvInertiaCache &world_inv_inertia) noexcept {
+    const u32 a = points.body_a[index];
+    const u32 b = points.body_b[index];
 
-    if (!has_body_b(point)) {
+    velocity[a] -= impulse * inv_mass[a];
+    angular_velocity[a] -= apply_world_inv_inertia(world_inv_inertia, a, cross(points.r_a[index], impulse));
+
+    if (!has_body_b(b)) {
         return;
     }
 
-    velocity[point.b] += impulse * inv_mass[point.b];
-    angular_velocity[point.b] +=
-        apply_inv_inertia(inv_inertia_body[point.b], orientation[point.b], cross(point.r_b, impulse));
+    velocity[b] += impulse * inv_mass[b];
+    angular_velocity[b] += apply_world_inv_inertia(world_inv_inertia, b, cross(points.r_b[index], impulse));
 }
 
-inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoint &point, std::span<Vec3> velocity,
+inline void warm_start_solver_point(const SolverPointStreams &points, const usize index, std::span<Vec3> velocity,
                                     std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
-                                    std::span<const Vec3> inv_inertia_body,
-                                    std::span<const Quat> orientation) noexcept {
+                                    const WorldInvInertiaCache &world_inv_inertia) noexcept {
+    ContactPoint &point = *points.contact_point[index];
     point.normal_impulse = std::max(point.normal_impulse, 0.0f);
-    point.tangent_impulse = project_and_clamp_tangent_impulse(point.tangent_impulse, solver_point.normal,
-                                                              point.normal_impulse, solver_point.friction_coeff);
+    point.tangent_impulse = project_and_clamp_tangent_impulse(point.tangent_impulse, points.normal[index],
+                                                              point.normal_impulse, points.friction_coeff[index]);
     if (!has_warm_start_impulse(point)) {
         return;
     }
-    const Vec3 impulse = solver_point.normal * point.normal_impulse + point.tangent_impulse;
-    apply_impulse_at_point(solver_point, impulse, velocity, angular_velocity, inv_mass, inv_inertia_body, orientation);
-}
-
-[[nodiscard]] inline std::vector<SolverPoint> &solver_points_cache() {
-    static thread_local std::vector<SolverPoint> cache{};
-    return cache;
+    const Vec3 impulse = points.normal[index] * point.normal_impulse + point.tangent_impulse;
+    apply_impulse_at_point(points, index, impulse, velocity, angular_velocity, inv_mass, world_inv_inertia);
 }
 
 // Iteration count for the bilateral distance constraint velocity solve.
@@ -278,11 +436,38 @@ struct ConstraintGeometry final {
 
 export namespace javelin {
 
+struct ContactSolveConfig final {
+    // Deterministic fixed-iteration mode remains the default.
+    bool adaptive_iteration_cap{};
+    // Upper bound; fixed mode runs exactly this many iterations.
+    u32 max_iterations{16u};
+    // Adaptive mode cannot early-out before this floor.
+    u32 min_iterations_before_adapt{4u};
+    // Early-out when the maximum per-point impulse delta² in an iteration
+    // drops below this threshold².
+    f32 adaptive_impulse_epsilon{1e-4f};
+};
+
+void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                              std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
+                              std::span<ContactManifold> manifolds, const f32 dt,
+                              std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction,
+                              std::span<const u8> asleep, const ContactSolveConfig &config);
+
 void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
                               std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
                               std::span<ContactManifold> manifolds, const f32 dt,
                               std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction,
                               std::span<const u8> asleep) {
+    solve_contact_velocities(velocity, angular_velocity, inv_mass, inv_inertia_body, orientation, manifolds, dt,
+                             manifold_restitution, manifold_friction, asleep, ContactSolveConfig{});
+}
+
+void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                              std::span<const Vec3> inv_inertia_body, std::span<const Quat> orientation,
+                              std::span<ContactManifold> manifolds, const f32 dt,
+                              std::span<const f32> manifold_restitution, std::span<const f32> manifold_friction,
+                              std::span<const u8> asleep, const ContactSolveConfig &config) {
     ZoneScopedN("Physics solve");
 #ifndef NDEBUG
     if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
@@ -293,6 +478,11 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
                    "asleep={})",
                    velocity.size(), angular_velocity.size(), inv_mass.size(), inv_inertia_body.size(),
                    orientation.size(), asleep.size());
+        std::terminate();
+    }
+    if (manifold_restitution.size() != manifolds.size() || manifold_friction.size() != manifolds.size()) {
+        log::error(physics, "Velocity solver manifold material span mismatch (manifolds={} restitution={} friction={})",
+                   manifolds.size(), manifold_restitution.size(), manifold_friction.size());
         std::terminate();
     }
 #endif
@@ -324,14 +514,20 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
         return;
     }
 
-    std::vector<detail::SolverPoint> &solver_points = detail::solver_points_cache();
-    solver_points.clear();
-    solver_points.reserve(point_count);
+    detail::build_world_inv_inertia_cache(inv_mass, inv_inertia_body, orientation, asleep);
+    const detail::WorldInvInertiaCache &world_inv_inertia = detail::world_inv_inertia_view();
+
+    detail::SolverPointStreams &solver_points = detail::solver_points_cache();
+    const bool solver_points_capacity_grew = solver_points.clear_and_reserve(point_count);
+    TracyPlot("physics_solver_points_capacity", static_cast<i64>(solver_points.capacity()));
+    TracyPlot("physics_solver_points_capacity_grew",
+              solver_points_capacity_grew ? static_cast<i64>(1) : static_cast<i64>(0));
 
     // Pre-step: world anchors, tangent basis, effective masses, and velocity bias.
-    // Skip manifolds where both participants are asleep: a body is only still asleep
-    // if all its contacts are ground/static/other-sleeping (wake_sleeping_bodies_with_contacts_
-    // already cleared asleep for any body touched by an awake dynamic neighbour).
+    // Skip manifolds where both participants are asleep: a body is only still
+    // asleep if all its contacts are ground/static/other-sleeping (the island
+    // wake pass already cleared asleep for any body touched by an awake dynamic
+    // neighbour).
     for (u32 manifold_index = 0; manifold_index < manifolds.size(); ++manifold_index) {
         ContactManifold &manifold = manifolds[manifold_index];
         if (manifold.point_count == 0u) {
@@ -356,76 +552,76 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
 
         for (u32 point_index = 0; point_index < manifold.point_count; ++point_index) {
             ContactPoint &point = manifold.points[point_index];
+            const usize solver_point_index = solver_points.push_back(
+                &point, manifold.a, manifold.b, normal, tangent_u, tangent_v,
+                rotate(orientation[manifold.a], point.local_anchor_a),
+                (manifold.b != kInvalidBody) ? rotate(orientation[manifold.b], point.local_anchor_b) : Vec3{},
+                fric_coeff);
 
-            detail::SolverPoint solver_point{
-                .manifold_index = manifold_index,
-                .point_index = point_index,
-                .a = manifold.a,
-                .b = manifold.b,
-                .normal = normal,
-                .tangent_u = tangent_u,
-                .tangent_v = tangent_v,
-                .r_a = rotate(orientation[manifold.a], point.local_anchor_a),
-                .r_b = (manifold.b != kInvalidBody) ? rotate(orientation[manifold.b], point.local_anchor_b) : Vec3{},
-                .friction_coeff = fric_coeff,
-            };
-
-            solver_point.normal_mass =
-                detail::axis_effective_mass_inverse(solver_point, inv_mass, inv_inertia_body, orientation, normal);
-            solver_point.tangent_mass_u =
-                detail::axis_effective_mass_inverse(solver_point, inv_mass, inv_inertia_body, orientation, tangent_u);
-            solver_point.tangent_mass_v =
-                detail::axis_effective_mass_inverse(solver_point, inv_mass, inv_inertia_body, orientation, tangent_v);
+            solver_points.normal_mass[solver_point_index] = detail::axis_effective_mass_inverse(
+                solver_points, solver_point_index, inv_mass, world_inv_inertia, normal);
+            solver_points.tangent_mass_u[solver_point_index] = detail::axis_effective_mass_inverse(
+                solver_points, solver_point_index, inv_mass, world_inv_inertia, tangent_u);
+            solver_points.tangent_mass_v[solver_point_index] = detail::axis_effective_mass_inverse(
+                solver_points, solver_point_index, inv_mass, world_inv_inertia, tangent_v);
 
             const f32 separation = point.separation + detail::kPenetrationSlop;
             const f32 penetration_bias =
                 (inv_dt > 0.0f) ? (-detail::kPenetrationBiasFactor * inv_dt * std::min(separation, 0.0f)) : 0.0f;
             const f32 clamped_penetration_bias = std::min(penetration_bias, detail::kMaxPenetrationBias);
 
-            const Vec3 relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
+            const Vec3 relative_velocity =
+                detail::relative_velocity_at_point(solver_points, solver_point_index, velocity, angular_velocity);
             const f32 normal_velocity = dot(relative_velocity, normal);
             const f32 restitution_velocity_bias = detail::restitution_bias(normal_velocity, rest_coeff);
-            solver_point.velocity_bias = std::max(clamped_penetration_bias, restitution_velocity_bias);
-
-            solver_points.push_back(solver_point);
+            solver_points.velocity_bias[solver_point_index] =
+                std::max(clamped_penetration_bias, restitution_velocity_bias);
         }
+    }
+    if (solver_points.size() == 0u) {
+        return;
     }
 
     // Warm start: apply accumulated normal impulse plus projected/clamped world-space friction impulse.
-    for (const detail::SolverPoint &solver_point : solver_points) {
-        ContactPoint &point = manifolds[solver_point.manifold_index].points[solver_point.point_index];
-        detail::warm_start_solver_point(solver_point, point, velocity, angular_velocity, inv_mass, inv_inertia_body,
-                                        orientation);
+    for (usize i = 0; i < solver_points.size(); ++i) {
+        detail::warm_start_solver_point(solver_points, i, velocity, angular_velocity, inv_mass, world_inv_inertia);
     }
 
     // Iterative projected Gauss-Seidel.
-    for (u32 iteration = 0; iteration < detail::kSolverIterations; ++iteration) {
-        for (const detail::SolverPoint &solver_point : solver_points) {
-            ContactPoint &point = manifolds[solver_point.manifold_index].points[solver_point.point_index];
+    const u32 max_iterations = std::max(config.max_iterations, 1u);
+    const u32 min_iterations = std::min(config.min_iterations_before_adapt, max_iterations);
+    const bool adaptive_enabled = config.adaptive_iteration_cap && config.adaptive_impulse_epsilon > 0.0f;
+    const f32 adaptive_impulse_epsilon_sq = config.adaptive_impulse_epsilon * config.adaptive_impulse_epsilon;
+    u32 iterations_used = max_iterations;
 
-            Vec3 relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
-            const f32 vn = dot(relative_velocity, solver_point.normal);
-            const f32 delta_normal = solver_point.normal_mass * (solver_point.velocity_bias - vn);
+    for (u32 iteration = 0; iteration < max_iterations; ++iteration) {
+        f32 max_impulse_delta_sq = 0.0f;
+        for (usize i = 0; i < solver_points.size(); ++i) {
+            ContactPoint &point = *solver_points.contact_point[i];
+
+            Vec3 relative_velocity = detail::relative_velocity_at_point(solver_points, i, velocity, angular_velocity);
+            const f32 vn = dot(relative_velocity, solver_points.normal[i]);
+            const f32 delta_normal = solver_points.normal_mass[i] * (solver_points.velocity_bias[i] - vn);
             const f32 old_normal_impulse = point.normal_impulse;
             point.normal_impulse = std::max(old_normal_impulse + delta_normal, 0.0f);
             const f32 applied_normal_impulse = point.normal_impulse - old_normal_impulse;
             if (std::fabs(applied_normal_impulse) > detail::kMassEps) {
-                detail::apply_impulse_at_point(solver_point, solver_point.normal * applied_normal_impulse, velocity,
-                                               angular_velocity, inv_mass, inv_inertia_body, orientation);
+                detail::apply_impulse_at_point(solver_points, i, solver_points.normal[i] * applied_normal_impulse,
+                                               velocity, angular_velocity, inv_mass, world_inv_inertia);
             }
 
-            relative_velocity = detail::relative_velocity_at_point(solver_point, velocity, angular_velocity);
-            const f32 vt_u = dot(relative_velocity, solver_point.tangent_u);
-            const f32 vt_v = dot(relative_velocity, solver_point.tangent_v);
+            relative_velocity = detail::relative_velocity_at_point(solver_points, i, velocity, angular_velocity);
+            const f32 vt_u = dot(relative_velocity, solver_points.tangent_u[i]);
+            const f32 vt_v = dot(relative_velocity, solver_points.tangent_v[i]);
             const Vec3 old_tangent_impulse = point.tangent_impulse;
-            const f32 old_tangent_u = dot(old_tangent_impulse, solver_point.tangent_u);
-            const f32 old_tangent_v = dot(old_tangent_impulse, solver_point.tangent_v);
+            const f32 old_tangent_u = dot(old_tangent_impulse, solver_points.tangent_u[i]);
+            const f32 old_tangent_v = dot(old_tangent_impulse, solver_points.tangent_v[i]);
 
-            f32 new_tangent_u = old_tangent_u - solver_point.tangent_mass_u * vt_u;
-            f32 new_tangent_v = old_tangent_v - solver_point.tangent_mass_v * vt_v;
+            f32 new_tangent_u = old_tangent_u - solver_points.tangent_mass_u[i] * vt_u;
+            f32 new_tangent_v = old_tangent_v - solver_points.tangent_mass_v[i] * vt_v;
 
             // Coulomb friction on the accumulated tangent impulse vector.
-            const f32 max_friction = solver_point.friction_coeff * point.normal_impulse;
+            const f32 max_friction = solver_points.friction_coeff[i] * point.normal_impulse;
             const f32 max_friction_sq = max_friction * max_friction;
             const f32 tangent_impulse_sq = new_tangent_u * new_tangent_u + new_tangent_v * new_tangent_v;
             if (tangent_impulse_sq > max_friction_sq && tangent_impulse_sq > detail::kMassEps * detail::kMassEps) {
@@ -435,16 +631,29 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
             }
 
             const Vec3 new_tangent_impulse =
-                solver_point.tangent_u * new_tangent_u + solver_point.tangent_v * new_tangent_v;
+                solver_points.tangent_u[i] * new_tangent_u + solver_points.tangent_v[i] * new_tangent_v;
             point.tangent_impulse = new_tangent_impulse;
 
             const Vec3 applied_tangent_impulse = new_tangent_impulse - old_tangent_impulse;
             if (applied_tangent_impulse.length_sq() > detail::kMassEps * detail::kMassEps) {
-                detail::apply_impulse_at_point(solver_point, applied_tangent_impulse, velocity, angular_velocity,
-                                               inv_mass, inv_inertia_body, orientation);
+                detail::apply_impulse_at_point(solver_points, i, applied_tangent_impulse, velocity, angular_velocity,
+                                               inv_mass, world_inv_inertia);
+            }
+
+            if (adaptive_enabled) {
+                const f32 normal_delta_sq = applied_normal_impulse * applied_normal_impulse;
+                const f32 tangent_delta_sq = applied_tangent_impulse.length_sq();
+                max_impulse_delta_sq = std::max(max_impulse_delta_sq, normal_delta_sq + tangent_delta_sq);
             }
         }
+
+        if (adaptive_enabled && iteration + 1u >= min_iterations &&
+            max_impulse_delta_sq <= adaptive_impulse_epsilon_sq) {
+            iterations_used = iteration + 1u;
+            break;
+        }
     }
+    TracyPlot("physics_contact_solver_iterations_used", static_cast<i64>(iterations_used));
 }
 
 void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orientation, std::span<const f32> inv_mass,
@@ -605,6 +814,8 @@ void solve_distance_constraints(std::span<Vec3> velocity, std::span<Vec3> angula
 
     const f32 inv_dt = 1.0f / dt;
     const f32 inv_dt2 = inv_dt * inv_dt;
+    detail::build_world_inv_inertia_cache(inv_mass, inv_inertia_body, orientation, asleep);
+    const detail::WorldInvInertiaCache &world_inv_inertia = detail::world_inv_inertia_view();
 
     // Precompute world-space geometry from current positions and orientations.
     // Positions and orientations are not modified during this function, so the
@@ -612,7 +823,14 @@ void solve_distance_constraints(std::span<Vec3> velocity, std::span<Vec3> angula
     // velocity iterations.
     std::vector<detail::ConstraintGeometry> &geom = detail::constraint_geometry_cache();
     geom.clear();
-    geom.reserve(constraints.size());
+    bool geom_capacity_grew = false;
+    if (geom.capacity() < constraints.size()) {
+        const usize new_capacity = detail::grown_capacity(geom.capacity(), constraints.size());
+        geom.reserve(new_capacity);
+        geom_capacity_grew = true;
+    }
+    TracyPlot("physics_constraint_geom_capacity", static_cast<i64>(geom.capacity()));
+    TracyPlot("physics_constraint_geom_capacity_grew", geom_capacity_grew ? static_cast<i64>(1) : static_cast<i64>(0));
 
     for (const DistanceConstraint &c : constraints) {
         // Skip constraints where both participants are asleep.  One-asleep constraints
@@ -644,10 +862,8 @@ void solve_distance_constraints(std::span<Vec3> velocity, std::span<Vec3> angula
         const Vec3 rb_cross_n = cross(r_b, n);
 
         // Translational + rotational inverse mass along the constraint axis.
-        const f32 w_a = inv_mass[c.body_a] +
-                        detail::inv_inertia_term(inv_inertia_body[c.body_a], orientation[c.body_a], ra_cross_n);
-        const f32 w_b = inv_mass[c.body_b] +
-                        detail::inv_inertia_term(inv_inertia_body[c.body_b], orientation[c.body_b], rb_cross_n);
+        const f32 w_a = inv_mass[c.body_a] + detail::inv_inertia_term_world(world_inv_inertia, c.body_a, ra_cross_n);
+        const f32 w_b = inv_mass[c.body_b] + detail::inv_inertia_term_world(world_inv_inertia, c.body_b, rb_cross_n);
 
         // XPBD: alpha_tilde = compliance / dt² softens the constraint.
         // compliance = 0 gives a rigid bilateral rod.
@@ -691,10 +907,10 @@ void solve_distance_constraints(std::span<Vec3> velocity, std::span<Vec3> angula
             const Vec3 impulse = g.n * delta_lambda;
             velocity[g.a] -= impulse * inv_mass[g.a];
             angular_velocity[g.a] -=
-                detail::apply_inv_inertia(inv_inertia_body[g.a], orientation[g.a], g.ra_cross_n * delta_lambda);
+                detail::apply_world_inv_inertia(world_inv_inertia, g.a, g.ra_cross_n * delta_lambda);
             velocity[g.b] += impulse * inv_mass[g.b];
             angular_velocity[g.b] +=
-                detail::apply_inv_inertia(inv_inertia_body[g.b], orientation[g.b], g.rb_cross_n * delta_lambda);
+                detail::apply_world_inv_inertia(world_inv_inertia, g.b, g.rb_cross_n * delta_lambda);
         }
     }
 }

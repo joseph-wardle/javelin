@@ -1,3 +1,17 @@
+add_library(javelin_bench_support STATIC)
+target_compile_features(javelin_bench_support PUBLIC cxx_std_23)
+target_sources(javelin_bench_support
+    PUBLIC
+        FILE_SET bench_support_modules
+        TYPE CXX_MODULES
+        FILES
+            support/cli.cppm
+            support/json.cppm
+            support/stats.cppm
+            support/timer.cppm
+)
+target_link_libraries(javelin_bench_support PUBLIC javelin::javelin)
+
 function(javelin_add_bench_from_dir dir)
     get_filename_component(name "${dir}" NAME)
     set(target "javelin_bench_${name}")
@@ -8,6 +22,7 @@ function(javelin_add_bench_from_dir dir)
     target_link_libraries(${target}
             PRIVATE
             javelin::javelin
+            javelin_bench_support
     )
 endfunction()
 

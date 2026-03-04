@@ -47,19 +47,42 @@ struct StaticBvh final {
     [[nodiscard]] u32 root() const noexcept { return root_; }
     [[nodiscard]] std::span<const Node> nodes() const noexcept { return nodes_; }
 
-    // Appends overlapping body ids to out (caller-owned). stack is scratch storage.
-    void query(const Aabb aabb, std::vector<u32> &out, std::vector<u32> &stack) const {
+    // Calls on_hit(body_id) for each leaf whose bounds overlap aabb.
+    // Stack policy:
+    // - fixed-size local stack for the common case (no allocations),
+    // - caller scratch vector only when traversal depth exceeds local capacity.
+    template <typename OnHit>
+    void query_each_overlap(const Aabb aabb, OnHit &&on_hit, std::vector<u32> &overflow_stack) const {
         ZoneScopedN("Physics query static BVH");
         if (root_ == kInvalidNode) {
             return;
         }
 
-        stack.clear();
-        stack.push_back(root_);
+        std::array<u32, kQueryStackInlineCapacity> local_stack{};
+        u32 local_count = 0u;
+        overflow_stack.clear();
+        local_stack[local_count++] = root_;
 
-        while (!stack.empty()) {
-            const u32 node_index = stack.back();
-            stack.pop_back();
+        auto push_node = [&](const u32 node_index) {
+            if (local_count < local_stack.size()) {
+                local_stack[local_count++] = node_index;
+                return;
+            }
+            overflow_stack.push_back(node_index);
+        };
+
+        auto pop_node = [&]() {
+            if (!overflow_stack.empty()) {
+                const u32 node_index = overflow_stack.back();
+                overflow_stack.pop_back();
+                return node_index;
+            }
+            --local_count;
+            return local_stack[local_count];
+        };
+
+        while (local_count > 0u || !overflow_stack.empty()) {
+            const u32 node_index = pop_node();
 
             const Node &node = nodes_[node_index];
             if (!overlaps(node.bounds, aabb)) {
@@ -67,21 +90,27 @@ struct StaticBvh final {
             }
 
             if (is_leaf_(node)) {
-                out.push_back(node.body_id);
+                on_hit(node.body_id);
                 continue;
             }
 
             if (node.left != kInvalidNode) {
-                stack.push_back(node.left);
+                push_node(node.left);
             }
             if (node.right != kInvalidNode) {
-                stack.push_back(node.right);
+                push_node(node.right);
             }
         }
     }
 
+    // Compatibility wrapper: appends overlapping body ids to out.
+    void query(const Aabb aabb, std::vector<u32> &out, std::vector<u32> &stack) const {
+        query_each_overlap(aabb, [&](const u32 body_id) { out.push_back(body_id); }, stack);
+    }
+
   private:
     static constexpr u32 kInvalidNode = std::numeric_limits<u32>::max();
+    static constexpr usize kQueryStackInlineCapacity = 128u;
     [[nodiscard]] static constexpr bool is_leaf_(const Node &node) noexcept { return node.left == kInvalidNode; }
 
     void build_from_ids_(std::span<const Aabb> bounds) {
