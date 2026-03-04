@@ -1181,10 +1181,10 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
                            std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
                            std::span<const u32> shape_index, std::span<const f32> inv_mass,
                            std::span<const BodyPair> pairs, std::span<const ContactManifold> previous_manifolds,
-                           std::vector<ContactManifold> &manifolds) {
+                           std::span<const u32> awake_dynamic_ids, std::vector<ContactManifold> &manifolds) {
     ZoneScopedN("Physics narrow phase");
     manifolds.clear();
-    manifolds.reserve(pairs.size() + position.size());
+    manifolds.reserve(pairs.size() + awake_dynamic_ids.size());
 
     // previous_manifolds are pair-sorted by the physics system.
     // Track one monotonic cursor to avoid per-pair hash lookups.
@@ -1251,13 +1251,19 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
         }
     }
 
-    const u32 count = static_cast<u32>(position.size());
-    for (u32 i = 0; i < count; ++i) {
-        if (shape_kind[i] == ShapeKind::sphere) {
-            detail::add_sphere_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, i,
+    for (const u32 id : awake_dynamic_ids) {
+#ifndef NDEBUG
+        if (id >= position.size()) {
+            log::error(physics, "Awake dynamic id out of range during narrow phase (id={} count={})", id,
+                       position.size());
+            std::terminate();
+        }
+#endif
+        if (shape_kind[id] == ShapeKind::sphere) {
+            detail::add_sphere_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, id,
                                               manifolds);
-        } else if (shape_kind[i] == ShapeKind::box) {
-            detail::add_box_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, i,
+        } else if (shape_kind[id] == ShapeKind::box) {
+            detail::add_box_ground_contact(position, orientation, shape_kind, shapes, shape_index, inv_mass, id,
                                            manifolds);
         }
     }

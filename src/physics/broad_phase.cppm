@@ -40,23 +40,32 @@ void broad_phase_update_dynamic_bvh(std::span<const u32> dynamic_ids, DynamicBvh
 }
 
 // Chunked query helper: operates on a contiguous span with per-thread scratch/output.
-void broad_phase_chunk(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh, const StaticBvh &static_bvh,
-                       std::span<const Aabb> bounds_cache, std::vector<BodyPair> &pairs, BroadPhaseScratch &scratch) {
+void broad_phase_chunk(std::span<const u32> query_dynamic_ids, const DynamicBvh &dynamic_bvh,
+                       const StaticBvh &static_bvh, std::span<const Aabb> bounds_cache,
+                       std::span<const u8> query_dynamic_mask, std::vector<BodyPair> &pairs,
+                       BroadPhaseScratch &scratch) {
     ZoneScopedN("Physics broad phase query");
     pairs.clear();
-    if (dynamic_ids.empty()) {
+    if (query_dynamic_ids.empty()) {
         return;
     }
 
     const bool has_static = !static_bvh.empty();
-    // dynamic_ids are built in ascending order so j <= id filters duplicates/self.
-    for (const u32 id : dynamic_ids) {
+    // query_dynamic_ids are sorted ascending.
+    // Duplicate rule:
+    // - query-vs-query pairs are emitted once by id order.
+    // - query-vs-nonquery pairs are always emitted (nonquery body never queries back).
+    for (const u32 id : query_dynamic_ids) {
         const Aabb query_bounds = bounds_cache[id];
 
         scratch.query_hits.clear();
         dynamic_bvh.query(query_bounds, scratch.query_hits, scratch.query_stack);
         for (const u32 j : scratch.query_hits) {
-            if (j <= id) {
+            if (j == id) {
+                continue;
+            }
+            const bool j_is_query_body = (j < query_dynamic_mask.size()) && query_dynamic_mask[j] != 0u;
+            if (j_is_query_body && j < id) {
                 continue;
             }
             pairs.push_back(BodyPair{.a = id, .b = j});
@@ -76,10 +85,11 @@ void broad_phase_chunk(std::span<const u32> dynamic_ids, const DynamicBvh &dynam
 }
 
 // Main entrypoint for broad phase pair generation.
-void broad_phase_generate_pairs(std::span<const u32> dynamic_ids, const DynamicBvh &dynamic_bvh,
+void broad_phase_generate_pairs(std::span<const u32> query_dynamic_ids, const DynamicBvh &dynamic_bvh,
                                 const StaticBvh &static_bvh, std::span<const Aabb> bounds_cache,
-                                std::vector<BodyPair> &pairs, BroadPhaseScratch &scratch) {
-    broad_phase_chunk(dynamic_ids, dynamic_bvh, static_bvh, bounds_cache, pairs, scratch);
+                                std::span<const u8> query_dynamic_mask, std::vector<BodyPair> &pairs,
+                                BroadPhaseScratch &scratch) {
+    broad_phase_chunk(query_dynamic_ids, dynamic_bvh, static_bvh, bounds_cache, query_dynamic_mask, pairs, scratch);
 }
 
 } // namespace javelin

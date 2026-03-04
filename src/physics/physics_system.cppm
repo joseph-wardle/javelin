@@ -226,8 +226,9 @@ struct PhysicsSystem final {
 
     // Immutable snapshot for one broad-phase dispatch.
     struct BroadPhaseJob final {
-        std::span<const u32> dynamic_ids{};
-        u32 dynamic_count{};
+        std::span<const u32> query_dynamic_ids{};
+        std::span<const u8> query_dynamic_mask{};
+        u32 query_dynamic_count{};
         u32 worker_count{};
         u32 chunk_size{};
     };
@@ -314,6 +315,8 @@ struct PhysicsSystem final {
     bool broad_phase_stop_{false};
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
+    std::vector<u32> awake_dynamic_ids_{};
+    std::vector<u8> awake_dynamic_mask_{};
     std::vector<Aabb> bounds_cache_{};
     // Per-manifold combined material properties, recomputed each tick before
     // solve.
@@ -472,23 +475,34 @@ struct PhysicsSystem final {
             }
         }
 
+        bool rebuilt_body_sets = false;
         if (static_dirty_) {
             rebuild_body_sets_(view);
             last_count_ = count;
             static_dirty_ = false;
+            rebuilt_body_sets = true;
         }
 
         // Stage 2: broad phase candidate generation.
         const std::span<const u32> dynamic_ids{dynamic_ids_.data(), dynamic_ids_.size()};
+        build_awake_dynamic_body_set_(count, view.asleep);
+        const std::span<const u32> awake_dynamic_ids{awake_dynamic_ids_.data(), awake_dynamic_ids_.size()};
+        TracyPlot("physics_dynamic_bodies", static_cast<i64>(dynamic_ids.size()));
+        TracyPlot("physics_awake_dynamic_bodies", static_cast<i64>(awake_dynamic_ids.size()));
+        TracyPlot("physics_sleeping_dynamic_bodies", static_cast<i64>(dynamic_ids.size() - awake_dynamic_ids.size()));
+
         // Mutating phase: update dynamic BVH before read-only queries.
-        broad_phase_update_dynamic_bvh(dynamic_ids, dynamic_bvh_, bounds_cache_);
-        // Read-only phase: query broad phase pairs.
-        run_broad_phase_queries_(dynamic_ids);
+        // After body-set rebuild (count change / reset), refresh all dynamic ids
+        // once so sleeping leaves are present and in sync.
+        const std::span<const u32> bvh_update_ids = rebuilt_body_sets ? dynamic_ids : awake_dynamic_ids;
+        broad_phase_update_dynamic_bvh(bvh_update_ids, dynamic_bvh_, bounds_cache_);
+        // Read-only phase: query pairs from awake dynamics only.
+        run_broad_phase_queries_(awake_dynamic_ids, std::span<const u8>{awake_dynamic_mask_.data(), count});
         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
 
         // Stage 3: narrow phase manifolds + warm-start persistence refresh.
         narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes, view.shape_index,
-                              view.inv_mass, candidate_pairs_, manifolds_, next_manifolds_);
+                              view.inv_mass, candidate_pairs_, manifolds_, awake_dynamic_ids, next_manifolds_);
         sort_manifold_points_(next_manifolds_);
         sort_manifolds_(next_manifolds_);
         const PersistenceRefreshStats persistence_stats =
@@ -599,6 +613,8 @@ struct PhysicsSystem final {
         bounds_cache_.reserve(count);
         static_ids_.reserve(count);
         dynamic_ids_.reserve(count);
+        awake_dynamic_ids_.reserve(count);
+        awake_dynamic_mask_.reserve(count);
         contact_activity_mask_.reserve(count);
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
         const usize manifold_reserve = static_cast<usize>(count) * kManifoldReserveFactor;
@@ -637,6 +653,31 @@ struct PhysicsSystem final {
             }
         }
 #endif
+    }
+
+    void build_awake_dynamic_body_set_(const u32 body_count, std::span<const u8> asleep) {
+        ZoneScopedN("Physics build awake dynamic ids");
+        if (awake_dynamic_mask_.size() < body_count) {
+            awake_dynamic_mask_.resize(body_count);
+        }
+        std::fill_n(awake_dynamic_mask_.begin(), body_count, static_cast<u8>(0u));
+
+        awake_dynamic_ids_.clear();
+        awake_dynamic_ids_.reserve(dynamic_ids_.size());
+        for (const u32 id : dynamic_ids_) {
+#ifndef NDEBUG
+            if (id >= body_count) {
+                log::error(physics, "Dynamic id out of range while building awake set (id={} count={})", id,
+                           body_count);
+                std::terminate();
+            }
+#endif
+            if (asleep[id] != 0u) {
+                continue;
+            }
+            awake_dynamic_mask_[id] = 1u;
+            awake_dynamic_ids_.push_back(id);
+        }
     }
 
     void mark_bodies_with_active_contacts_(const u32 body_count, std::span<const ContactManifold> manifolds) {
@@ -1210,30 +1251,32 @@ struct PhysicsSystem final {
         }
     }
 
-    void run_broad_phase_queries_(std::span<const u32> dynamic_ids) {
+    void run_broad_phase_queries_(std::span<const u32> query_dynamic_ids, std::span<const u8> query_dynamic_mask) {
         ZoneScopedN("Physics broad phase parallel");
         candidate_pairs_.clear();
-        const u32 dynamic_count = static_cast<u32>(dynamic_ids.size());
-        if (dynamic_count == 0) {
+        const u32 query_dynamic_count = static_cast<u32>(query_dynamic_ids.size());
+        if (query_dynamic_count == 0) {
             return;
         }
 
-        // dynamic_ids are built in ascending order; assert in debug for safety.
+        // query_dynamic_ids are built in ascending order; assert in debug for
+        // safety.
 #ifndef NDEBUG
-        if (!std::is_sorted(dynamic_ids.begin(), dynamic_ids.end())) {
-            log::error(physics, "Broad phase dynamic ids are not sorted");
+        if (!std::is_sorted(query_dynamic_ids.begin(), query_dynamic_ids.end())) {
+            log::error(physics, "Broad phase query dynamic ids are not sorted");
             std::terminate();
         }
 #endif
 
         // Worker pool: fixed thread count, contiguous chunks, deterministic merge
         // by chunk order.
-        const u32 worker_count = std::min(broad_phase_worker_count_, dynamic_count);
-        const u32 chunk_size = (dynamic_count + worker_count - 1u) / worker_count;
+        const u32 worker_count = std::min(broad_phase_worker_count_, query_dynamic_count);
+        const u32 chunk_size = (query_dynamic_count + worker_count - 1u) / worker_count;
 
         const BroadPhaseJob job{
-            .dynamic_ids = dynamic_ids,
-            .dynamic_count = dynamic_count,
+            .query_dynamic_ids = query_dynamic_ids,
+            .query_dynamic_mask = query_dynamic_mask,
+            .query_dynamic_count = query_dynamic_count,
             .worker_count = worker_count,
             .chunk_size = chunk_size,
         };
@@ -1279,7 +1322,7 @@ struct PhysicsSystem final {
         normalize_and_sort_candidate_pairs_();
 
 #if defined(JAVELIN_BROAD_PHASE_VALIDATE)
-        validate_broad_phase_pairs_(dynamic_ids);
+        validate_broad_phase_pairs_(query_dynamic_ids, query_dynamic_mask);
 #endif
     }
 
@@ -1287,16 +1330,17 @@ struct PhysicsSystem final {
         if (worker_index >= job.worker_count) {
             return;
         }
-        // Worker owns one contiguous chunk of dynamic ids.
+        // Worker owns one contiguous chunk of query dynamic ids.
         const u32 begin = worker_index * job.chunk_size;
-        if (begin >= job.dynamic_count) {
+        if (begin >= job.query_dynamic_count) {
             broad_phase_workers_[worker_index].pairs.clear();
             return;
         }
-        const u32 end = std::min(begin + job.chunk_size, job.dynamic_count);
-        const std::span<const u32> chunk{job.dynamic_ids.data() + begin, end - begin};
+        const u32 end = std::min(begin + job.chunk_size, job.query_dynamic_count);
+        const std::span<const u32> chunk{job.query_dynamic_ids.data() + begin, end - begin};
         BroadPhaseWorker &worker = broad_phase_workers_[worker_index];
-        broad_phase_generate_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, worker.pairs, worker.scratch);
+        broad_phase_generate_pairs(chunk, dynamic_bvh_, static_bvh_, bounds_cache_, job.query_dynamic_mask,
+                                   worker.pairs, worker.scratch);
     }
 
     void broad_phase_worker_loop_(const u32 worker_index) {
@@ -1360,11 +1404,12 @@ struct PhysicsSystem final {
     }
 
 #if defined(JAVELIN_BROAD_PHASE_VALIDATE)
-    void validate_broad_phase_pairs_(std::span<const u32> dynamic_ids) {
+    void validate_broad_phase_pairs_(std::span<const u32> query_dynamic_ids, std::span<const u8> query_dynamic_mask) {
         BroadPhaseWorker &worker = broad_phase_workers_[0];
         std::vector<BodyPair> expected{};
         expected.reserve(candidate_pairs_.size());
-        broad_phase_generate_pairs(dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, expected, worker.scratch);
+        broad_phase_generate_pairs(query_dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, query_dynamic_mask,
+                                   expected, worker.scratch);
 
         auto normalize = [](std::vector<BodyPair> &pairs) {
             std::sort(pairs.begin(), pairs.end(), [](const BodyPair &lhs, const BodyPair &rhs) {
