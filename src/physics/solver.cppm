@@ -128,7 +128,7 @@ struct SolverPoint final {
     return tangent_impulse;
 }
 
-[[nodiscard]] inline std::pair<Vec3, Vec3> tangent_basis(const Vec3 normal) noexcept {
+[[nodiscard]] inline std::pair<Vec3, Vec3> contact_tangent_frame(const Vec3 normal) noexcept {
     // Deterministic orthonormal basis from normal.
     Vec3 tangent_u =
         (std::fabs(normal.x) >= 0.57735026919f) ? Vec3{normal.y, -normal.x, 0.0f} : Vec3{0.0f, normal.z, -normal.y};
@@ -352,7 +352,7 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
             continue;
 #endif
         }
-        const auto [tangent_u, tangent_v] = detail::tangent_basis(normal);
+        const auto [tangent_u, tangent_v] = detail::contact_tangent_frame(normal);
 
         for (u32 point_index = 0; point_index < manifold.point_count; ++point_index) {
             ContactPoint &point = manifold.points[point_index];

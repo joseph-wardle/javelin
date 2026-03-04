@@ -19,17 +19,26 @@ namespace javelin::detail {
 // - manifold normal always points from body a to body b after canonicalization.
 // - feature ids are stable, deterministic keys used for cross-frame cache matching.
 inline constexpr Vec3 kGroundNormal{0.0f, 1.0f, 0.0f};
+// Intentional simplification: world collision always includes an infinite ground plane at y=0.
+// This keeps sample scenes compact and avoids a mandatory authored static "floor" body.
 inline constexpr f32 kGroundOffset = 0.0f;
+// Degenerate normal guard for center deltas (sphere-sphere and sphere-box fallback paths).
+// 1e-6 m^2 corresponds to ~1 mm positional tolerance.
 inline constexpr f32 kMinDistanceEpsSq = 1e-6f;
+// SAT cross-axis validity epsilon; filters near-parallel edge-edge axes before normalization.
 inline constexpr f32 kAxisEpsSq = 1e-8f;
+// Absolute projection/separation epsilon for interval overlap decisions in SAT.
 inline constexpr f32 kAxisAbsEps = 1e-6f;
 // Feature id tag bits (payload encoding is shape-pair specific).
 inline constexpr u32 kBoxFaceFeatureTag = 1u << 8u;
 inline constexpr u32 kBoxGroundVertexFeatureTag = 1u << 9u;
 inline constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
 inline constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
+// Tie-break epsilon for manifold reduction and deterministic candidate ordering.
 inline constexpr f32 kReductionEps = 1e-6f;
+// Axis selection hysteresis (metres): keep prior axis when depth is close to reduce normal flip-flop.
 inline constexpr f32 kAxisHysteresisAbs = 0.02f;
+// Segment/line denominator epsilon for edge-edge closest-point math.
 inline constexpr f32 kSegmentEps = 1e-8f;
 
 [[nodiscard]] inline const SphereShape &sphere_shape(std::span<const ShapeKind> shape_kind,
