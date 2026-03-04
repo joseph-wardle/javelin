@@ -283,6 +283,15 @@ struct PhysicsSystem final {
     static constexpr u32 kBroadPhaseParallelMinQueries = 64u;
     static constexpr u32 kBroadPhaseTargetQueriesPerWorker = 16u;
     static constexpr u32 kBroadPhaseMinQueriesPerWorker = 8u;
+    // Incremental broad-phase policy:
+    // - query moved awake bodies by default.
+    // - fall back to full awake query when moved/awake ratio is high.
+    // - carry previous manifold pairs forward when bounds still overlap.
+    static constexpr f32 kBroadPhaseIncrementalFallbackMovedRatio = 0.60f;
+#if defined(JAVELIN_BROAD_PHASE_VALIDATE)
+    // Debug validator cadence: full-query equivalence check every N ticks.
+    static constexpr u32 kBroadPhaseValidationIntervalTicks = 120u;
+#endif
     // Sleep parameters: a dynamic body is marked asleep once its sleep_timer
     // reaches kSleepTickThreshold consecutive ticks with both speeds below
     // threshold.
@@ -342,6 +351,11 @@ struct PhysicsSystem final {
     std::vector<u32> dynamic_ids_{};
     std::vector<u32> awake_dynamic_ids_{};
     std::vector<u8> awake_dynamic_mask_{};
+    std::vector<u32> moved_awake_dynamic_ids_{};
+    std::vector<u8> moved_awake_mask_{};
+#if defined(JAVELIN_BROAD_PHASE_VALIDATE)
+    std::vector<BodyPair> broad_phase_expected_pairs_{};
+#endif
     // Per-tick island scratch (union-find + component member lists).
     std::vector<u32> island_parent_{};
     std::vector<u8> island_rank_{};
@@ -638,9 +652,46 @@ struct PhysicsSystem final {
         // After body-set rebuild (count change / reset), refresh all dynamic ids
         // once so sleeping leaves are present and in sync.
         const std::span<const u32> bvh_update_ids = rebuilt_body_sets ? dynamic_ids : awake_dynamic_ids;
-        broad_phase_update_dynamic_bvh(bvh_update_ids, dynamic_bvh_, bounds_cache_);
-        // Read-only phase: query pairs from awake dynamics only.
-        run_broad_phase_queries_(awake_dynamic_ids, std::span<const u8>{awake_dynamic_mask_.data(), count});
+        const std::span<const u8> awake_dynamic_mask{awake_dynamic_mask_.data(), count};
+        update_dynamic_bvh_and_collect_moved_awake_(bvh_update_ids, count, awake_dynamic_mask);
+        const std::span<const u32> moved_awake_dynamic_ids{moved_awake_dynamic_ids_.data(),
+                                                           moved_awake_dynamic_ids_.size()};
+        const std::span<const u8> moved_awake_mask{moved_awake_mask_.data(), count};
+
+        const f32 moved_awake_ratio =
+            awake_dynamic_ids.empty()
+                ? 0.0f
+                : (static_cast<f32>(moved_awake_dynamic_ids.size()) / static_cast<f32>(awake_dynamic_ids.size()));
+        const bool fallback_to_full_awake_query =
+            rebuilt_body_sets || moved_awake_ratio >= kBroadPhaseIncrementalFallbackMovedRatio;
+        const std::span<const u32> broad_phase_query_ids =
+            fallback_to_full_awake_query ? awake_dynamic_ids : moved_awake_dynamic_ids;
+        const std::span<const u8> broad_phase_query_mask =
+            fallback_to_full_awake_query ? awake_dynamic_mask : moved_awake_mask;
+
+        // Read-only phase:
+        // - full awake query when many awake bodies moved,
+        // - otherwise moved-only query plus carried previous pairs.
+        run_broad_phase_queries_(broad_phase_query_ids, broad_phase_query_mask);
+        u32 carried_pair_count = 0u;
+        u32 validated_pair_count = 0u;
+        if (!fallback_to_full_awake_query) {
+            const BroadPhaseCarryForwardStats carry_stats =
+                append_overlapping_previous_pairs_(count, awake_dynamic_mask);
+            carried_pair_count = carry_stats.carried_pair_count;
+            validated_pair_count = carry_stats.validated_pair_count;
+        }
+        normalize_and_sort_candidate_pairs_();
+#if defined(JAVELIN_BROAD_PHASE_VALIDATE)
+        validate_broad_phase_pairs_(awake_dynamic_ids, awake_dynamic_mask, fallback_to_full_awake_query,
+                                    next_completed_step_id_());
+#endif
+        TracyPlot("physics_moved_awake_dynamic_bodies", static_cast<i64>(moved_awake_dynamic_ids.size()));
+        TracyPlot("physics_moved_awake_ratio", moved_awake_ratio);
+        TracyPlot("physics_carried_pair_count", static_cast<i64>(carried_pair_count));
+        TracyPlot("physics_validated_pair_count", static_cast<i64>(validated_pair_count));
+        TracyPlot("physics_broad_phase_full_query", fallback_to_full_awake_query ? static_cast<i64>(1)
+                                                                                 : static_cast<i64>(0));
         update_reserve_hint_(candidate_pairs_.size(), candidate_pair_reserve_hint_);
         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
 
@@ -762,6 +813,8 @@ struct PhysicsSystem final {
         dynamic_ids_.reserve(count);
         awake_dynamic_ids_.reserve(count);
         awake_dynamic_mask_.reserve(count);
+        moved_awake_dynamic_ids_.reserve(count);
+        moved_awake_mask_.reserve(count);
         island_parent_.reserve(count);
         island_rank_.reserve(count);
         island_member_head_.reserve(count);
@@ -781,6 +834,9 @@ struct PhysicsSystem final {
             sleep_island_next_body_.resize(count, kInvalidBody);
         }
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
+#if defined(JAVELIN_BROAD_PHASE_VALIDATE)
+        broad_phase_expected_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
+#endif
         const usize manifold_reserve = static_cast<usize>(count) * kManifoldReserveFactor;
         manifolds_.reserve(manifold_reserve);
         next_manifolds_.reserve(manifold_reserve);
@@ -850,6 +906,71 @@ struct PhysicsSystem final {
             awake_dynamic_mask_[id] = 1u;
             awake_dynamic_ids_.push_back(id);
         }
+    }
+
+    void update_dynamic_bvh_and_collect_moved_awake_(std::span<const u32> bvh_update_ids, const u32 body_count,
+                                                     std::span<const u8> awake_dynamic_mask) {
+        ZoneScopedN("Physics update dynamic BVH + moved awake");
+        if (moved_awake_mask_.size() < body_count) {
+            moved_awake_mask_.resize(body_count);
+        }
+        std::fill_n(moved_awake_mask_.begin(), body_count, static_cast<u8>(0u));
+
+        moved_awake_dynamic_ids_.clear();
+        moved_awake_dynamic_ids_.reserve(awake_dynamic_ids_.size());
+        for (const u32 id : bvh_update_ids) {
+#ifndef NDEBUG
+            if (id >= body_count) {
+                log::error(physics, "BVH update id out of range while collecting moved set (id={} count={})", id,
+                           body_count);
+                std::terminate();
+            }
+#endif
+            const bool moved = dynamic_bvh_.update(id, bounds_cache_[id]);
+            if (!moved || awake_dynamic_mask[id] == 0u) {
+                continue;
+            }
+            moved_awake_mask_[id] = 1u;
+            moved_awake_dynamic_ids_.push_back(id);
+        }
+    }
+
+    struct BroadPhaseCarryForwardStats final {
+        u32 carried_pair_count{};
+        u32 validated_pair_count{};
+    };
+
+    [[nodiscard]] BroadPhaseCarryForwardStats append_overlapping_previous_pairs_(
+        const u32 body_count, std::span<const u8> awake_dynamic_mask) {
+        ZoneScopedN("Physics carry manifold pairs");
+        BroadPhaseCarryForwardStats stats{};
+        if (manifolds_.empty()) {
+            return stats;
+        }
+
+        for (const ContactManifold &manifold : manifolds_) {
+            if (manifold.b == kInvalidBody) {
+                continue;
+            }
+            const BodyPair pair = canonical_body_pair(manifold.a, manifold.b);
+#ifndef NDEBUG
+            if (pair.a >= body_count || pair.b >= body_count) {
+                log::error(physics, "Previous manifold pair out of range during carry-forward (a={} b={} count={})",
+                           pair.a, pair.b, body_count);
+                std::terminate();
+            }
+#endif
+            if (awake_dynamic_mask[pair.a] == 0u && awake_dynamic_mask[pair.b] == 0u) {
+                continue;
+            }
+            ++stats.carried_pair_count;
+            if (!overlaps(bounds_cache_[pair.a], bounds_cache_[pair.b])) {
+                continue;
+            }
+            candidate_pairs_.push_back(pair);
+            ++stats.validated_pair_count;
+        }
+        return stats;
     }
 
     void mark_bodies_with_active_edges_(const u32 body_count, std::span<const ContactManifold> manifolds,
@@ -1286,6 +1407,20 @@ struct PhysicsSystem final {
         return lhs.a == rhs.a && lhs.b == rhs.b;
     }
 
+    static void normalize_and_sort_body_pairs_(std::vector<BodyPair> &pairs) {
+        if (pairs.empty()) {
+            return;
+        }
+
+        for (BodyPair &pair : pairs) {
+            pair = canonical_body_pair(pair.a, pair.b);
+        }
+
+        std::sort(pairs.begin(), pairs.end(), body_pair_less_);
+        const auto unique_end = std::unique(pairs.begin(), pairs.end(), body_pair_equal_);
+        pairs.erase(unique_end, pairs.end());
+    }
+
     [[nodiscard]] static bool manifold_pair_less_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
         if (lhs.a != rhs.a) {
             return lhs.a < rhs.a;
@@ -1301,17 +1436,7 @@ struct PhysicsSystem final {
     // deterministic.
     void normalize_and_sort_candidate_pairs_() {
         ZoneScopedN("Physics normalize candidate pairs");
-        if (candidate_pairs_.empty()) {
-            return;
-        }
-
-        for (BodyPair &pair : candidate_pairs_) {
-            pair = canonical_body_pair(pair.a, pair.b);
-        }
-
-        std::sort(candidate_pairs_.begin(), candidate_pairs_.end(), body_pair_less_);
-        const auto unique_end = std::unique(candidate_pairs_.begin(), candidate_pairs_.end(), body_pair_equal_);
-        candidate_pairs_.erase(unique_end, candidate_pairs_.end());
+        normalize_and_sort_body_pairs_(candidate_pairs_);
     }
 
     [[nodiscard]] static bool manifold_less_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
@@ -1779,11 +1904,6 @@ struct PhysicsSystem final {
             update_reserve_hint_(max_worker_pair_count, broad_phase_worker_pair_reserve_hint_);
             reserve_broad_phase_worker_pair_buffers_(broad_phase_worker_pair_reserve_hint_);
         }
-        normalize_and_sort_candidate_pairs_();
-
-#if defined(JAVELIN_BROAD_PHASE_VALIDATE)
-        validate_broad_phase_pairs_(query_dynamic_ids, query_dynamic_mask);
-#endif
     }
 
     void run_broad_phase_chunk_(const BroadPhaseJob &job, const u32 worker_index) {
@@ -1864,31 +1984,47 @@ struct PhysicsSystem final {
     }
 
 #if defined(JAVELIN_BROAD_PHASE_VALIDATE)
-    void validate_broad_phase_pairs_(std::span<const u32> query_dynamic_ids, std::span<const u8> query_dynamic_mask) {
+    void validate_broad_phase_pairs_(std::span<const u32> awake_dynamic_ids, std::span<const u8> awake_dynamic_mask,
+                                     const bool used_full_awake_query, const u64 step_id) {
+        if (used_full_awake_query) {
+            TracyPlot("physics_broad_phase_validator_ran", static_cast<i64>(0));
+            return;
+        }
+        if (kBroadPhaseValidationIntervalTicks == 0u ||
+            (step_id % static_cast<u64>(kBroadPhaseValidationIntervalTicks)) != 0u) {
+            TracyPlot("physics_broad_phase_validator_ran", static_cast<i64>(0));
+            return;
+        }
+
+        ZoneScopedN("Physics validate broad phase incremental");
         BroadPhaseWorker &worker = broad_phase_workers_[0];
-        std::vector<BodyPair> expected{};
-        expected.reserve(candidate_pairs_.size());
-        broad_phase_generate_pairs(query_dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, query_dynamic_mask,
-                                   expected, worker.scratch);
+        broad_phase_expected_pairs_.clear();
+        if (candidate_pairs_.size() > broad_phase_expected_pairs_.capacity()) {
+            broad_phase_expected_pairs_.reserve(candidate_pairs_.size());
+        }
+        broad_phase_generate_pairs(awake_dynamic_ids, dynamic_bvh_, static_bvh_, bounds_cache_, awake_dynamic_mask,
+                                   broad_phase_expected_pairs_, worker.scratch);
+        normalize_and_sort_body_pairs_(broad_phase_expected_pairs_);
+        TracyPlot("physics_broad_phase_validator_ran", static_cast<i64>(1));
+        TracyPlot("physics_broad_phase_validator_expected_pairs",
+                  static_cast<i64>(broad_phase_expected_pairs_.size()));
 
-        auto normalize = [](std::vector<BodyPair> &pairs) {
-            std::sort(pairs.begin(), pairs.end(), [](const BodyPair &lhs, const BodyPair &rhs) {
-                if (lhs.a != rhs.a) {
-                    return lhs.a < rhs.a;
-                }
-                return lhs.b < rhs.b;
-            });
-            pairs.erase(
-                std::unique(pairs.begin(), pairs.end(),
-                            [](const BodyPair &lhs, const BodyPair &rhs) { return lhs.a == rhs.a && lhs.b == rhs.b; }),
-                pairs.end());
-        };
-
-        std::vector<BodyPair> actual = candidate_pairs_;
-        normalize(expected);
-        normalize(actual);
-        if (expected != actual) {
-            log::error(physics, "Broad phase validation failed expected={} actual={}", expected.size(), actual.size());
+        if (broad_phase_expected_pairs_.size() != candidate_pairs_.size()) {
+            log::error(physics,
+                       "Incremental broad phase validation failed (step={} expected_pairs={} actual_pairs={})",
+                       step_id, broad_phase_expected_pairs_.size(), candidate_pairs_.size());
+            std::terminate();
+        }
+        for (usize i = 0; i < candidate_pairs_.size(); ++i) {
+            if (!body_pair_equal_(broad_phase_expected_pairs_[i], candidate_pairs_[i])) {
+                const BodyPair expected = broad_phase_expected_pairs_[i];
+                const BodyPair actual = candidate_pairs_[i];
+                log::error(physics,
+                           "Incremental broad phase validation failed (step={} index={} expected=({}, {}) "
+                           "actual=({}, {}))",
+                           step_id, i, expected.a, expected.b, actual.a, actual.b);
+                std::terminate();
+            }
         }
     }
 #endif

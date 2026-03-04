@@ -19,9 +19,11 @@ namespace {
 struct Config final {
     u32 bodies = 4096;
     f32 awake_ratio = 0.25f;
+    f32 moved_awake_ratio = 0.10f;
     f32 spacing = 0.92f;
     f32 half_extent = 0.5f;
     f32 center_y = 0.48f;
+    f32 moved_offset = 0.125f;
     u32 iterations = 120;
     u32 warmup = 20;
     u32 samples = 5;
@@ -40,6 +42,7 @@ struct Dataset final {
     std::vector<Aabb> bounds{};
     std::vector<u32> dynamic_ids{};
     std::vector<u32> awake_dynamic_ids{};
+    std::vector<u32> moved_awake_ids{};
     std::vector<u8> all_query_mask{};
     std::vector<u8> awake_query_mask{};
     std::vector<ContactManifold> previous_manifolds{};
@@ -57,6 +60,7 @@ struct SampleSummary final {
 enum struct Mode : u8 {
     baseline_all_dynamic = 0,
     sleep_aware = 1,
+    incremental_moved_carry = 2,
 };
 
 [[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
@@ -95,10 +99,13 @@ void print_usage(const char *exe, const Config &cfg) {
                  exe);
     std::println("             [--center-y=F] [--iterations=N] [--warmup=N] "
                  "[--samples=N] [--seed=N]");
+    std::println("             [--moved-awake-ratio=F] [--moved-offset=F]");
     std::println("             [--json-out=PATH]\n");
     std::println("Defaults:");
     std::println("  --bodies={}", cfg.bodies);
     std::println("  --awake-ratio={}", cfg.awake_ratio);
+    std::println("  --moved-awake-ratio={}", cfg.moved_awake_ratio);
+    std::println("  --moved-offset={}", cfg.moved_offset);
     std::println("  --spacing={}", cfg.spacing);
     std::println("  --half-extent={}", cfg.half_extent);
     std::println("  --center-y={}", cfg.center_y);
@@ -125,6 +132,12 @@ void print_usage(const char *exe, const Config &cfg) {
     }
     if (key == "awake-ratio") {
         return parse_f32(value, cfg.awake_ratio);
+    }
+    if (key == "moved-awake-ratio") {
+        return parse_f32(value, cfg.moved_awake_ratio);
+    }
+    if (key == "moved-offset") {
+        return parse_f32(value, cfg.moved_offset);
     }
     if (key == "spacing") {
         return parse_f32(value, cfg.spacing);
@@ -223,6 +236,11 @@ void normalize_pairs(std::vector<BodyPair> &pairs) {
             out.awake_dynamic_ids.push_back(id);
         }
     }
+
+    const u32 moved_awake_target = std::clamp<u32>(
+        static_cast<u32>(std::round(static_cast<f64>(out.awake_dynamic_ids.size()) * cfg.moved_awake_ratio)), 0u,
+        static_cast<u32>(out.awake_dynamic_ids.size()));
+    out.moved_awake_ids.assign(out.awake_dynamic_ids.begin(), out.awake_dynamic_ids.begin() + moved_awake_target);
     return out;
 }
 
@@ -234,45 +252,123 @@ void normalize_pairs(std::vector<BodyPair> &pairs) {
 }
 
 [[nodiscard]] SampleSummary run_mode_samples(const Config &cfg, const Dataset &dataset, const Mode mode) {
+    static constexpr f32 kIncrementalFallbackMovedRatio = 0.60f;
+
     SampleSummary summary{};
     summary.us_per_iteration.reserve(cfg.samples);
 
     std::vector<BodyPair> pairs{};
     pairs.reserve(static_cast<usize>(cfg.bodies) * 8u);
-    std::vector<ContactManifold> manifolds{};
-    manifolds.reserve(static_cast<usize>(cfg.bodies) * 4u);
+    std::vector<ContactManifold> previous_manifolds{};
+    previous_manifolds.reserve(static_cast<usize>(cfg.bodies) * 4u);
+    std::vector<ContactManifold> next_manifolds{};
+    next_manifolds.reserve(static_cast<usize>(cfg.bodies) * 4u);
     BroadPhaseScratch scratch{};
     scratch.reserve(cfg.bodies, 2u);
+    std::vector<u8> moved_query_mask{};
+    moved_query_mask.resize(cfg.bodies, static_cast<u8>(0u));
+    std::vector<u32> moved_query_ids{};
+    moved_query_ids.reserve(dataset.awake_dynamic_ids.size());
+    std::vector<Vec3> position{};
+    position.reserve(cfg.bodies);
+    std::vector<Aabb> bounds{};
+    bounds.reserve(cfg.bodies);
 
     const auto run_iterations = [&](const u32 iteration_count, u64 &checksum_out, u64 &pair_sum, u64 &manifold_sum,
                                     u64 &point_sum) -> std::chrono::nanoseconds {
         DynamicBvh dynamic_bvh = build_dynamic_bvh(dataset);
-        const std::span<const u32> update_ids = (mode == Mode::baseline_all_dynamic)
-                                                    ? std::span<const u32>{dataset.dynamic_ids}
-                                                    : std::span<const u32>{dataset.awake_dynamic_ids};
-        const std::span<const u32> query_ids = (mode == Mode::baseline_all_dynamic)
-                                                   ? std::span<const u32>{dataset.dynamic_ids}
-                                                   : std::span<const u32>{dataset.awake_dynamic_ids};
-        const std::span<const u8> query_mask = (mode == Mode::baseline_all_dynamic)
-                                                   ? std::span<const u8>{dataset.all_query_mask}
-                                                   : std::span<const u8>{dataset.awake_query_mask};
+        position = dataset.position;
+        bounds = dataset.bounds;
+        previous_manifolds = dataset.previous_manifolds;
+
+        auto apply_moved_awake_jitter = [&](const u32 iter) {
+            if (dataset.moved_awake_ids.empty()) {
+                return;
+            }
+            const f32 offset = ((iter & 1u) == 0u) ? cfg.moved_offset : -cfg.moved_offset;
+            for (const u32 id : dataset.moved_awake_ids) {
+                Vec3 center = dataset.position[id];
+                center.x += offset;
+                position[id] = center;
+                const Vec3 extents{cfg.half_extent};
+                bounds[id] = Aabb{center - extents, center + extents};
+            }
+        };
+
+        auto append_overlapping_previous_pairs = [&](std::span<const u8> awake_mask) {
+            for (const ContactManifold &manifold : previous_manifolds) {
+                if (manifold.b == kInvalidBody) {
+                    continue;
+                }
+                const BodyPair pair = canonical_body_pair(manifold.a, manifold.b);
+                if (awake_mask[pair.a] == 0u && awake_mask[pair.b] == 0u) {
+                    continue;
+                }
+                if (!overlaps(bounds[pair.a], bounds[pair.b])) {
+                    continue;
+                }
+                pairs.push_back(pair);
+            }
+        };
 
         using clock = SteadyClock;
         const auto start = clock::now();
         for (u32 iter = 0; iter < iteration_count; ++iter) {
-            broad_phase_update_dynamic_bvh(update_ids, dynamic_bvh, dataset.bounds);
-            broad_phase_generate_pairs(query_ids, dynamic_bvh, dataset.static_bvh, dataset.bounds, query_mask, pairs,
-                                       scratch);
-            normalize_pairs(pairs);
-            narrow_phase_contacts(dataset.position, dataset.orientation, dataset.shape_kind, dataset.shapes,
-                                  dataset.shape_index, dataset.inv_mass, pairs, dataset.previous_manifolds, query_ids,
-                                  manifolds);
+            apply_moved_awake_jitter(iter);
 
-            const u32 point_count = contact_point_count(manifolds);
+            std::span<const u32> query_ids{};
+            std::span<const u8> query_mask{};
+            std::span<const u32> ground_query_ids{};
+            bool use_incremental_carry = false;
+
+            if (mode == Mode::baseline_all_dynamic) {
+                broad_phase_update_dynamic_bvh(dataset.dynamic_ids, dynamic_bvh, bounds);
+                query_ids = dataset.dynamic_ids;
+                query_mask = dataset.all_query_mask;
+                ground_query_ids = dataset.dynamic_ids;
+            } else if (mode == Mode::sleep_aware) {
+                broad_phase_update_dynamic_bvh(dataset.awake_dynamic_ids, dynamic_bvh, bounds);
+                query_ids = dataset.awake_dynamic_ids;
+                query_mask = dataset.awake_query_mask;
+                ground_query_ids = dataset.awake_dynamic_ids;
+            } else {
+                moved_query_ids.clear();
+                std::fill(moved_query_mask.begin(), moved_query_mask.end(), static_cast<u8>(0u));
+                for (const u32 id : dataset.awake_dynamic_ids) {
+                    if (!dynamic_bvh.update(id, bounds[id])) {
+                        continue;
+                    }
+                    moved_query_mask[id] = 1u;
+                    moved_query_ids.push_back(id);
+                }
+
+                const f32 moved_ratio =
+                    dataset.awake_dynamic_ids.empty()
+                        ? 0.0f
+                        : (static_cast<f32>(moved_query_ids.size()) / static_cast<f32>(dataset.awake_dynamic_ids.size()));
+                const bool fallback_to_full_query = moved_ratio >= kIncrementalFallbackMovedRatio;
+                query_ids = fallback_to_full_query ? std::span<const u32>{dataset.awake_dynamic_ids}
+                                                   : std::span<const u32>{moved_query_ids};
+                query_mask = fallback_to_full_query ? std::span<const u8>{dataset.awake_query_mask}
+                                                    : std::span<const u8>{moved_query_mask};
+                ground_query_ids = dataset.awake_dynamic_ids;
+                use_incremental_carry = !fallback_to_full_query;
+            }
+
+            broad_phase_generate_pairs(query_ids, dynamic_bvh, dataset.static_bvh, bounds, query_mask, pairs, scratch);
+            if (use_incremental_carry) {
+                append_overlapping_previous_pairs(dataset.awake_query_mask);
+            }
+            normalize_pairs(pairs);
+            narrow_phase_contacts(position, dataset.orientation, dataset.shape_kind, dataset.shapes, dataset.shape_index,
+                                  dataset.inv_mass, pairs, previous_manifolds, ground_query_ids, next_manifolds);
+            previous_manifolds.swap(next_manifolds);
+
+            const u32 point_count = contact_point_count(previous_manifolds);
             pair_sum += pairs.size();
-            manifold_sum += manifolds.size();
+            manifold_sum += previous_manifolds.size();
             point_sum += point_count;
-            checksum_out += static_cast<u64>(pairs.size()) * 3u + static_cast<u64>(manifolds.size()) * 5u +
+            checksum_out += static_cast<u64>(pairs.size()) * 3u + static_cast<u64>(previous_manifolds.size()) * 5u +
                             static_cast<u64>(point_count) * 7u;
         }
         return std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - start);
@@ -336,11 +432,18 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
 }
 
 [[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const SampleSummary &baseline,
-                                      const SampleSummary &sleep_aware, const u32 awake_count, const u32 sleeping_count,
+                                      const SampleSummary &sleep_aware, const SampleSummary &incremental,
+                                      const u32 awake_count, const u32 sleeping_count,
                                       const double baseline_median_us, const double baseline_p95_us,
                                       const double sleep_aware_median_us, const double sleep_aware_p95_us,
-                                      const double speedup, const double pair_reduction,
-                                      const double manifold_reduction, const double point_reduction) {
+                                      const double incremental_median_us, const double incremental_p95_us,
+                                      const double speedup_sleep_aware, const double speedup_incremental,
+                                      const double incremental_speedup_vs_sleep_aware,
+                                      const double pair_reduction_sleep_aware, const double manifold_reduction_sleep_aware,
+                                      const double point_reduction_sleep_aware,
+                                      const double pair_reduction_incremental,
+                                      const double manifold_reduction_incremental,
+                                      const double point_reduction_incremental) {
     namespace fs = std::filesystem;
     const fs::path out_path{path};
     std::error_code ec{};
@@ -365,11 +468,13 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "  \"config\": {\n";
     out << "    \"bodies\": " << cfg.bodies << ",\n";
     out << "    \"awake_ratio\": " << cfg.awake_ratio << ",\n";
+    out << "    \"moved_awake_ratio\": " << cfg.moved_awake_ratio << ",\n";
     out << "    \"awake_count\": " << awake_count << ",\n";
     out << "    \"sleeping_count\": " << sleeping_count << ",\n";
     out << "    \"spacing\": " << cfg.spacing << ",\n";
     out << "    \"half_extent\": " << cfg.half_extent << ",\n";
     out << "    \"center_y\": " << cfg.center_y << ",\n";
+    out << "    \"moved_offset\": " << cfg.moved_offset << ",\n";
     out << "    \"iterations\": " << cfg.iterations << ",\n";
     out << "    \"warmup\": " << cfg.warmup << ",\n";
     out << "    \"samples\": " << cfg.samples << ",\n";
@@ -379,13 +484,21 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "    \"baseline_median_us_per_iter\": " << baseline_median_us << ",\n";
     out << "    \"baseline_p95_us_per_iter\": " << baseline_p95_us << ",\n";
     out << "    \"sleep_aware_median_us_per_iter\": " << sleep_aware_median_us << ",\n";
-    out << "    \"sleep_aware_p95_us_per_iter\": " << sleep_aware_p95_us << "\n";
+    out << "    \"sleep_aware_p95_us_per_iter\": " << sleep_aware_p95_us << ",\n";
+    out << "    \"incremental_median_us_per_iter\": " << incremental_median_us << ",\n";
+    out << "    \"incremental_p95_us_per_iter\": " << incremental_p95_us << ",\n";
+    out << "    \"incremental_speedup_vs_sleep_aware_x\": " << incremental_speedup_vs_sleep_aware << "\n";
     out << "  },\n";
     out << "  \"summary\": {\n";
-    out << "    \"runtime_speedup_median_x\": " << speedup << ",\n";
-    out << "    \"pairs_reduction_ratio\": " << pair_reduction << ",\n";
-    out << "    \"manifolds_reduction_ratio\": " << manifold_reduction << ",\n";
-    out << "    \"contact_points_reduction_ratio\": " << point_reduction << "\n";
+    out << "    \"sleep_aware_speedup_vs_baseline_x\": " << speedup_sleep_aware << ",\n";
+    out << "    \"incremental_speedup_vs_baseline_x\": " << speedup_incremental << ",\n";
+    out << "    \"incremental_speedup_vs_sleep_aware_x\": " << incremental_speedup_vs_sleep_aware << ",\n";
+    out << "    \"sleep_aware_pairs_reduction_ratio\": " << pair_reduction_sleep_aware << ",\n";
+    out << "    \"sleep_aware_manifolds_reduction_ratio\": " << manifold_reduction_sleep_aware << ",\n";
+    out << "    \"sleep_aware_contact_points_reduction_ratio\": " << point_reduction_sleep_aware << ",\n";
+    out << "    \"incremental_pairs_reduction_ratio\": " << pair_reduction_incremental << ",\n";
+    out << "    \"incremental_manifolds_reduction_ratio\": " << manifold_reduction_incremental << ",\n";
+    out << "    \"incremental_contact_points_reduction_ratio\": " << point_reduction_incremental << "\n";
     out << "  },\n";
     out << "  \"modes\": {\n";
     out << "    \"baseline\": {\n";
@@ -419,6 +532,22 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "      \"avg_manifolds_per_iteration\": " << sleep_aware.avg_manifolds_per_iteration << ",\n";
     out << "      \"avg_points_per_iteration\": " << sleep_aware.avg_points_per_iteration << ",\n";
     out << "      \"checksum\": " << sleep_aware.checksum << "\n";
+    out << "    },\n";
+    out << "    \"incremental_moved_carry\": {\n";
+    out << "      \"samples_us_per_iter\": [";
+    for (usize i = 0u; i < incremental.us_per_iteration.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << incremental.us_per_iteration[i];
+    }
+    out << "],\n";
+    out << "      \"median_us_per_iter\": " << incremental_median_us << ",\n";
+    out << "      \"p95_us_per_iter\": " << incremental_p95_us << ",\n";
+    out << "      \"avg_pairs_per_iteration\": " << incremental.avg_pairs_per_iteration << ",\n";
+    out << "      \"avg_manifolds_per_iteration\": " << incremental.avg_manifolds_per_iteration << ",\n";
+    out << "      \"avg_points_per_iteration\": " << incremental.avg_points_per_iteration << ",\n";
+    out << "      \"checksum\": " << incremental.checksum << "\n";
     out << "    }\n";
     out << "  }\n";
     out << "}\n";
@@ -443,25 +572,30 @@ int main(int argc, char **argv) {
     }
 
     if (cfg.bodies == 0u || cfg.iterations == 0u || cfg.samples == 0u || cfg.spacing <= 0.0f ||
-        cfg.half_extent <= 0.0f) {
+        cfg.half_extent <= 0.0f || cfg.moved_offset < 0.0f) {
         std::cerr << "bodies/iterations/samples must be > 0 and "
-                     "spacing/half-extent must be positive.\n";
+                     "spacing/half-extent must be positive. moved-offset must be >= 0.\n";
         return 1;
     }
     cfg.awake_ratio = std::clamp(cfg.awake_ratio, 0.0f, 1.0f);
+    cfg.moved_awake_ratio = std::clamp(cfg.moved_awake_ratio, 0.0f, 1.0f);
 
     const Dataset dataset = build_dataset(cfg);
     const SampleSummary baseline = run_mode_samples(cfg, dataset, Mode::baseline_all_dynamic);
     const SampleSummary sleep_aware = run_mode_samples(cfg, dataset, Mode::sleep_aware);
+    const SampleSummary incremental = run_mode_samples(cfg, dataset, Mode::incremental_moved_carry);
 
     std::println("Config:");
     std::println("  bodies: {}", cfg.bodies);
     std::println("  awake ratio: {}", cfg.awake_ratio);
+    std::println("  moved awake ratio: {}", cfg.moved_awake_ratio);
     std::println("  awake count: {}", dataset.awake_dynamic_ids.size());
+    std::println("  moved awake count: {}", dataset.moved_awake_ids.size());
     std::println("  sleeping count: {}", dataset.dynamic_ids.size() - dataset.awake_dynamic_ids.size());
     std::println("  spacing: {}", cfg.spacing);
     std::println("  half extent: {}", cfg.half_extent);
     std::println("  center y: {}", cfg.center_y);
+    std::println("  moved offset: {}", cfg.moved_offset);
     std::println("  iterations: {}", cfg.iterations);
     std::println("  warmup: {}", cfg.warmup);
     std::println("  samples: {}", cfg.samples);
@@ -470,38 +604,71 @@ int main(int argc, char **argv) {
 
     print_summary("baseline (query/update all dynamic, ground for all dynamic)", baseline);
     print_summary("sleep-aware (query/update awake dynamic, ground for awake dynamic)", sleep_aware);
+    print_summary("incremental (query moved awake + carry overlapping previous manifolds)", incremental);
 
     const double baseline_median_us = median(baseline.us_per_iteration);
     const double baseline_p95_us = p95(baseline.us_per_iteration);
     const double sleep_aware_median_us = median(sleep_aware.us_per_iteration);
     const double sleep_aware_p95_us = p95(sleep_aware.us_per_iteration);
-    const double speedup = (sleep_aware_median_us > 0.0) ? (baseline_median_us / sleep_aware_median_us)
-                                                         : std::numeric_limits<double>::quiet_NaN();
+    const double incremental_median_us = median(incremental.us_per_iteration);
+    const double incremental_p95_us = p95(incremental.us_per_iteration);
+    const double speedup_sleep_aware = (sleep_aware_median_us > 0.0)
+                                           ? (baseline_median_us / sleep_aware_median_us)
+                                           : std::numeric_limits<double>::quiet_NaN();
+    const double speedup_incremental = (incremental_median_us > 0.0) ? (baseline_median_us / incremental_median_us)
+                                                                      : std::numeric_limits<double>::quiet_NaN();
+    const double incremental_speedup_vs_sleep_aware =
+        (incremental_median_us > 0.0) ? (sleep_aware_median_us / incremental_median_us)
+                                      : std::numeric_limits<double>::quiet_NaN();
 
-    const double pair_reduction = (baseline.avg_pairs_per_iteration > 0.0)
-                                      ? (1.0 - sleep_aware.avg_pairs_per_iteration / baseline.avg_pairs_per_iteration)
-                                      : 0.0;
-    const double manifold_reduction =
+    const double pair_reduction_sleep_aware =
+        (baseline.avg_pairs_per_iteration > 0.0)
+            ? (1.0 - sleep_aware.avg_pairs_per_iteration / baseline.avg_pairs_per_iteration)
+            : 0.0;
+    const double manifold_reduction_sleep_aware =
         (baseline.avg_manifolds_per_iteration > 0.0)
             ? (1.0 - sleep_aware.avg_manifolds_per_iteration / baseline.avg_manifolds_per_iteration)
             : 0.0;
-    const double point_reduction =
+    const double point_reduction_sleep_aware =
         (baseline.avg_points_per_iteration > 0.0)
             ? (1.0 - sleep_aware.avg_points_per_iteration / baseline.avg_points_per_iteration)
             : 0.0;
+    const double pair_reduction_incremental =
+        (baseline.avg_pairs_per_iteration > 0.0)
+            ? (1.0 - incremental.avg_pairs_per_iteration / baseline.avg_pairs_per_iteration)
+            : 0.0;
+    const double manifold_reduction_incremental =
+        (baseline.avg_manifolds_per_iteration > 0.0)
+            ? (1.0 - incremental.avg_manifolds_per_iteration / baseline.avg_manifolds_per_iteration)
+            : 0.0;
+    const double point_reduction_incremental =
+        (baseline.avg_points_per_iteration > 0.0)
+            ? (1.0 - incremental.avg_points_per_iteration / baseline.avg_points_per_iteration)
+            : 0.0;
 
     std::println("Workload delta (sleep-aware vs baseline):");
-    std::println("  pairs reduction: {}%", pair_reduction * 100.0);
-    std::println("  manifolds reduction: {}%", manifold_reduction * 100.0);
-    std::println("  contact points reduction: {}%", point_reduction * 100.0);
-    std::println("  runtime speedup (median): {}x", speedup);
+    std::println("  pairs reduction: {}%", pair_reduction_sleep_aware * 100.0);
+    std::println("  manifolds reduction: {}%", manifold_reduction_sleep_aware * 100.0);
+    std::println("  contact points reduction: {}%", point_reduction_sleep_aware * 100.0);
+    std::println("  runtime speedup (median): {}x", speedup_sleep_aware);
+    std::println("");
+    std::println("Workload delta (incremental moved+carry vs baseline):");
+    std::println("  pairs reduction: {}%", pair_reduction_incremental * 100.0);
+    std::println("  manifolds reduction: {}%", manifold_reduction_incremental * 100.0);
+    std::println("  contact points reduction: {}%", point_reduction_incremental * 100.0);
+    std::println("  runtime speedup (median): {}x", speedup_incremental);
+    std::println("  incremental vs sleep-aware speedup (median): {}x", incremental_speedup_vs_sleep_aware);
 
     if (!cfg.json_out.empty()) {
-        if (!write_json_summary(cfg.json_out, cfg, baseline, sleep_aware,
+        if (!write_json_summary(cfg.json_out, cfg, baseline, sleep_aware, incremental,
                                 static_cast<u32>(dataset.awake_dynamic_ids.size()),
                                 static_cast<u32>(dataset.dynamic_ids.size() - dataset.awake_dynamic_ids.size()),
-                                baseline_median_us, baseline_p95_us, sleep_aware_median_us, sleep_aware_p95_us, speedup,
-                                pair_reduction, manifold_reduction, point_reduction)) {
+                                baseline_median_us, baseline_p95_us, sleep_aware_median_us, sleep_aware_p95_us,
+                                incremental_median_us, incremental_p95_us, speedup_sleep_aware, speedup_incremental,
+                                incremental_speedup_vs_sleep_aware, pair_reduction_sleep_aware,
+                                manifold_reduction_sleep_aware, point_reduction_sleep_aware,
+                                pair_reduction_incremental, manifold_reduction_incremental,
+                                point_reduction_incremental)) {
             return 1;
         }
     }
