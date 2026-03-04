@@ -94,9 +94,14 @@ struct WorldInvInertia final {
     Vec3 col2{};
 };
 
+enum class WorldInvInertiaBodyState : u8 {
+    passive = 0u, // static or sleeping: contributes zero angular response
+    dynamic = 1u, // awake dynamic body: uses cached world inverse inertia
+};
+
 struct WorldInvInertiaCache final {
     std::vector<WorldInvInertia> tensors{};
-    std::vector<u8> valid{};
+    std::vector<WorldInvInertiaBodyState> state{};
 };
 
 [[nodiscard]] inline WorldInvInertiaCache &world_inv_inertia_cache() {
@@ -277,11 +282,11 @@ void build_world_inv_inertia_cache(std::span<const f32> inv_mass, std::span<cons
         const usize new_capacity = grown_capacity(cache.tensors.capacity(), body_count);
         if (cache.tensors.capacity() < new_capacity) {
             cache.tensors.reserve(new_capacity);
-            cache.valid.reserve(new_capacity);
+            cache.state.reserve(new_capacity);
             cache_grew = true;
         }
         cache.tensors.resize(body_count);
-        cache.valid.resize(body_count);
+        cache.state.resize(body_count);
     }
     TracyPlot("physics_world_inv_inertia_capacity", static_cast<i64>(cache.tensors.capacity()));
     TracyPlot("physics_world_inv_inertia_capacity_grew", cache_grew ? static_cast<i64>(1) : static_cast<i64>(0));
@@ -292,12 +297,12 @@ void build_world_inv_inertia_cache(std::span<const f32> inv_mass, std::span<cons
 
     for (u32 i = 0u; i < body_count; ++i) {
         if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
-            cache.valid[i] = 0u;
+            cache.state[i] = WorldInvInertiaBodyState::passive;
             cache.tensors[i] = WorldInvInertia{};
             continue;
         }
 
-        cache.valid[i] = 1u;
+        cache.state[i] = WorldInvInertiaBodyState::dynamic;
         cache.tensors[i] = WorldInvInertia{
             .col0 = apply_inv_inertia(inv_inertia_body[i], orientation[i], unit_x),
             .col1 = apply_inv_inertia(inv_inertia_body[i], orientation[i], unit_y),
@@ -310,12 +315,10 @@ void build_world_inv_inertia_cache(std::span<const f32> inv_mass, std::span<cons
 
 [[nodiscard]] inline Vec3 apply_world_inv_inertia(const WorldInvInertiaCache &cache, const u32 body,
                                                   const Vec3 v_world) noexcept {
-#ifndef NDEBUG
-    if (cache.valid[body] == 0u) {
-        log::error(physics, "World inverse inertia cache miss (body={})", body);
-        std::terminate();
+    // Passive participants (static or sleeping) have zero angular response.
+    if (cache.state[body] != WorldInvInertiaBodyState::dynamic) {
+        return Vec3{};
     }
-#endif
     const WorldInvInertia &world_inv = cache.tensors[body];
     return world_inv.col0 * v_world.x + world_inv.col1 * v_world.y + world_inv.col2 * v_world.z;
 }
