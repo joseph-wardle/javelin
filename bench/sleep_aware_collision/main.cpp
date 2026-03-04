@@ -26,6 +26,7 @@ struct Config final {
     u32 warmup = 20;
     u32 samples = 5;
     u32 seed = 1337;
+    std::string json_out{};
 };
 
 struct Dataset final {
@@ -89,8 +90,12 @@ enum struct Mode : u8 {
 
 void print_usage(const char *exe, const Config &cfg) {
     std::println("Sleep-aware collision pipeline benchmark");
-    std::println("Usage: {} [--bodies=N] [--awake-ratio=F] [--spacing=F] [--half-extent=F]", exe);
-    std::println("             [--center-y=F] [--iterations=N] [--warmup=N] [--samples=N] [--seed=N]\n");
+    std::println("Usage: {} [--bodies=N] [--awake-ratio=F] [--spacing=F] "
+                 "[--half-extent=F]",
+                 exe);
+    std::println("             [--center-y=F] [--iterations=N] [--warmup=N] "
+                 "[--samples=N] [--seed=N]");
+    std::println("             [--json-out=PATH]\n");
     std::println("Defaults:");
     std::println("  --bodies={}", cfg.bodies);
     std::println("  --awake-ratio={}", cfg.awake_ratio);
@@ -141,6 +146,10 @@ void print_usage(const char *exe, const Config &cfg) {
     }
     if (key == "seed") {
         return parse_u32(value, cfg.seed);
+    }
+    if (key == "json-out") {
+        cfg.json_out = std::string{value};
+        return !cfg.json_out.empty();
     }
     return false;
 }
@@ -326,6 +335,96 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     std::println("");
 }
 
+[[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const SampleSummary &baseline,
+                                      const SampleSummary &sleep_aware, const u32 awake_count, const u32 sleeping_count,
+                                      const double baseline_median_us, const double baseline_p95_us,
+                                      const double sleep_aware_median_us, const double sleep_aware_p95_us,
+                                      const double speedup, const double pair_reduction,
+                                      const double manifold_reduction, const double point_reduction) {
+    namespace fs = std::filesystem;
+    const fs::path out_path{path};
+    std::error_code ec{};
+    if (out_path.has_parent_path()) {
+        fs::create_directories(out_path.parent_path(), ec);
+        if (ec) {
+            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
+                      << "' for JSON output: " << ec.message() << "\n";
+            return false;
+        }
+    }
+
+    std::ofstream out{out_path};
+    if (!out.is_open()) {
+        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+        return false;
+    }
+    out << std::setprecision(17);
+    out << "{\n";
+    out << "  \"bench\": \"sleep_aware_collision\",\n";
+    out << "  \"units\": \"us/iter\",\n";
+    out << "  \"config\": {\n";
+    out << "    \"bodies\": " << cfg.bodies << ",\n";
+    out << "    \"awake_ratio\": " << cfg.awake_ratio << ",\n";
+    out << "    \"awake_count\": " << awake_count << ",\n";
+    out << "    \"sleeping_count\": " << sleeping_count << ",\n";
+    out << "    \"spacing\": " << cfg.spacing << ",\n";
+    out << "    \"half_extent\": " << cfg.half_extent << ",\n";
+    out << "    \"center_y\": " << cfg.center_y << ",\n";
+    out << "    \"iterations\": " << cfg.iterations << ",\n";
+    out << "    \"warmup\": " << cfg.warmup << ",\n";
+    out << "    \"samples\": " << cfg.samples << ",\n";
+    out << "    \"seed\": " << cfg.seed << "\n";
+    out << "  },\n";
+    out << "  \"compare_metrics\": {\n";
+    out << "    \"baseline_median_us_per_iter\": " << baseline_median_us << ",\n";
+    out << "    \"baseline_p95_us_per_iter\": " << baseline_p95_us << ",\n";
+    out << "    \"sleep_aware_median_us_per_iter\": " << sleep_aware_median_us << ",\n";
+    out << "    \"sleep_aware_p95_us_per_iter\": " << sleep_aware_p95_us << "\n";
+    out << "  },\n";
+    out << "  \"summary\": {\n";
+    out << "    \"runtime_speedup_median_x\": " << speedup << ",\n";
+    out << "    \"pairs_reduction_ratio\": " << pair_reduction << ",\n";
+    out << "    \"manifolds_reduction_ratio\": " << manifold_reduction << ",\n";
+    out << "    \"contact_points_reduction_ratio\": " << point_reduction << "\n";
+    out << "  },\n";
+    out << "  \"modes\": {\n";
+    out << "    \"baseline\": {\n";
+    out << "      \"samples_us_per_iter\": [";
+    for (usize i = 0u; i < baseline.us_per_iteration.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << baseline.us_per_iteration[i];
+    }
+    out << "],\n";
+    out << "      \"median_us_per_iter\": " << baseline_median_us << ",\n";
+    out << "      \"p95_us_per_iter\": " << baseline_p95_us << ",\n";
+    out << "      \"avg_pairs_per_iteration\": " << baseline.avg_pairs_per_iteration << ",\n";
+    out << "      \"avg_manifolds_per_iteration\": " << baseline.avg_manifolds_per_iteration << ",\n";
+    out << "      \"avg_points_per_iteration\": " << baseline.avg_points_per_iteration << ",\n";
+    out << "      \"checksum\": " << baseline.checksum << "\n";
+    out << "    },\n";
+    out << "    \"sleep_aware\": {\n";
+    out << "      \"samples_us_per_iter\": [";
+    for (usize i = 0u; i < sleep_aware.us_per_iteration.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << sleep_aware.us_per_iteration[i];
+    }
+    out << "],\n";
+    out << "      \"median_us_per_iter\": " << sleep_aware_median_us << ",\n";
+    out << "      \"p95_us_per_iter\": " << sleep_aware_p95_us << ",\n";
+    out << "      \"avg_pairs_per_iteration\": " << sleep_aware.avg_pairs_per_iteration << ",\n";
+    out << "      \"avg_manifolds_per_iteration\": " << sleep_aware.avg_manifolds_per_iteration << ",\n";
+    out << "      \"avg_points_per_iteration\": " << sleep_aware.avg_points_per_iteration << ",\n";
+    out << "      \"checksum\": " << sleep_aware.checksum << "\n";
+    out << "    }\n";
+    out << "  }\n";
+    out << "}\n";
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -345,7 +444,8 @@ int main(int argc, char **argv) {
 
     if (cfg.bodies == 0u || cfg.iterations == 0u || cfg.samples == 0u || cfg.spacing <= 0.0f ||
         cfg.half_extent <= 0.0f) {
-        std::cerr << "bodies/iterations/samples must be > 0 and spacing/half-extent must be positive.\n";
+        std::cerr << "bodies/iterations/samples must be > 0 and "
+                     "spacing/half-extent must be positive.\n";
         return 1;
     }
     cfg.awake_ratio = std::clamp(cfg.awake_ratio, 0.0f, 1.0f);
@@ -372,7 +472,9 @@ int main(int argc, char **argv) {
     print_summary("sleep-aware (query/update awake dynamic, ground for awake dynamic)", sleep_aware);
 
     const double baseline_median_us = median(baseline.us_per_iteration);
+    const double baseline_p95_us = p95(baseline.us_per_iteration);
     const double sleep_aware_median_us = median(sleep_aware.us_per_iteration);
+    const double sleep_aware_p95_us = p95(sleep_aware.us_per_iteration);
     const double speedup = (sleep_aware_median_us > 0.0) ? (baseline_median_us / sleep_aware_median_us)
                                                          : std::numeric_limits<double>::quiet_NaN();
 
@@ -393,5 +495,15 @@ int main(int argc, char **argv) {
     std::println("  manifolds reduction: {}%", manifold_reduction * 100.0);
     std::println("  contact points reduction: {}%", point_reduction * 100.0);
     std::println("  runtime speedup (median): {}x", speedup);
+
+    if (!cfg.json_out.empty()) {
+        if (!write_json_summary(cfg.json_out, cfg, baseline, sleep_aware,
+                                static_cast<u32>(dataset.awake_dynamic_ids.size()),
+                                static_cast<u32>(dataset.dynamic_ids.size() - dataset.awake_dynamic_ids.size()),
+                                baseline_median_us, baseline_p95_us, sleep_aware_median_us, sleep_aware_p95_us, speedup,
+                                pair_reduction, manifold_reduction, point_reduction)) {
+            return 1;
+        }
+    }
     return 0;
 }

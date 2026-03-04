@@ -22,6 +22,7 @@ struct Config final {
     f32 warm_start_scale = 1.0f;
     f32 separation_scale = 1.0f;
     f32 adaptive_epsilon = 1e-3f;
+    std::string json_out{};
 };
 
 struct Dataset final {
@@ -122,14 +123,21 @@ struct RunMode final {
     if (key == "adaptive-epsilon") {
         return parse_f32(value, cfg.adaptive_epsilon);
     }
+    if (key == "json-out") {
+        cfg.json_out = std::string{value};
+        return !cfg.json_out.empty();
+    }
     return false;
 }
 
 void print_usage(const char *exe, const Config &cfg) {
     std::println("Contact solver kernel benchmark");
-    std::println("Usage: {} [--bodies=N] [--manifolds=N] [--iterations=N] [--warmup=N] [--samples=N] [--seed=N]", exe);
-    std::println("             [--motion-scale=F] [--warm-start-scale=F] [--separation-scale=F]");
-    std::println("             [--adaptive-epsilon=F]\n");
+    std::println("Usage: {} [--bodies=N] [--manifolds=N] [--iterations=N] "
+                 "[--warmup=N] [--samples=N] [--seed=N]",
+                 exe);
+    std::println("             [--motion-scale=F] [--warm-start-scale=F] "
+                 "[--separation-scale=F]");
+    std::println("             [--adaptive-epsilon=F] [--json-out=PATH]\n");
     std::println("Defaults:");
     std::println("  --bodies={}", cfg.bodies);
     std::println("  --manifolds={}", cfg.manifolds);
@@ -320,6 +328,88 @@ void print_summary(const SampleSummary &summary) {
     std::println("  checksum: {}", summary.checksum);
 }
 
+[[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const SampleSummary &fixed_summary,
+                                      const SampleSummary &adaptive_summary, const double fixed_median_us,
+                                      const double fixed_p95_us, const double adaptive_median_us,
+                                      const double adaptive_p95_us, const double adaptive_speedup) {
+    namespace fs = std::filesystem;
+    const fs::path out_path{path};
+    std::error_code ec{};
+    if (out_path.has_parent_path()) {
+        fs::create_directories(out_path.parent_path(), ec);
+        if (ec) {
+            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
+                      << "' for JSON output: " << ec.message() << "\n";
+            return false;
+        }
+    }
+
+    std::ofstream out{out_path};
+    if (!out.is_open()) {
+        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+        return false;
+    }
+    out << std::setprecision(17);
+    out << "{\n";
+    out << "  \"bench\": \"contact_solver_kernel\",\n";
+    out << "  \"units\": \"us/iter\",\n";
+    out << "  \"config\": {\n";
+    out << "    \"bodies\": " << cfg.bodies << ",\n";
+    out << "    \"manifolds\": " << cfg.manifolds << ",\n";
+    out << "    \"iterations\": " << cfg.iterations << ",\n";
+    out << "    \"warmup\": " << cfg.warmup << ",\n";
+    out << "    \"samples\": " << cfg.samples << ",\n";
+    out << "    \"seed\": " << cfg.seed << ",\n";
+    out << "    \"motion_scale\": " << cfg.motion_scale << ",\n";
+    out << "    \"warm_start_scale\": " << cfg.warm_start_scale << ",\n";
+    out << "    \"separation_scale\": " << cfg.separation_scale << ",\n";
+    out << "    \"adaptive_epsilon\": " << cfg.adaptive_epsilon << "\n";
+    out << "  },\n";
+    out << "  \"compare_metrics\": {\n";
+    out << "    \"fixed_median_us_per_iter\": " << fixed_median_us << ",\n";
+    out << "    \"fixed_p95_us_per_iter\": " << fixed_p95_us << ",\n";
+    out << "    \"adaptive_median_us_per_iter\": " << adaptive_median_us << ",\n";
+    out << "    \"adaptive_p95_us_per_iter\": " << adaptive_p95_us << "\n";
+    out << "  },\n";
+    out << "  \"summary\": {\n";
+    out << "    \"adaptive_median_speedup_x\": " << adaptive_speedup << "\n";
+    out << "  },\n";
+    out << "  \"modes\": {\n";
+    out << "    \"fixed\": {\n";
+    out << "      \"samples_us_per_iter\": [";
+    for (usize i = 0u; i < fixed_summary.us_per_iteration.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << fixed_summary.us_per_iteration[i];
+    }
+    out << "],\n";
+    out << "      \"median_us_per_iter\": " << fixed_median_us << ",\n";
+    out << "      \"p95_us_per_iter\": " << fixed_p95_us << ",\n";
+    out << "      \"avg_manifolds_per_iteration\": " << fixed_summary.avg_manifolds_per_iteration << ",\n";
+    out << "      \"avg_contact_points_per_iteration\": " << fixed_summary.avg_points_per_iteration << ",\n";
+    out << "      \"checksum\": " << fixed_summary.checksum << "\n";
+    out << "    },\n";
+    out << "    \"adaptive\": {\n";
+    out << "      \"samples_us_per_iter\": [";
+    for (usize i = 0u; i < adaptive_summary.us_per_iteration.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << adaptive_summary.us_per_iteration[i];
+    }
+    out << "],\n";
+    out << "      \"median_us_per_iter\": " << adaptive_median_us << ",\n";
+    out << "      \"p95_us_per_iter\": " << adaptive_p95_us << ",\n";
+    out << "      \"avg_manifolds_per_iteration\": " << adaptive_summary.avg_manifolds_per_iteration << ",\n";
+    out << "      \"avg_contact_points_per_iteration\": " << adaptive_summary.avg_points_per_iteration << ",\n";
+    out << "      \"checksum\": " << adaptive_summary.checksum << "\n";
+    out << "    }\n";
+    out << "  }\n";
+    out << "}\n";
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -340,7 +430,8 @@ int main(int argc, char **argv) {
     if (cfg.bodies < 2u || cfg.manifolds == 0u || cfg.iterations == 0u || cfg.samples == 0u ||
         cfg.motion_scale < 0.0f || cfg.warm_start_scale < 0.0f || cfg.separation_scale < 0.0f ||
         cfg.adaptive_epsilon <= 0.0f) {
-        std::cerr << "Invalid config: counts must be > 0, bodies >= 2, scales must be >= 0, adaptive epsilon > 0.\n";
+        std::cerr << "Invalid config: counts must be > 0, bodies >= 2, scales must "
+                     "be >= 0, adaptive epsilon > 0.\n";
         return 1;
     }
 
@@ -388,11 +479,20 @@ int main(int argc, char **argv) {
     print_summary(adaptive_summary);
 
     const double fixed_median_us = median(fixed_summary.us_per_iteration);
+    const double fixed_p95_us = p95(fixed_summary.us_per_iteration);
     const double adaptive_median_us = median(adaptive_summary.us_per_iteration);
+    const double adaptive_p95_us = p95(adaptive_summary.us_per_iteration);
     const double adaptive_speedup =
         (adaptive_median_us > 0.0) ? (fixed_median_us / adaptive_median_us) : std::numeric_limits<double>::quiet_NaN();
     std::println("");
     std::println("Adaptive delta:");
     std::println("  median speedup: {}x", adaptive_speedup);
+
+    if (!cfg.json_out.empty()) {
+        if (!write_json_summary(cfg.json_out, cfg, fixed_summary, adaptive_summary, fixed_median_us, fixed_p95_us,
+                                adaptive_median_us, adaptive_p95_us, adaptive_speedup)) {
+            return 1;
+        }
+    }
     return 0;
 }

@@ -17,6 +17,7 @@ struct Config final {
     u32 warmup = 200;
     u32 samples = 7;
     u32 seed = 1337;
+    std::string json_out{};
 };
 
 struct Edge final {
@@ -99,13 +100,17 @@ struct IslandState final {
     if (key == "seed") {
         return parse_u32(value, cfg.seed);
     }
+    if (key == "json-out") {
+        cfg.json_out = std::string{value};
+        return !cfg.json_out.empty();
+    }
     return false;
 }
 
 void print_usage(const char *exe, const Config &cfg) {
     std::println("Island sleep/wake benchmark");
     std::println("Usage: {} [--bodies=N] [--ticks=N] [--warmup=N] [--samples=N] "
-                 "[--seed=N]\n",
+                 "[--seed=N] [--json-out=PATH]\n",
                  exe);
     std::println("Defaults:");
     std::println("  --bodies={}", cfg.bodies);
@@ -472,6 +477,89 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     std::println("");
 }
 
+[[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const u32 edge_count,
+                                      const SampleSummary &per_body, const SampleSummary &island,
+                                      const double per_body_median_us, const double per_body_p95_us,
+                                      const double island_median_us, const double island_p95_us,
+                                      const double runtime_speedup, const double awake_reduction,
+                                      const double edge_reduction) {
+    namespace fs = std::filesystem;
+    const fs::path out_path{path};
+    std::error_code ec{};
+    if (out_path.has_parent_path()) {
+        fs::create_directories(out_path.parent_path(), ec);
+        if (ec) {
+            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
+                      << "' for JSON output: " << ec.message() << "\n";
+            return false;
+        }
+    }
+
+    std::ofstream out{out_path};
+    if (!out.is_open()) {
+        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+        return false;
+    }
+    out << std::setprecision(17);
+    out << "{\n";
+    out << "  \"bench\": \"island_sleep_wake\",\n";
+    out << "  \"units\": \"us/tick\",\n";
+    out << "  \"config\": {\n";
+    out << "    \"bodies\": " << cfg.bodies << ",\n";
+    out << "    \"chain_edges\": " << edge_count << ",\n";
+    out << "    \"ticks\": " << cfg.ticks << ",\n";
+    out << "    \"warmup\": " << cfg.warmup << ",\n";
+    out << "    \"samples\": " << cfg.samples << ",\n";
+    out << "    \"seed\": " << cfg.seed << ",\n";
+    out << "    \"sleep_tick_threshold\": " << kSleepTickThreshold << "\n";
+    out << "  },\n";
+    out << "  \"compare_metrics\": {\n";
+    out << "    \"per_body_median_us_per_tick\": " << per_body_median_us << ",\n";
+    out << "    \"per_body_p95_us_per_tick\": " << per_body_p95_us << ",\n";
+    out << "    \"island_median_us_per_tick\": " << island_median_us << ",\n";
+    out << "    \"island_p95_us_per_tick\": " << island_p95_us << "\n";
+    out << "  },\n";
+    out << "  \"summary\": {\n";
+    out << "    \"runtime_speedup_median_x\": " << runtime_speedup << ",\n";
+    out << "    \"awake_bodies_reduction_ratio\": " << awake_reduction << ",\n";
+    out << "    \"active_edges_reduction_ratio\": " << edge_reduction << "\n";
+    out << "  },\n";
+    out << "  \"modes\": {\n";
+    out << "    \"per_body\": {\n";
+    out << "      \"samples_us_per_tick\": [";
+    for (usize i = 0u; i < per_body.us_per_tick.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << per_body.us_per_tick[i];
+    }
+    out << "],\n";
+    out << "      \"median_us_per_tick\": " << per_body_median_us << ",\n";
+    out << "      \"p95_us_per_tick\": " << per_body_p95_us << ",\n";
+    out << "      \"avg_awake_bodies_per_tick\": " << per_body.avg_awake_bodies_per_tick << ",\n";
+    out << "      \"avg_active_edges_per_tick\": " << per_body.avg_active_edges_per_tick << ",\n";
+    out << "      \"checksum\": " << per_body.checksum << "\n";
+    out << "    },\n";
+    out << "    \"island\": {\n";
+    out << "      \"samples_us_per_tick\": [";
+    for (usize i = 0u; i < island.us_per_tick.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << island.us_per_tick[i];
+    }
+    out << "],\n";
+    out << "      \"median_us_per_tick\": " << island_median_us << ",\n";
+    out << "      \"p95_us_per_tick\": " << island_p95_us << ",\n";
+    out << "      \"avg_awake_bodies_per_tick\": " << island.avg_awake_bodies_per_tick << ",\n";
+    out << "      \"avg_active_edges_per_tick\": " << island.avg_active_edges_per_tick << ",\n";
+    out << "      \"checksum\": " << island.checksum << "\n";
+    out << "    }\n";
+    out << "  }\n";
+    out << "}\n";
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -512,7 +600,9 @@ int main(int argc, char **argv) {
     print_summary("island sleep/wake", island);
 
     const double per_body_median_us = median(per_body.us_per_tick);
+    const double per_body_p95_us = p95(per_body.us_per_tick);
     const double island_median_us = median(island.us_per_tick);
+    const double island_p95_us = p95(island.us_per_tick);
     const double runtime_speedup =
         (island_median_us > 0.0) ? (per_body_median_us / island_median_us) : std::numeric_limits<double>::quiet_NaN();
 
@@ -527,5 +617,13 @@ int main(int argc, char **argv) {
     std::println("  awake bodies reduction: {}%", awake_reduction * 100.0);
     std::println("  active edges reduction: {}%", edge_reduction * 100.0);
     std::println("  policy runtime speedup (median): {}x", runtime_speedup);
+
+    if (!cfg.json_out.empty()) {
+        if (!write_json_summary(cfg.json_out, cfg, static_cast<u32>(edges.size()), per_body, island, per_body_median_us,
+                                per_body_p95_us, island_median_us, island_p95_us, runtime_speedup, awake_reduction,
+                                edge_reduction)) {
+            return 1;
+        }
+    }
     return 0;
 }

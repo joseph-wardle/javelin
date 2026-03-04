@@ -20,6 +20,7 @@ struct Config final {
     f32 world_extent = 1000.0f;
     f32 body_radius = 1.0f;
     f32 query_radius = 5.0f;
+    std::string json_out{};
 };
 
 [[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
@@ -53,8 +54,12 @@ struct Config final {
 
 void print_usage(const char *exe, const Config &cfg) {
     std::println("Dynamic BVH microbench");
-    std::println("Usage: {} [--bodies=N] [--queries=N] [--iterations=N] [--warmup=N] [--samples=N]", exe);
-    std::println("             [--seed=N] [--world=F] [--body-radius=F] [--query-radius=F]\n");
+    std::println("Usage: {} [--bodies=N] [--queries=N] [--iterations=N] "
+                 "[--warmup=N] [--samples=N]",
+                 exe);
+    std::println("             [--seed=N] [--world=F] [--body-radius=F] "
+                 "[--query-radius=F]");
+    std::println("             [--json-out=PATH]\n");
     std::println("Defaults:");
     std::println("  --bodies={}", cfg.bodies);
     std::println("  --queries={}", cfg.queries);
@@ -106,8 +111,81 @@ void print_usage(const char *exe, const Config &cfg) {
     if (key == "query-radius") {
         return parse_f32(value, cfg.query_radius);
     }
+    if (key == "json-out") {
+        cfg.json_out = std::string{value};
+        return !cfg.json_out.empty();
+    }
 
     return false;
+}
+
+[[nodiscard]] double median(std::vector<double> values) {
+    std::sort(values.begin(), values.end());
+    return values[values.size() / 2u];
+}
+
+[[nodiscard]] double p95(std::vector<double> values) {
+    std::sort(values.begin(), values.end());
+    const usize p95_index = static_cast<usize>(std::ceil(values.size() * 0.95)) - 1u;
+    return values[p95_index];
+}
+
+[[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, std::span<const double> samples,
+                                      const double median_ns_per_query, const double p95_ns_per_query,
+                                      const double avg_hits_per_query, const u64 checksum, const usize node_count) {
+    namespace fs = std::filesystem;
+    const fs::path out_path{path};
+    std::error_code ec{};
+    if (out_path.has_parent_path()) {
+        fs::create_directories(out_path.parent_path(), ec);
+        if (ec) {
+            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
+                      << "' for JSON output: " << ec.message() << "\n";
+            return false;
+        }
+    }
+
+    std::ofstream out{out_path};
+    if (!out.is_open()) {
+        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+        return false;
+    }
+    out << std::setprecision(17);
+    out << "{\n";
+    out << "  \"bench\": \"dynamic_bvh\",\n";
+    out << "  \"units\": \"ns/query\",\n";
+    out << "  \"config\": {\n";
+    out << "    \"bodies\": " << cfg.bodies << ",\n";
+    out << "    \"queries\": " << cfg.queries << ",\n";
+    out << "    \"iterations\": " << cfg.iterations << ",\n";
+    out << "    \"warmup\": " << cfg.warmup << ",\n";
+    out << "    \"samples\": " << cfg.samples << ",\n";
+    out << "    \"seed\": " << cfg.seed << ",\n";
+    out << "    \"world\": " << cfg.world_extent << ",\n";
+    out << "    \"body_radius\": " << cfg.body_radius << ",\n";
+    out << "    \"query_radius\": " << cfg.query_radius << "\n";
+    out << "  },\n";
+    out << "  \"samples_ns_per_query\": [";
+    for (usize i = 0u; i < samples.size(); ++i) {
+        if (i > 0u) {
+            out << ", ";
+        }
+        out << samples[i];
+    }
+    out << "],\n";
+    out << "  \"compare_metrics\": {\n";
+    out << "    \"median_ns_per_query\": " << median_ns_per_query << ",\n";
+    out << "    \"p95_ns_per_query\": " << p95_ns_per_query << "\n";
+    out << "  },\n";
+    out << "  \"summary\": {\n";
+    out << "    \"median_ns_per_query\": " << median_ns_per_query << ",\n";
+    out << "    \"p95_ns_per_query\": " << p95_ns_per_query << ",\n";
+    out << "    \"avg_hits_per_query\": " << avg_hits_per_query << ",\n";
+    out << "    \"checksum\": " << checksum << ",\n";
+    out << "    \"nodes\": " << node_count << "\n";
+    out << "  }\n";
+    out << "}\n";
+    return true;
 }
 
 } // namespace
@@ -193,10 +271,10 @@ int main(int argc, char **argv) {
         std::println("sample {}: {} ns/query ({} ms)", sample + 1, ns_per_query, to_ms(elapsed));
     }
 
-    std::sort(per_query_ns.begin(), per_query_ns.end());
-    const double median = per_query_ns[per_query_ns.size() / 2];
-    const usize p95_index = static_cast<usize>(std::ceil(per_query_ns.size() * 0.95)) - 1u;
-    const double p95 = per_query_ns[p95_index];
+    const double median_ns = median(per_query_ns);
+    const double p95_ns = p95(per_query_ns);
+    const double avg_hits_per_query =
+        static_cast<double>(total_checksum) / static_cast<double>(total_queries * cfg.samples);
 
     std::println("");
     std::println("Config:");
@@ -212,11 +290,17 @@ int main(int argc, char **argv) {
     std::println("  nodes: {}", bvh.nodes().size());
     std::println("");
     std::println("Summary:");
-    std::println("  median: {} ns/query", median);
-    std::println("  p95: {} ns/query", p95);
-    std::println("  avg hits/query: {}",
-                 static_cast<double>(total_checksum) / static_cast<double>(total_queries * cfg.samples));
+    std::println("  median: {} ns/query", median_ns);
+    std::println("  p95: {} ns/query", p95_ns);
+    std::println("  avg hits/query: {}", avg_hits_per_query);
     std::println("  checksum: {}", total_checksum);
+
+    if (!cfg.json_out.empty()) {
+        if (!write_json_summary(cfg.json_out, cfg, per_query_ns, median_ns, p95_ns, avg_hits_per_query, total_checksum,
+                                bvh.nodes().size())) {
+            return 1;
+        }
+    }
 
     return 0;
 }
