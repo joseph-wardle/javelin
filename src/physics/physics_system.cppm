@@ -295,8 +295,6 @@ struct PhysicsSystem final {
     // Double-buffered manifold storage: current frame and next-frame write target.
     std::vector<ContactManifold> manifolds_{};
     std::vector<ContactManifold> next_manifolds_{};
-    // Maps canonical body pair -> index in manifolds_ for persistence lookup.
-    std::unordered_map<u64, u32> manifold_lookup_{};
     u32 broad_phase_worker_count_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<std::thread> broad_phase_threads_{};
@@ -413,49 +411,55 @@ struct PhysicsSystem final {
         // Stage 1: external forces and per-body bounds for broad phase.
         integrate_gravity_velocity(view.velocity, view.inv_mass, view.asleep, gravity, dt);
         f32 max_angular_speed_sq = 0.0f;
-        for (u32 i = 0; i < count; ++i) {
-            max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
+        {
+            ZoneScopedN("Physics max angular speed scan");
+            for (u32 i = 0; i < count; ++i) {
+                max_angular_speed_sq = std::max(max_angular_speed_sq, view.angular_velocity[i].length_sq());
+            }
         }
         TracyPlot("physics_max_angular_speed", std::sqrt(max_angular_speed_sq));
         bounds_cache_.resize(count);
-        for (u32 i = 0; i < count; ++i) {
+        {
+            ZoneScopedN("Physics build bounds cache");
+            for (u32 i = 0; i < count; ++i) {
 #ifndef NDEBUG
-            if (view.shape_index[i] >= view.shapes.size()) {
-                log::error(physics, "Shape index out of range (id={} shape_id={})", i, view.shape_index[i]);
-                std::terminate();
-            }
-#endif
-            const ShapeData &shape = view.shapes[view.shape_index[i]];
-            switch (view.shape_kind[i]) {
-            case ShapeKind::sphere: {
-#ifndef NDEBUG
-                if (shape.kind != ShapeKind::sphere) {
-                    log::error(physics, "Shape kind mismatch (id={})", i);
+                if (view.shape_index[i] >= view.shapes.size()) {
+                    log::error(physics, "Shape index out of range (id={} shape_id={})", i, view.shape_index[i]);
                     std::terminate();
                 }
 #endif
-                const SphereShape &sphere = shape_sphere(shape);
-                bounds_cache_[i] = Aabb::from_sphere(view.position[i], sphere.radius);
-            } break;
-            case ShapeKind::box: {
+                const ShapeData &shape = view.shapes[view.shape_index[i]];
+                switch (view.shape_kind[i]) {
+                case ShapeKind::sphere: {
 #ifndef NDEBUG
-                if (shape.kind != ShapeKind::box) {
-                    log::error(physics, "Shape kind mismatch (id={})", i);
-                    std::terminate();
-                }
+                    if (shape.kind != ShapeKind::sphere) {
+                        log::error(physics, "Shape kind mismatch (id={})", i);
+                        std::terminate();
+                    }
 #endif
-                const BoxShape &box = shape_box(shape);
-                const Mat3 rot = to_mat3(view.orientation[i]);
-                const Vec3 c0 = rot.col(0);
-                const Vec3 c1 = rot.col(1);
-                const Vec3 c2 = rot.col(2);
-                const Vec3 abs0{std::fabs(c0.x), std::fabs(c0.y), std::fabs(c0.z)};
-                const Vec3 abs1{std::fabs(c1.x), std::fabs(c1.y), std::fabs(c1.z)};
-                const Vec3 abs2{std::fabs(c2.x), std::fabs(c2.y), std::fabs(c2.z)};
-                const Vec3 extents = abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
-                const Vec3 center = view.position[i];
-                bounds_cache_[i] = Aabb{center - extents, center + extents};
-            } break;
+                    const SphereShape &sphere = shape_sphere(shape);
+                    bounds_cache_[i] = Aabb::from_sphere(view.position[i], sphere.radius);
+                } break;
+                case ShapeKind::box: {
+#ifndef NDEBUG
+                    if (shape.kind != ShapeKind::box) {
+                        log::error(physics, "Shape kind mismatch (id={})", i);
+                        std::terminate();
+                    }
+#endif
+                    const BoxShape &box = shape_box(shape);
+                    const Mat3 rot = to_mat3(view.orientation[i]);
+                    const Vec3 c0 = rot.col(0);
+                    const Vec3 c1 = rot.col(1);
+                    const Vec3 c2 = rot.col(2);
+                    const Vec3 abs0{std::fabs(c0.x), std::fabs(c0.y), std::fabs(c0.z)};
+                    const Vec3 abs1{std::fabs(c1.x), std::fabs(c1.y), std::fabs(c1.z)};
+                    const Vec3 abs2{std::fabs(c2.x), std::fabs(c2.y), std::fabs(c2.z)};
+                    const Vec3 extents = abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
+                    const Vec3 center = view.position[i];
+                    bounds_cache_[i] = Aabb{center - extents, center + extents};
+                } break;
+                }
             }
         }
 
@@ -475,42 +479,51 @@ struct PhysicsSystem final {
 
         // Stage 3: narrow phase manifolds + warm-start persistence refresh.
         narrow_phase_contacts(view.position, view.orientation, view.shape_kind, view.shapes, view.shape_index,
-                              view.inv_mass, candidate_pairs_, manifolds_, manifold_lookup_, next_manifolds_);
+                              view.inv_mass, candidate_pairs_, manifolds_, next_manifolds_);
         sort_manifold_points_(next_manifolds_);
         sort_manifolds_(next_manifolds_);
         const PersistenceRefreshStats persistence_stats =
             refresh_manifold_persistence_(view.position, view.orientation);
         manifolds_.swap(next_manifolds_);
-        const u32 manifold_count = static_cast<u32>(manifolds_.size());
-        const u32 contact_point_count = contact_point_count_(manifolds_);
-        const f32 avg_points_per_manifold =
-            (manifold_count > 0u) ? (static_cast<f32>(contact_point_count) / static_cast<f32>(manifold_count)) : 0.0f;
-        const f32 warm_start_match_rate = (persistence_stats.next_point_count > 0u)
-                                              ? (static_cast<f32>(persistence_stats.matched_point_count) /
-                                                 static_cast<f32>(persistence_stats.next_point_count))
-                                              : 0.0f;
-        TracyPlot("physics_manifolds", static_cast<i64>(manifold_count));
-        TracyPlot("physics_contact_points", static_cast<i64>(contact_point_count));
-        TracyPlot("physics_avg_points_per_manifold", avg_points_per_manifold);
-        TracyPlot("physics_warm_start_match_rate", warm_start_match_rate);
-        TracyPlot("physics_dropped_points", static_cast<i64>(persistence_stats.dropped_point_count));
-        TracyPlot("physics_axis_flip_count", static_cast<i64>(persistence_stats.axis_flip_count));
-        TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
+        u32 manifold_count = 0u;
+        u32 contact_point_count = 0u;
+        {
+            ZoneScopedN("Physics manifold statistics");
+            manifold_count = static_cast<u32>(manifolds_.size());
+            contact_point_count = contact_point_count_(manifolds_);
+            const f32 avg_points_per_manifold =
+                (manifold_count > 0u) ? (static_cast<f32>(contact_point_count) / static_cast<f32>(manifold_count))
+                                      : 0.0f;
+            const f32 warm_start_match_rate = (persistence_stats.next_point_count > 0u)
+                                                  ? (static_cast<f32>(persistence_stats.matched_point_count) /
+                                                     static_cast<f32>(persistence_stats.next_point_count))
+                                                  : 0.0f;
+            TracyPlot("physics_manifolds", static_cast<i64>(manifold_count));
+            TracyPlot("physics_contact_points", static_cast<i64>(contact_point_count));
+            TracyPlot("physics_avg_points_per_manifold", avg_points_per_manifold);
+            TracyPlot("physics_warm_start_match_rate", warm_start_match_rate);
+            TracyPlot("physics_dropped_points", static_cast<i64>(persistence_stats.dropped_point_count));
+            TracyPlot("physics_axis_flip_count", static_cast<i64>(persistence_stats.axis_flip_count));
+            TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
+        }
 
         // Stage 4: solve constraints, damp, integrate, and publish transforms.
         // Pre-compute per-manifold combined material properties.
         // Body b == kInvalidBody (ground plane) uses material id 0 (the default material).
         manifold_restitution_cache_.resize(manifold_count);
         manifold_friction_cache_.resize(manifold_count);
-        for (u32 i = 0; i < manifold_count; ++i) {
-            const u32 a = manifolds_[i].a;
-            const u32 b = manifolds_[i].b;
-            const u32 mat_a = view.material[a].value;
-            const u32 mat_b = (b != kInvalidBody) ? view.material[b].value : 0u;
-            manifold_restitution_cache_[i] =
-                detail::combined_restitution(view.material_restitution[mat_a], view.material_restitution[mat_b]);
-            manifold_friction_cache_[i] =
-                detail::combined_friction(view.material_friction[mat_a], view.material_friction[mat_b]);
+        {
+            ZoneScopedN("Physics combine manifold materials");
+            for (u32 i = 0; i < manifold_count; ++i) {
+                const u32 a = manifolds_[i].a;
+                const u32 b = manifolds_[i].b;
+                const u32 mat_a = view.material[a].value;
+                const u32 mat_b = (b != kInvalidBody) ? view.material[b].value : 0u;
+                manifold_restitution_cache_[i] =
+                    detail::combined_restitution(view.material_restitution[mat_a], view.material_restitution[mat_b]);
+                manifold_friction_cache_[i] =
+                    detail::combined_friction(view.material_friction[mat_a], view.material_friction[mat_b]);
+            }
         }
         // Wake sleeping bodies before solving so just-woken bodies are solved on this tick.
         // contact_activity_mask_ is rebuilt here for use by update_sleep_timers_ later.
@@ -563,6 +576,7 @@ struct PhysicsSystem final {
     }
 
     void ensure_capacity_(const u32 count) {
+        ZoneScopedN("Physics ensure capacity");
         if (count <= capacity_) {
             ensure_broad_phase_workers_(count);
             return;
@@ -578,7 +592,6 @@ struct PhysicsSystem final {
         const usize manifold_reserve = static_cast<usize>(count) * kManifoldReserveFactor;
         manifolds_.reserve(manifold_reserve);
         next_manifolds_.reserve(manifold_reserve);
-        manifold_lookup_.reserve(manifold_reserve);
         manifold_restitution_cache_.reserve(manifold_reserve);
         manifold_friction_cache_.reserve(manifold_reserve);
         ensure_broad_phase_workers_(count);
@@ -587,28 +600,32 @@ struct PhysicsSystem final {
     void clear_manifold_state_() {
         manifolds_.clear();
         next_manifolds_.clear();
-        manifold_lookup_.clear();
     }
 
-    // Builds lookup for previous-frame manifolds keyed by canonical body pair.
-    // Precondition: manifolds_ contains canonicalized pair ids.
+    // Prepares previous-frame manifold state for this tick.
+    // The previous manifold buffer is consumed as a pair-sorted contiguous stream.
     void prepare_manifold_lookup_() {
+        ZoneScopedN("Physics prepare manifold lookup");
         next_manifolds_.clear();
-        manifold_lookup_.clear();
-        sort_manifold_points_(manifolds_);
-        for (u32 i = 0; i < manifolds_.size(); ++i) {
-            const ContactManifold &manifold = manifolds_[i];
-            const auto [_, inserted] = manifold_lookup_.emplace(body_pair_key(manifold.a, manifold.b), i);
 #ifndef NDEBUG
-            if (!inserted) {
-                log::error(physics, "Duplicate manifold pair key (a={} b={})", manifold.a, manifold.b);
+        for (u32 i = 1; i < manifolds_.size(); ++i) {
+            const ContactManifold &prev = manifolds_[i - 1u];
+            const ContactManifold &curr = manifolds_[i];
+            if (manifold_pair_less_(curr, prev)) {
+                log::error(physics, "Previous manifolds are not pair-sorted (index={} prev=({}, {}) curr=({}, {}))", i,
+                           prev.a, prev.b, curr.a, curr.b);
                 std::terminate();
             }
-#endif
+            if (!manifold_pair_less_(prev, curr) && !manifold_pair_less_(curr, prev)) {
+                log::error(physics, "Duplicate previous manifold pair (index={} pair=({}, {}))", i, curr.a, curr.b);
+                std::terminate();
+            }
         }
+#endif
     }
 
     void mark_bodies_with_active_contacts_(const u32 body_count, std::span<const ContactManifold> manifolds) {
+        ZoneScopedN("Physics mark active contacts");
         if (contact_activity_mask_.size() < body_count) {
             contact_activity_mask_.resize(body_count);
         }
@@ -640,6 +657,7 @@ struct PhysicsSystem final {
     void update_sleep_timers_(const u32 count, std::span<const u8> in_contact, std::span<const Vec3> velocity,
                               std::span<const Vec3> angular_velocity, std::span<const f32> inv_mass,
                               std::span<u32> sleep_timer, std::span<const u8> asleep) noexcept {
+        ZoneScopedN("Physics update sleep timers");
         for (u32 i = 0; i < count; ++i) {
             if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
                 continue;
@@ -666,6 +684,7 @@ struct PhysicsSystem final {
     // lag is imperceptible and avoids an O(manifolds × depth) graph traversal.
     void wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold> manifolds, std::span<const f32> inv_mass,
                                              std::span<u8> asleep, std::span<u32> sleep_timer) noexcept {
+        ZoneScopedN("Physics wake sleeping bodies");
         for (const ContactManifold &manifold : manifolds) {
             if (manifold.point_count == 0u) {
                 continue;
@@ -690,6 +709,7 @@ struct PhysicsSystem final {
     // Static bodies are already excluded from update_sleep_timers_ so their
     // timer stays zero and they are never marked asleep here.
     void mark_bodies_asleep_(const u32 count, std::span<const u32> sleep_timer, std::span<u8> asleep) noexcept {
+        ZoneScopedN("Physics mark bodies asleep");
         for (u32 i = 0; i < count; ++i) {
             if (sleep_timer[i] >= kSleepTickThreshold) {
                 asleep[i] = 1u;
@@ -698,6 +718,7 @@ struct PhysicsSystem final {
     }
 
     void sort_manifold_points_(std::vector<ContactManifold> &manifolds) {
+        ZoneScopedN("Physics sort manifold points");
         for (ContactManifold &manifold : manifolds) {
             sort_manifold_points(manifold);
         }
@@ -705,6 +726,7 @@ struct PhysicsSystem final {
 
     void publish_contact_debug_snapshot_(std::span<const Vec3> position, std::span<const Quat> orientation,
                                          std::span<const ContactManifold> manifolds, const u64 step_id) {
+        ZoneScopedN("Physics publish contact debug");
         const u32 point_count = contact_point_count_(manifolds);
         ContactDebugWrite out = contact_debug_channel_.write_contacts(point_count);
 
@@ -755,6 +777,7 @@ struct PhysicsSystem final {
     // at the start of this tick.  The one-tick positional lag relative to published
     // poses is imperceptible at 60 Hz and avoids recomputing bounds a second time.
     void publish_aabb_debug_snapshot_(const u32 count, const u64 step_id) {
+        ZoneScopedN("Physics publish AABB debug");
         AabbDebugWrite out = aabb_debug_channel_.write_aabbs(count);
         std::copy_n(bounds_cache_.data(), count, out.aabbs.data());
         aabb_debug_channel_.publish(count, step_id);
@@ -771,8 +794,16 @@ struct PhysicsSystem final {
         return lhs.a == rhs.a && lhs.b == rhs.b;
     }
 
+    [[nodiscard]] static bool manifold_pair_less_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        return lhs.b < rhs.b;
+    }
+
     // Canonicalizes pair order and removes duplicates to keep narrow phase deterministic.
     void normalize_and_sort_candidate_pairs_() {
+        ZoneScopedN("Physics normalize candidate pairs");
         if (candidate_pairs_.empty()) {
             return;
         }
@@ -829,6 +860,7 @@ struct PhysicsSystem final {
     }
 
     void sort_manifolds_(std::vector<ContactManifold> &manifolds) {
+        ZoneScopedN("Physics sort manifolds");
         if (manifolds.size() <= 1u) {
             return;
         }
@@ -896,6 +928,12 @@ struct PhysicsSystem final {
         dst.tangent_impulse = src.tangent_impulse;
         // This point was matched to a previous-frame point.
         dst.persisted = true;
+    }
+
+    static void reset_manifold_point_cache_(ContactManifold &manifold) noexcept {
+        for (u32 i = 0; i < manifold.point_count; ++i) {
+            reset_point_cache_(manifold.points[i]);
+        }
     }
 
     // Drops cached impulses when anchor drift exceeds thresholds in the current manifold frame.
@@ -1020,26 +1058,22 @@ struct PhysicsSystem final {
     // Matching order is deterministic and stats are exposed for diagnostics.
     [[nodiscard]] PersistenceRefreshStats refresh_manifold_persistence_(std::span<const Vec3> position,
                                                                         std::span<const Quat> orientation) {
+        ZoneScopedN("Physics refresh manifold persistence");
         PersistenceRefreshStats stats{
             .previous_point_count = contact_point_count_(manifolds_),
         };
+        u32 previous_index = 0u;
         for (ContactManifold &next_manifold : next_manifolds_) {
             stats.next_point_count += next_manifold.point_count;
-            const auto it = manifold_lookup_.find(body_pair_key(next_manifold.a, next_manifold.b));
-            if (it == manifold_lookup_.end()) {
-                for (u32 i = 0; i < next_manifold.point_count; ++i) {
-                    reset_point_cache_(next_manifold.points[i]);
-                }
+
+            while (previous_index < manifolds_.size() && manifold_pair_less_(manifolds_[previous_index], next_manifold)) {
+                ++previous_index;
+            }
+            if (previous_index >= manifolds_.size() || manifold_pair_less_(next_manifold, manifolds_[previous_index])) {
+                reset_manifold_point_cache_(next_manifold);
                 continue;
             }
-#ifndef NDEBUG
-            if (it->second >= manifolds_.size()) {
-                log::error(physics, "Manifold lookup out of range (a={} b={} index={} size={})", next_manifold.a,
-                           next_manifold.b, it->second, manifolds_.size());
-                std::terminate();
-            }
-#endif
-            const ContactManifold &previous_manifold = manifolds_[it->second];
+            const ContactManifold &previous_manifold = manifolds_[previous_index];
 #ifndef NDEBUG
             if (previous_manifold.a != next_manifold.a || previous_manifold.b != next_manifold.b) {
                 log::error(physics,
@@ -1254,6 +1288,7 @@ struct PhysicsSystem final {
 #endif
 
     void rebuild_body_sets_(const PhysicsView &view) {
+        ZoneScopedN("Physics rebuild body sets");
         if (view.count != last_count_) {
             // Count changed: clear to avoid stale nodes for removed ids.
             dynamic_bvh_.clear();

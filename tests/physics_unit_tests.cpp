@@ -56,10 +56,9 @@ void sphere_sphere_contact() {
 
     std::vector<ContactManifold> manifolds{};
     const std::vector<ContactManifold> previous_manifolds{};
-    const std::unordered_map<u64, u32> previous_lookup{};
 
     narrow_phase_contacts(position, orientation, shape_kind, shapes, shape_index, inv_mass, pairs, previous_manifolds,
-                          previous_lookup, manifolds);
+                          manifolds);
 
     require(manifolds.size() == 1u, "sphere_sphere_contact: expected exactly one manifold");
     const ContactManifold &m = manifolds[0];
@@ -92,7 +91,6 @@ void box_box_sat() {
         BodyPair{.a = 0u, .b = 1u},
     };
     const std::vector<ContactManifold> previous_manifolds{};
-    const std::unordered_map<u64, u32> previous_lookup{};
 
     std::vector<ContactManifold> manifolds{};
     {
@@ -102,7 +100,7 @@ void box_box_sat() {
         };
 
         narrow_phase_contacts(overlap_position, orientation, shape_kind, shapes, shape_index, inv_mass, pairs,
-                              previous_manifolds, previous_lookup, manifolds);
+                              previous_manifolds, manifolds);
 
         require(manifolds.size() == 1u, "box_box_sat: expected one manifold for overlapping boxes");
         const ContactManifold &m = manifolds[0];
@@ -124,7 +122,7 @@ void box_box_sat() {
             Vec3{2.2f, 3.0f, 0.0f},
         };
         narrow_phase_contacts(separated_position, orientation, shape_kind, shapes, shape_index, inv_mass, pairs,
-                              previous_manifolds, previous_lookup, manifolds);
+                              previous_manifolds, manifolds);
         require(manifolds.empty(), "box_box_sat: expected no manifold when boxes are separated");
     }
 }
