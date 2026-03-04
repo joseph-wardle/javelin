@@ -1,5 +1,8 @@
 import std;
 
+import javelin.bench.cli;
+import javelin.bench.stats;
+import javelin.bench.timer;
 import javelin.core.time;
 import javelin.core.types;
 import javelin.math.vec3;
@@ -43,10 +46,10 @@ struct Dispatch final {
 };
 
 struct SampleSummary final {
-    std::vector<double> us_per_iteration{};
-    double avg_pairs_per_iteration{};
-    double avg_workers_per_iteration{};
-    double avg_chunk_size_per_iteration{};
+    std::vector<f64> us_per_iteration{};
+    f64 avg_pairs_per_iteration{};
+    f64 avg_workers_per_iteration{};
+    f64 avg_chunk_size_per_iteration{};
     u64 checksum{};
 };
 
@@ -60,52 +63,8 @@ inline constexpr u32 kParallelMinQueries = 64u;
 inline constexpr u32 kTargetQueriesPerWorker = 16u;
 inline constexpr u32 kMinQueriesPerWorker = 8u;
 
-[[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    u32 value = 0;
-    const char *begin = text.data();
-    const char *end = begin + text.size();
-    const auto result = std::from_chars(begin, end, value);
-    if (result.ec != std::errc{} || result.ptr != end) {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
-[[nodiscard]] bool parse_f32(std::string_view text, f32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    std::string tmp{text};
-    char *end = nullptr;
-    const f32 value = std::strtof(tmp.c_str(), &end);
-    if (end == tmp.c_str() || *end != '\0') {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
 [[nodiscard]] bool parse_u32_list(std::string_view text, std::vector<u32> &out) {
-    out.clear();
-    while (!text.empty()) {
-        const usize comma = text.find(',');
-        const std::string_view token = (comma == std::string_view::npos) ? text : text.substr(0, comma);
-        u32 value = 0u;
-        if (!parse_u32(token, value) || value == 0u) {
-            out.clear();
-            return false;
-        }
-        out.push_back(value);
-        if (comma == std::string_view::npos) {
-            break;
-        }
-        text.remove_prefix(comma + 1u);
-    }
-    return !out.empty();
+    return bench::parse_u32_csv(text, out);
 }
 
 void print_usage(const char *exe, const Config &cfg) {
@@ -137,42 +96,37 @@ void print_usage(const char *exe, const Config &cfg) {
 }
 
 [[nodiscard]] bool parse_arg(std::string_view arg, Config &cfg) {
-    if (!arg.starts_with("--")) {
-        return false;
-    }
-    const usize eq = arg.find('=');
-    if (eq == std::string_view::npos) {
+    bench::ParsedArg parsed{};
+    if (!bench::split_key_value_arg(arg, parsed)) {
         return false;
     }
 
-    const std::string_view key = arg.substr(2u, eq - 2u);
-    const std::string_view value = arg.substr(eq + 1u);
-    if (key == "bodies") {
-        return parse_u32(value, cfg.bodies);
+    if (parsed.key == "bodies") {
+        return bench::parse_u32(parsed.value, cfg.bodies);
     }
-    if (key == "active-counts") {
-        return parse_u32_list(value, cfg.active_counts);
+    if (parsed.key == "active-counts") {
+        return parse_u32_list(parsed.value, cfg.active_counts);
     }
-    if (key == "spacing") {
-        return parse_f32(value, cfg.spacing);
+    if (parsed.key == "spacing") {
+        return bench::parse_f32(parsed.value, cfg.spacing);
     }
-    if (key == "half-extent") {
-        return parse_f32(value, cfg.half_extent);
+    if (parsed.key == "half-extent") {
+        return bench::parse_f32(parsed.value, cfg.half_extent);
     }
-    if (key == "iterations") {
-        return parse_u32(value, cfg.iterations);
+    if (parsed.key == "iterations") {
+        return bench::parse_u32(parsed.value, cfg.iterations);
     }
-    if (key == "warmup") {
-        return parse_u32(value, cfg.warmup);
+    if (parsed.key == "warmup") {
+        return bench::parse_u32(parsed.value, cfg.warmup);
     }
-    if (key == "samples") {
-        return parse_u32(value, cfg.samples);
+    if (parsed.key == "samples") {
+        return bench::parse_u32(parsed.value, cfg.samples);
     }
-    if (key == "seed") {
-        return parse_u32(value, cfg.seed);
+    if (parsed.key == "seed") {
+        return bench::parse_u32(parsed.value, cfg.seed);
     }
-    if (key == "workers") {
-        return parse_u32(value, cfg.workers);
+    if (parsed.key == "workers") {
+        return bench::parse_u32(parsed.value, cfg.workers);
     }
     return false;
 }
@@ -518,29 +472,17 @@ class BroadPhaseWorkerPool final {
         pair_total += sample_pairs;
         worker_total += sample_workers;
         chunk_total += sample_chunk;
-        const double us_per_iteration =
-            static_cast<double>(elapsed.count()) / (1000.0 * static_cast<double>(cfg.iterations));
+        const f64 us_per_iteration = bench::us_per_iteration(elapsed, static_cast<u64>(cfg.iterations));
         summary.us_per_iteration.push_back(us_per_iteration);
         std::println("  sample {}: {} us/iter", sample + 1u, us_per_iteration);
     }
 
-    const double total_iterations = static_cast<double>(cfg.iterations) * static_cast<double>(cfg.samples);
-    summary.avg_pairs_per_iteration = static_cast<double>(pair_total) / total_iterations;
-    summary.avg_workers_per_iteration = static_cast<double>(worker_total) / total_iterations;
-    summary.avg_chunk_size_per_iteration = static_cast<double>(chunk_total) / total_iterations;
+    const f64 total_iterations = static_cast<f64>(cfg.iterations) * static_cast<f64>(cfg.samples);
+    summary.avg_pairs_per_iteration = static_cast<f64>(pair_total) / total_iterations;
+    summary.avg_workers_per_iteration = static_cast<f64>(worker_total) / total_iterations;
+    summary.avg_chunk_size_per_iteration = static_cast<f64>(chunk_total) / total_iterations;
     summary.checksum = checksum;
     return summary;
-}
-
-[[nodiscard]] double median(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    return values[values.size() / 2u];
-}
-
-[[nodiscard]] double p95(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    const usize p95_index = static_cast<usize>(std::ceil(values.size() * 0.95)) - 1u;
-    return values[p95_index];
 }
 
 } // namespace
@@ -549,7 +491,7 @@ int main(int argc, char **argv) {
     Config cfg{};
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg{argv[i]};
-        if (arg == "--help" || arg == "-h") {
+        if (bench::is_help_arg(arg)) {
             print_usage(argv[0], cfg);
             return 0;
         }
@@ -599,11 +541,11 @@ int main(int argc, char **argv) {
         std::println(" tuned:");
         const SampleSummary tuned = run_mode_samples(cfg, dataset, workload, pool, Mode::tuned);
 
-        const double baseline_median = median(baseline.us_per_iteration);
-        const double tuned_median = median(tuned.us_per_iteration);
-        const double baseline_p95 = p95(baseline.us_per_iteration);
-        const double tuned_p95 = p95(tuned.us_per_iteration);
-        const double speedup = (tuned_median > 0.0) ? (baseline_median / tuned_median) : 0.0;
+        const f64 baseline_median = bench::median(baseline.us_per_iteration);
+        const f64 tuned_median = bench::median(tuned.us_per_iteration);
+        const f64 baseline_p95 = bench::p95(baseline.us_per_iteration);
+        const f64 tuned_p95 = bench::p95(tuned.us_per_iteration);
+        const f64 speedup = (tuned_median > 0.0) ? (baseline_median / tuned_median) : 0.0;
 
         std::println(" summary:");
         std::println("  baseline median: {} us/iter", baseline_median);

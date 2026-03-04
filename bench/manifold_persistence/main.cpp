@@ -1,5 +1,8 @@
 import std;
 
+import javelin.bench.cli;
+import javelin.bench.stats;
+import javelin.bench.timer;
 import javelin.core.time;
 import javelin.core.types;
 import javelin.math.quat;
@@ -38,8 +41,8 @@ struct Dataset final {
 };
 
 struct SampleSummary final {
-    std::vector<double> us_per_iteration;
-    std::vector<double> ns_per_next_manifold;
+    std::vector<f64> us_per_iteration;
+    std::vector<f64> ns_per_next_manifold;
     u64 checksum{};
 };
 
@@ -50,35 +53,6 @@ inline constexpr f32 kPersistenceTangentialDriftBreakThreshold = 0.025f;
 inline constexpr f32 kPersistenceTangentialDriftBreakThresholdSq =
     kPersistenceTangentialDriftBreakThreshold * kPersistenceTangentialDriftBreakThreshold;
 inline constexpr f32 kPersistenceMatchEps = 1e-6f;
-
-[[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    u32 value = 0;
-    const char *begin = text.data();
-    const char *end = begin + text.size();
-    const auto result = std::from_chars(begin, end, value);
-    if (result.ec != std::errc{} || result.ptr != end) {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
-[[nodiscard]] bool parse_f32(std::string_view text, f32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    std::string tmp{text};
-    char *end = nullptr;
-    const f32 value = std::strtof(tmp.c_str(), &end);
-    if (end == tmp.c_str() || *end != '\0') {
-        return false;
-    }
-    out = value;
-    return true;
-}
 
 void print_usage(const char *exe, const Config &cfg) {
     std::println("Manifold persistence microbench");
@@ -99,43 +73,37 @@ void print_usage(const char *exe, const Config &cfg) {
 }
 
 [[nodiscard]] bool parse_arg(std::string_view arg, Config &cfg) {
-    if (!arg.starts_with("--")) {
-        return false;
-    }
-    const auto eq = arg.find('=');
-    if (eq == std::string_view::npos) {
+    bench::ParsedArg parsed{};
+    if (!bench::split_key_value_arg(arg, parsed)) {
         return false;
     }
 
-    const std::string_view key = arg.substr(2, eq - 2);
-    const std::string_view value = arg.substr(eq + 1);
-
-    if (key == "bodies") {
-        return parse_u32(value, cfg.bodies);
+    if (parsed.key == "bodies") {
+        return bench::parse_u32(parsed.value, cfg.bodies);
     }
-    if (key == "previous-manifolds") {
-        return parse_u32(value, cfg.previous_manifolds);
+    if (parsed.key == "previous-manifolds") {
+        return bench::parse_u32(parsed.value, cfg.previous_manifolds);
     }
-    if (key == "next-manifolds") {
-        return parse_u32(value, cfg.next_manifolds);
+    if (parsed.key == "next-manifolds") {
+        return bench::parse_u32(parsed.value, cfg.next_manifolds);
     }
-    if (key == "match-ratio") {
-        return parse_f32(value, cfg.match_ratio);
+    if (parsed.key == "match-ratio") {
+        return bench::parse_f32(parsed.value, cfg.match_ratio);
     }
-    if (key == "anchor-jitter") {
-        return parse_f32(value, cfg.anchor_jitter);
+    if (parsed.key == "anchor-jitter") {
+        return bench::parse_f32(parsed.value, cfg.anchor_jitter);
     }
-    if (key == "iterations") {
-        return parse_u32(value, cfg.iterations);
+    if (parsed.key == "iterations") {
+        return bench::parse_u32(parsed.value, cfg.iterations);
     }
-    if (key == "warmup") {
-        return parse_u32(value, cfg.warmup);
+    if (parsed.key == "warmup") {
+        return bench::parse_u32(parsed.value, cfg.warmup);
     }
-    if (key == "samples") {
-        return parse_u32(value, cfg.samples);
+    if (parsed.key == "samples") {
+        return bench::parse_u32(parsed.value, cfg.samples);
     }
-    if (key == "seed") {
-        return parse_u32(value, cfg.seed);
+    if (parsed.key == "seed") {
+        return bench::parse_u32(parsed.value, cfg.seed);
     }
 
     return false;
@@ -580,10 +548,10 @@ template <typename RefreshFn>
         const auto elapsed = run_iterations(cfg.iterations, sample_checksum);
         summary.checksum += sample_checksum;
 
-        const double elapsed_ns = static_cast<double>(elapsed.count());
-        const double us_per_iteration = elapsed_ns / (static_cast<double>(cfg.iterations) * 1000.0);
-        const double ns_per_next_manifold =
-            elapsed_ns / (static_cast<double>(cfg.iterations) * static_cast<double>(dataset.next_seed.size()));
+        const f64 elapsed_ns = bench::duration_ns(elapsed);
+        const f64 us_per_iteration = bench::us_per_iteration(elapsed, static_cast<u64>(cfg.iterations));
+        const f64 ns_per_next_manifold =
+            elapsed_ns / (static_cast<f64>(cfg.iterations) * static_cast<f64>(dataset.next_seed.size()));
 
         summary.us_per_iteration.push_back(us_per_iteration);
         summary.ns_per_next_manifold.push_back(ns_per_next_manifold);
@@ -592,27 +560,16 @@ template <typename RefreshFn>
     return summary;
 }
 
-[[nodiscard]] double median(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    return values[values.size() / 2u];
-}
-
-[[nodiscard]] double p95(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    const usize p95_index = static_cast<usize>(std::ceil(values.size() * 0.95)) - 1u;
-    return values[p95_index];
-}
-
 void print_samples(std::string_view name, const SampleSummary &summary) {
     std::println("{}:", name);
     for (usize i = 0; i < summary.us_per_iteration.size(); ++i) {
         std::println("  sample {}: {} us/iter, {} ns/next-manifold", i + 1u, summary.us_per_iteration[i],
                      summary.ns_per_next_manifold[i]);
     }
-    std::println("  median: {} us/iter, {} ns/next-manifold", median(summary.us_per_iteration),
-                 median(summary.ns_per_next_manifold));
-    std::println("  p95: {} us/iter, {} ns/next-manifold", p95(summary.us_per_iteration),
-                 p95(summary.ns_per_next_manifold));
+    std::println("  median: {} us/iter, {} ns/next-manifold", bench::median(summary.us_per_iteration),
+                 bench::median(summary.ns_per_next_manifold));
+    std::println("  p95: {} us/iter, {} ns/next-manifold", bench::p95(summary.us_per_iteration),
+                 bench::p95(summary.ns_per_next_manifold));
     std::println("  checksum: {}", summary.checksum);
     std::println("");
 }
@@ -623,7 +580,7 @@ int main(int argc, char **argv) {
     Config cfg{};
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg{argv[i]};
-        if (arg == "--help" || arg == "-h") {
+        if (bench::is_help_arg(arg)) {
             print_usage(argv[0], cfg);
             return 0;
         }
@@ -674,9 +631,9 @@ int main(int argc, char **argv) {
     print_samples("hash lookup", hash_summary);
     print_samples("linear merge", merge_summary);
 
-    const double hash_median = median(hash_summary.us_per_iteration);
-    const double merge_median = median(merge_summary.us_per_iteration);
-    const double speedup = (merge_median > 0.0) ? (hash_median / merge_median) : 0.0;
+    const f64 hash_median = bench::median(hash_summary.us_per_iteration);
+    const f64 merge_median = bench::median(merge_summary.us_per_iteration);
+    const f64 speedup = (merge_median > 0.0) ? (hash_median / merge_median) : 0.0;
 
     std::println("Speedup (median, hash/linear): {}x", speedup);
     return 0;

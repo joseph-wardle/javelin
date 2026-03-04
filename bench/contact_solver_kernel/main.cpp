@@ -1,5 +1,9 @@
 import std;
 
+import javelin.bench.cli;
+import javelin.bench.json;
+import javelin.bench.stats;
+import javelin.bench.timer;
 import javelin.core.time;
 import javelin.core.types;
 import javelin.math.quat;
@@ -41,9 +45,9 @@ struct Dataset final {
 };
 
 struct SampleSummary final {
-    std::vector<double> us_per_iteration{};
-    double avg_manifolds_per_iteration{};
-    double avg_points_per_iteration{};
+    std::vector<f64> us_per_iteration{};
+    f64 avg_manifolds_per_iteration{};
+    f64 avg_points_per_iteration{};
     u64 checksum{};
 };
 
@@ -52,79 +56,44 @@ struct RunMode final {
     ContactSolveConfig solve_config{};
 };
 
-[[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    u32 value = 0;
-    const char *begin = text.data();
-    const char *end = begin + text.size();
-    const auto result = std::from_chars(begin, end, value);
-    if (result.ec != std::errc{} || result.ptr != end) {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
-[[nodiscard]] bool parse_f32(std::string_view text, f32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    std::string tmp{text};
-    char *end = nullptr;
-    const f32 value = std::strtof(tmp.c_str(), &end);
-    if (end == tmp.c_str() || *end != '\0') {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
 [[nodiscard]] bool parse_arg(std::string_view arg, Config &cfg) {
-    if (!arg.starts_with("--")) {
-        return false;
-    }
-    const auto eq = arg.find('=');
-    if (eq == std::string_view::npos) {
+    bench::ParsedArg parsed{};
+    if (!bench::split_key_value_arg(arg, parsed)) {
         return false;
     }
 
-    const std::string_view key = arg.substr(2, eq - 2);
-    const std::string_view value = arg.substr(eq + 1);
-
-    if (key == "bodies") {
-        return parse_u32(value, cfg.bodies);
+    if (parsed.key == "bodies") {
+        return bench::parse_u32(parsed.value, cfg.bodies);
     }
-    if (key == "manifolds") {
-        return parse_u32(value, cfg.manifolds);
+    if (parsed.key == "manifolds") {
+        return bench::parse_u32(parsed.value, cfg.manifolds);
     }
-    if (key == "iterations") {
-        return parse_u32(value, cfg.iterations);
+    if (parsed.key == "iterations") {
+        return bench::parse_u32(parsed.value, cfg.iterations);
     }
-    if (key == "warmup") {
-        return parse_u32(value, cfg.warmup);
+    if (parsed.key == "warmup") {
+        return bench::parse_u32(parsed.value, cfg.warmup);
     }
-    if (key == "samples") {
-        return parse_u32(value, cfg.samples);
+    if (parsed.key == "samples") {
+        return bench::parse_u32(parsed.value, cfg.samples);
     }
-    if (key == "seed") {
-        return parse_u32(value, cfg.seed);
+    if (parsed.key == "seed") {
+        return bench::parse_u32(parsed.value, cfg.seed);
     }
-    if (key == "motion-scale") {
-        return parse_f32(value, cfg.motion_scale);
+    if (parsed.key == "motion-scale") {
+        return bench::parse_f32(parsed.value, cfg.motion_scale);
     }
-    if (key == "warm-start-scale") {
-        return parse_f32(value, cfg.warm_start_scale);
+    if (parsed.key == "warm-start-scale") {
+        return bench::parse_f32(parsed.value, cfg.warm_start_scale);
     }
-    if (key == "separation-scale") {
-        return parse_f32(value, cfg.separation_scale);
+    if (parsed.key == "separation-scale") {
+        return bench::parse_f32(parsed.value, cfg.separation_scale);
     }
-    if (key == "adaptive-epsilon") {
-        return parse_f32(value, cfg.adaptive_epsilon);
+    if (parsed.key == "adaptive-epsilon") {
+        return bench::parse_f32(parsed.value, cfg.adaptive_epsilon);
     }
-    if (key == "json-out") {
-        cfg.json_out = std::string{value};
+    if (parsed.key == "json-out") {
+        cfg.json_out = std::string{parsed.value};
         return !cfg.json_out.empty();
     }
     return false;
@@ -287,8 +256,8 @@ void print_usage(const char *exe, const Config &cfg) {
 
         if (collect_stats) {
             summary.checksum += checksum;
-            summary.avg_manifolds_per_iteration += static_cast<double>(manifold_sum);
-            summary.avg_points_per_iteration += static_cast<double>(point_sum);
+            summary.avg_manifolds_per_iteration += static_cast<f64>(manifold_sum);
+            summary.avg_points_per_iteration += static_cast<f64>(point_sum);
         }
         return std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - start);
     };
@@ -296,60 +265,35 @@ void print_usage(const char *exe, const Config &cfg) {
     static_cast<void>(run_iterations(cfg.warmup, false));
     for (u32 sample = 0u; sample < cfg.samples; ++sample) {
         const auto elapsed = run_iterations(cfg.iterations, true);
-        summary.us_per_iteration.push_back(static_cast<double>(elapsed.count()) /
-                                           (static_cast<double>(cfg.iterations) * 1000.0));
+        summary.us_per_iteration.push_back(bench::us_per_iteration(elapsed, static_cast<u64>(cfg.iterations)));
     }
 
-    const double total_iterations = static_cast<double>(cfg.samples) * static_cast<double>(cfg.iterations);
+    const f64 total_iterations = static_cast<f64>(cfg.samples) * static_cast<f64>(cfg.iterations);
     summary.avg_manifolds_per_iteration /= total_iterations;
     summary.avg_points_per_iteration /= total_iterations;
     return summary;
-}
-
-[[nodiscard]] double median(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    return values[values.size() / 2u];
-}
-
-[[nodiscard]] double p95(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    const usize p95_index = static_cast<usize>(std::ceil(values.size() * 0.95)) - 1u;
-    return values[p95_index];
 }
 
 void print_summary(const SampleSummary &summary) {
     for (usize i = 0u; i < summary.us_per_iteration.size(); ++i) {
         std::println("  sample {}: {} us/iter", i + 1u, summary.us_per_iteration[i]);
     }
-    std::println("  median: {} us/iter", median(summary.us_per_iteration));
-    std::println("  p95: {} us/iter", p95(summary.us_per_iteration));
+    std::println("  median: {} us/iter", bench::median(summary.us_per_iteration));
+    std::println("  p95: {} us/iter", bench::p95(summary.us_per_iteration));
     std::println("  avg manifolds/iter: {}", summary.avg_manifolds_per_iteration);
     std::println("  avg contact points/iter: {}", summary.avg_points_per_iteration);
     std::println("  checksum: {}", summary.checksum);
 }
 
 [[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const SampleSummary &fixed_summary,
-                                      const SampleSummary &adaptive_summary, const double fixed_median_us,
-                                      const double fixed_p95_us, const double adaptive_median_us,
-                                      const double adaptive_p95_us, const double adaptive_speedup) {
-    namespace fs = std::filesystem;
-    const fs::path out_path{path};
-    std::error_code ec{};
-    if (out_path.has_parent_path()) {
-        fs::create_directories(out_path.parent_path(), ec);
-        if (ec) {
-            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
-                      << "' for JSON output: " << ec.message() << "\n";
-            return false;
-        }
-    }
-
-    std::ofstream out{out_path};
-    if (!out.is_open()) {
-        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+                                      const SampleSummary &adaptive_summary, const f64 fixed_median_us,
+                                      const f64 fixed_p95_us, const f64 adaptive_median_us, const f64 adaptive_p95_us,
+                                      const f64 adaptive_speedup) {
+    std::ofstream out{};
+    if (!bench::open_json_output(path, out)) {
         return false;
     }
-    out << std::setprecision(17);
+
     out << "{\n";
     out << "  \"bench\": \"contact_solver_kernel\",\n";
     out << "  \"units\": \"us/iter\",\n";
@@ -376,14 +320,9 @@ void print_summary(const SampleSummary &summary) {
     out << "  },\n";
     out << "  \"modes\": {\n";
     out << "    \"fixed\": {\n";
-    out << "      \"samples_us_per_iter\": [";
-    for (usize i = 0u; i < fixed_summary.us_per_iteration.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << fixed_summary.us_per_iteration[i];
-    }
-    out << "],\n";
+    out << "      \"samples_us_per_iter\": ";
+    bench::write_json_f64_array(out, fixed_summary.us_per_iteration);
+    out << ",\n";
     out << "      \"median_us_per_iter\": " << fixed_median_us << ",\n";
     out << "      \"p95_us_per_iter\": " << fixed_p95_us << ",\n";
     out << "      \"avg_manifolds_per_iteration\": " << fixed_summary.avg_manifolds_per_iteration << ",\n";
@@ -391,14 +330,9 @@ void print_summary(const SampleSummary &summary) {
     out << "      \"checksum\": " << fixed_summary.checksum << "\n";
     out << "    },\n";
     out << "    \"adaptive\": {\n";
-    out << "      \"samples_us_per_iter\": [";
-    for (usize i = 0u; i < adaptive_summary.us_per_iteration.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << adaptive_summary.us_per_iteration[i];
-    }
-    out << "],\n";
+    out << "      \"samples_us_per_iter\": ";
+    bench::write_json_f64_array(out, adaptive_summary.us_per_iteration);
+    out << ",\n";
     out << "      \"median_us_per_iter\": " << adaptive_median_us << ",\n";
     out << "      \"p95_us_per_iter\": " << adaptive_p95_us << ",\n";
     out << "      \"avg_manifolds_per_iteration\": " << adaptive_summary.avg_manifolds_per_iteration << ",\n";
@@ -416,7 +350,7 @@ int main(int argc, char **argv) {
     Config cfg{};
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg{argv[i]};
-        if (arg == "--help" || arg == "-h") {
+        if (bench::is_help_arg(arg)) {
             print_usage(argv[0], cfg);
             return 0;
         }
@@ -478,12 +412,12 @@ int main(int argc, char **argv) {
     std::println("{}:", adaptive_mode.label);
     print_summary(adaptive_summary);
 
-    const double fixed_median_us = median(fixed_summary.us_per_iteration);
-    const double fixed_p95_us = p95(fixed_summary.us_per_iteration);
-    const double adaptive_median_us = median(adaptive_summary.us_per_iteration);
-    const double adaptive_p95_us = p95(adaptive_summary.us_per_iteration);
-    const double adaptive_speedup =
-        (adaptive_median_us > 0.0) ? (fixed_median_us / adaptive_median_us) : std::numeric_limits<double>::quiet_NaN();
+    const f64 fixed_median_us = bench::median(fixed_summary.us_per_iteration);
+    const f64 fixed_p95_us = bench::p95(fixed_summary.us_per_iteration);
+    const f64 adaptive_median_us = bench::median(adaptive_summary.us_per_iteration);
+    const f64 adaptive_p95_us = bench::p95(adaptive_summary.us_per_iteration);
+    const f64 adaptive_speedup =
+        (adaptive_median_us > 0.0) ? (fixed_median_us / adaptive_median_us) : std::numeric_limits<f64>::quiet_NaN();
     std::println("");
     std::println("Adaptive delta:");
     std::println("  median speedup: {}x", adaptive_speedup);

@@ -1,5 +1,9 @@
 import std;
 
+import javelin.bench.cli;
+import javelin.bench.json;
+import javelin.bench.stats;
+import javelin.bench.timer;
 import javelin.core.time;
 import javelin.core.types;
 
@@ -26,9 +30,9 @@ struct Edge final {
 };
 
 struct SampleSummary final {
-    std::vector<double> us_per_tick{};
-    double avg_awake_bodies_per_tick{};
-    double avg_active_edges_per_tick{};
+    std::vector<f64> us_per_tick{};
+    f64 avg_awake_bodies_per_tick{};
+    f64 avg_active_edges_per_tick{};
     u64 checksum{};
 };
 
@@ -59,49 +63,29 @@ struct IslandState final {
     std::vector<u32> sleep_island_free_ids{};
 };
 
-[[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    u32 value = 0;
-    const char *begin = text.data();
-    const char *end = begin + text.size();
-    const auto result = std::from_chars(begin, end, value);
-    if (result.ec != std::errc{} || result.ptr != end) {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
 [[nodiscard]] bool parse_arg(std::string_view arg, Config &cfg) {
-    if (!arg.starts_with("--")) {
+    bench::ParsedArg parsed{};
+    if (!bench::split_key_value_arg(arg, parsed)) {
         return false;
     }
-    const auto eq = arg.find('=');
-    if (eq == std::string_view::npos) {
-        return false;
-    }
-    const std::string_view key = arg.substr(2, eq - 2);
-    const std::string_view value = arg.substr(eq + 1);
 
-    if (key == "bodies") {
-        return parse_u32(value, cfg.bodies);
+    if (parsed.key == "bodies") {
+        return bench::parse_u32(parsed.value, cfg.bodies);
     }
-    if (key == "ticks") {
-        return parse_u32(value, cfg.ticks);
+    if (parsed.key == "ticks") {
+        return bench::parse_u32(parsed.value, cfg.ticks);
     }
-    if (key == "warmup") {
-        return parse_u32(value, cfg.warmup);
+    if (parsed.key == "warmup") {
+        return bench::parse_u32(parsed.value, cfg.warmup);
     }
-    if (key == "samples") {
-        return parse_u32(value, cfg.samples);
+    if (parsed.key == "samples") {
+        return bench::parse_u32(parsed.value, cfg.samples);
     }
-    if (key == "seed") {
-        return parse_u32(value, cfg.seed);
+    if (parsed.key == "seed") {
+        return bench::parse_u32(parsed.value, cfg.seed);
     }
-    if (key == "json-out") {
-        cfg.json_out = std::string{value};
+    if (parsed.key == "json-out") {
+        cfg.json_out = std::string{parsed.value};
         return !cfg.json_out.empty();
     }
     return false;
@@ -443,25 +427,13 @@ void sleep_awake_islands(IslandState &state, std::span<u8> asleep, std::span<u32
 
         static_cast<void>(run_ticks(cfg.warmup, false));
         const auto measured_ns = run_ticks(cfg.ticks, true);
-        summary.us_per_tick.push_back(static_cast<double>(measured_ns.count()) /
-                                      (static_cast<double>(cfg.ticks) * 1000.0));
+        summary.us_per_tick.push_back(bench::us_per_iteration(measured_ns, static_cast<u64>(cfg.ticks)));
     }
 
-    const double total_ticks = static_cast<double>(cfg.samples) * static_cast<double>(cfg.ticks);
-    summary.avg_awake_bodies_per_tick = static_cast<double>(awake_total) / total_ticks;
-    summary.avg_active_edges_per_tick = static_cast<double>(edge_total) / total_ticks;
+    const f64 total_ticks = static_cast<f64>(cfg.samples) * static_cast<f64>(cfg.ticks);
+    summary.avg_awake_bodies_per_tick = static_cast<f64>(awake_total) / total_ticks;
+    summary.avg_active_edges_per_tick = static_cast<f64>(edge_total) / total_ticks;
     return summary;
-}
-
-[[nodiscard]] double median(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    return values[values.size() / 2u];
-}
-
-[[nodiscard]] double p95(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    const usize p95_index = static_cast<usize>(std::ceil(values.size() * 0.95)) - 1u;
-    return values[p95_index];
 }
 
 void print_summary(const std::string_view label, const SampleSummary &summary) {
@@ -469,8 +441,8 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     for (usize i = 0u; i < summary.us_per_tick.size(); ++i) {
         std::println("  sample {}: {} us/tick", i + 1u, summary.us_per_tick[i]);
     }
-    std::println("  median: {} us/tick", median(summary.us_per_tick));
-    std::println("  p95: {} us/tick", p95(summary.us_per_tick));
+    std::println("  median: {} us/tick", bench::median(summary.us_per_tick));
+    std::println("  p95: {} us/tick", bench::p95(summary.us_per_tick));
     std::println("  avg awake bodies/tick: {}", summary.avg_awake_bodies_per_tick);
     std::println("  avg active edges/tick: {}", summary.avg_active_edges_per_tick);
     std::println("  checksum: {}", summary.checksum);
@@ -479,28 +451,14 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
 
 [[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const u32 edge_count,
                                       const SampleSummary &per_body, const SampleSummary &island,
-                                      const double per_body_median_us, const double per_body_p95_us,
-                                      const double island_median_us, const double island_p95_us,
-                                      const double runtime_speedup, const double awake_reduction,
-                                      const double edge_reduction) {
-    namespace fs = std::filesystem;
-    const fs::path out_path{path};
-    std::error_code ec{};
-    if (out_path.has_parent_path()) {
-        fs::create_directories(out_path.parent_path(), ec);
-        if (ec) {
-            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
-                      << "' for JSON output: " << ec.message() << "\n";
-            return false;
-        }
-    }
-
-    std::ofstream out{out_path};
-    if (!out.is_open()) {
-        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+                                      const f64 per_body_median_us, const f64 per_body_p95_us,
+                                      const f64 island_median_us, const f64 island_p95_us, const f64 runtime_speedup,
+                                      const f64 awake_reduction, const f64 edge_reduction) {
+    std::ofstream out{};
+    if (!bench::open_json_output(path, out)) {
         return false;
     }
-    out << std::setprecision(17);
+
     out << "{\n";
     out << "  \"bench\": \"island_sleep_wake\",\n";
     out << "  \"units\": \"us/tick\",\n";
@@ -526,14 +484,9 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "  },\n";
     out << "  \"modes\": {\n";
     out << "    \"per_body\": {\n";
-    out << "      \"samples_us_per_tick\": [";
-    for (usize i = 0u; i < per_body.us_per_tick.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << per_body.us_per_tick[i];
-    }
-    out << "],\n";
+    out << "      \"samples_us_per_tick\": ";
+    bench::write_json_f64_array(out, per_body.us_per_tick);
+    out << ",\n";
     out << "      \"median_us_per_tick\": " << per_body_median_us << ",\n";
     out << "      \"p95_us_per_tick\": " << per_body_p95_us << ",\n";
     out << "      \"avg_awake_bodies_per_tick\": " << per_body.avg_awake_bodies_per_tick << ",\n";
@@ -541,14 +494,9 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "      \"checksum\": " << per_body.checksum << "\n";
     out << "    },\n";
     out << "    \"island\": {\n";
-    out << "      \"samples_us_per_tick\": [";
-    for (usize i = 0u; i < island.us_per_tick.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << island.us_per_tick[i];
-    }
-    out << "],\n";
+    out << "      \"samples_us_per_tick\": ";
+    bench::write_json_f64_array(out, island.us_per_tick);
+    out << ",\n";
     out << "      \"median_us_per_tick\": " << island_median_us << ",\n";
     out << "      \"p95_us_per_tick\": " << island_p95_us << ",\n";
     out << "      \"avg_awake_bodies_per_tick\": " << island.avg_awake_bodies_per_tick << ",\n";
@@ -566,7 +514,7 @@ int main(int argc, char **argv) {
     Config cfg{};
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg{argv[i]};
-        if (arg == "--help" || arg == "-h") {
+        if (bench::is_help_arg(arg)) {
             print_usage(argv[0], cfg);
             return 0;
         }
@@ -599,19 +547,19 @@ int main(int argc, char **argv) {
     print_summary("per-body sleep/wake (legacy)", per_body);
     print_summary("island sleep/wake", island);
 
-    const double per_body_median_us = median(per_body.us_per_tick);
-    const double per_body_p95_us = p95(per_body.us_per_tick);
-    const double island_median_us = median(island.us_per_tick);
-    const double island_p95_us = p95(island.us_per_tick);
-    const double runtime_speedup =
-        (island_median_us > 0.0) ? (per_body_median_us / island_median_us) : std::numeric_limits<double>::quiet_NaN();
+    const f64 per_body_median_us = bench::median(per_body.us_per_tick);
+    const f64 per_body_p95_us = bench::p95(per_body.us_per_tick);
+    const f64 island_median_us = bench::median(island.us_per_tick);
+    const f64 island_p95_us = bench::p95(island.us_per_tick);
+    const f64 runtime_speedup =
+        (island_median_us > 0.0) ? (per_body_median_us / island_median_us) : std::numeric_limits<f64>::quiet_NaN();
 
-    const double awake_reduction = (per_body.avg_awake_bodies_per_tick > 0.0)
-                                       ? (1.0 - island.avg_awake_bodies_per_tick / per_body.avg_awake_bodies_per_tick)
-                                       : 0.0;
-    const double edge_reduction = (per_body.avg_active_edges_per_tick > 0.0)
-                                      ? (1.0 - island.avg_active_edges_per_tick / per_body.avg_active_edges_per_tick)
-                                      : 0.0;
+    const f64 awake_reduction = (per_body.avg_awake_bodies_per_tick > 0.0)
+                                    ? (1.0 - island.avg_awake_bodies_per_tick / per_body.avg_awake_bodies_per_tick)
+                                    : 0.0;
+    const f64 edge_reduction = (per_body.avg_active_edges_per_tick > 0.0)
+                                   ? (1.0 - island.avg_active_edges_per_tick / per_body.avg_active_edges_per_tick)
+                                   : 0.0;
 
     std::println("Workload delta (island vs per-body):");
     std::println("  awake bodies reduction: {}%", awake_reduction * 100.0);

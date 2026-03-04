@@ -1,6 +1,18 @@
 add_executable(javelin_physics_tests)
 target_compile_features(javelin_physics_tests PRIVATE cxx_std_23)
-target_sources(javelin_physics_tests PRIVATE physics_unit_tests.cpp)
+target_sources(javelin_physics_tests
+    PRIVATE
+        main.cpp
+    PUBLIC
+        FILE_SET test_modules
+        TYPE CXX_MODULES
+        FILES
+            support/assert.cppm
+            support/runner.cppm
+            suites/sphere_sphere_contact.cppm
+            suites/box_box_sat.cppm
+            suites/solve_contact_velocities.cppm
+)
 target_link_libraries(javelin_physics_tests PRIVATE javelin::javelin)
 
 add_test(NAME sphere_sphere_contact COMMAND javelin_physics_tests sphere_sphere_contact)

@@ -1,7 +1,11 @@
 import std;
 
-import javelin.core.types;
+import javelin.bench.cli;
+import javelin.bench.json;
+import javelin.bench.stats;
+import javelin.bench.timer;
 import javelin.core.time;
+import javelin.core.types;
 import javelin.math.vec3;
 import javelin.physics.aabb;
 import javelin.physics.bvh_dynamic;
@@ -23,35 +27,6 @@ struct Config final {
     std::string json_out{};
 };
 
-[[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    u32 value = 0;
-    const char *begin = text.data();
-    const char *end = begin + text.size();
-    const auto result = std::from_chars(begin, end, value);
-    if (result.ec != std::errc{} || result.ptr != end) {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
-[[nodiscard]] bool parse_f32(std::string_view text, f32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    std::string tmp{text};
-    char *end = nullptr;
-    const f32 value = std::strtof(tmp.c_str(), &end);
-    if (end == tmp.c_str() || *end != '\0') {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
 void print_usage(const char *exe, const Config &cfg) {
     std::println("Dynamic BVH microbench");
     std::println("Usage: {} [--bodies=N] [--queries=N] [--iterations=N] "
@@ -59,7 +34,7 @@ void print_usage(const char *exe, const Config &cfg) {
                  exe);
     std::println("             [--seed=N] [--world=F] [--body-radius=F] "
                  "[--query-radius=F]");
-    std::println("             [--json-out=PATH]\n");
+    std::println("             [--json-out=PATH]\\n");
     std::println("Defaults:");
     std::println("  --bodies={}", cfg.bodies);
     std::println("  --queries={}", cfg.queries);
@@ -72,85 +47,55 @@ void print_usage(const char *exe, const Config &cfg) {
     std::println("  --query-radius={}", cfg.query_radius);
 }
 
-[[nodiscard]] bool parse_arg(std::string_view arg, Config &cfg) {
-    if (!arg.starts_with("--")) {
-        return false;
-    }
-    const auto eq = arg.find('=');
-    if (eq == std::string_view::npos) {
+[[nodiscard]] bool parse_arg(const std::string_view arg, Config &cfg) {
+    bench::ParsedArg parsed{};
+    if (!bench::split_key_value_arg(arg, parsed)) {
         return false;
     }
 
-    const std::string_view key = arg.substr(2, eq - 2);
-    const std::string_view value = arg.substr(eq + 1);
-
-    if (key == "bodies") {
-        return parse_u32(value, cfg.bodies);
+    if (parsed.key == "bodies") {
+        return bench::parse_u32(parsed.value, cfg.bodies);
     }
-    if (key == "queries") {
-        return parse_u32(value, cfg.queries);
+    if (parsed.key == "queries") {
+        return bench::parse_u32(parsed.value, cfg.queries);
     }
-    if (key == "iterations") {
-        return parse_u32(value, cfg.iterations);
+    if (parsed.key == "iterations") {
+        return bench::parse_u32(parsed.value, cfg.iterations);
     }
-    if (key == "warmup") {
-        return parse_u32(value, cfg.warmup);
+    if (parsed.key == "warmup") {
+        return bench::parse_u32(parsed.value, cfg.warmup);
     }
-    if (key == "samples") {
-        return parse_u32(value, cfg.samples);
+    if (parsed.key == "samples") {
+        return bench::parse_u32(parsed.value, cfg.samples);
     }
-    if (key == "seed") {
-        return parse_u32(value, cfg.seed);
+    if (parsed.key == "seed") {
+        return bench::parse_u32(parsed.value, cfg.seed);
     }
-    if (key == "world") {
-        return parse_f32(value, cfg.world_extent);
+    if (parsed.key == "world") {
+        return bench::parse_f32(parsed.value, cfg.world_extent);
     }
-    if (key == "body-radius") {
-        return parse_f32(value, cfg.body_radius);
+    if (parsed.key == "body-radius") {
+        return bench::parse_f32(parsed.value, cfg.body_radius);
     }
-    if (key == "query-radius") {
-        return parse_f32(value, cfg.query_radius);
+    if (parsed.key == "query-radius") {
+        return bench::parse_f32(parsed.value, cfg.query_radius);
     }
-    if (key == "json-out") {
-        cfg.json_out = std::string{value};
+    if (parsed.key == "json-out") {
+        cfg.json_out = std::string{parsed.value};
         return !cfg.json_out.empty();
     }
 
     return false;
 }
 
-[[nodiscard]] double median(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    return values[values.size() / 2u];
-}
-
-[[nodiscard]] double p95(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    const usize p95_index = static_cast<usize>(std::ceil(values.size() * 0.95)) - 1u;
-    return values[p95_index];
-}
-
-[[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, std::span<const double> samples,
-                                      const double median_ns_per_query, const double p95_ns_per_query,
-                                      const double avg_hits_per_query, const u64 checksum, const usize node_count) {
-    namespace fs = std::filesystem;
-    const fs::path out_path{path};
-    std::error_code ec{};
-    if (out_path.has_parent_path()) {
-        fs::create_directories(out_path.parent_path(), ec);
-        if (ec) {
-            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
-                      << "' for JSON output: " << ec.message() << "\n";
-            return false;
-        }
-    }
-
-    std::ofstream out{out_path};
-    if (!out.is_open()) {
-        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+[[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const std::span<const f64> samples,
+                                      const f64 median_ns_per_query, const f64 p95_ns_per_query,
+                                      const f64 avg_hits_per_query, const u64 checksum, const usize node_count) {
+    std::ofstream out{};
+    if (!bench::open_json_output(path, out)) {
         return false;
     }
-    out << std::setprecision(17);
+
     out << "{\n";
     out << "  \"bench\": \"dynamic_bvh\",\n";
     out << "  \"units\": \"ns/query\",\n";
@@ -165,14 +110,9 @@ void print_usage(const char *exe, const Config &cfg) {
     out << "    \"body_radius\": " << cfg.body_radius << ",\n";
     out << "    \"query_radius\": " << cfg.query_radius << "\n";
     out << "  },\n";
-    out << "  \"samples_ns_per_query\": [";
-    for (usize i = 0u; i < samples.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << samples[i];
-    }
-    out << "],\n";
+    out << "  \"samples_ns_per_query\": ";
+    bench::write_json_f64_array(out, samples);
+    out << ",\n";
     out << "  \"compare_metrics\": {\n";
     out << "    \"median_ns_per_query\": " << median_ns_per_query << ",\n";
     out << "    \"p95_ns_per_query\": " << p95_ns_per_query << "\n";
@@ -195,7 +135,7 @@ int main(int argc, char **argv) {
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg{argv[i]};
-        if (arg == "--help" || arg == "-h") {
+        if (bench::is_help_arg(arg)) {
             print_usage(argv[0], cfg);
             return 0;
         }
@@ -255,7 +195,7 @@ int main(int argc, char **argv) {
 
     const u64 total_queries = static_cast<u64>(cfg.iterations) * static_cast<u64>(queries.size());
 
-    std::vector<double> per_query_ns;
+    std::vector<f64> per_query_ns;
     per_query_ns.reserve(cfg.samples);
 
     u64 total_checksum = 0;
@@ -264,17 +204,15 @@ int main(int argc, char **argv) {
         const auto elapsed = run_iterations(cfg.iterations, checksum);
         total_checksum += checksum;
 
-        const double ns = static_cast<double>(elapsed.count());
-        const double ns_per_query = ns / static_cast<double>(total_queries);
+        const f64 ns_per_query = bench::ns_per_item(elapsed, total_queries);
         per_query_ns.push_back(ns_per_query);
 
-        std::println("sample {}: {} ns/query ({} ms)", sample + 1, ns_per_query, to_ms(elapsed));
+        std::println("sample {}: {} ns/query ({} ms)", sample + 1, ns_per_query, bench::duration_ms(elapsed));
     }
 
-    const double median_ns = median(per_query_ns);
-    const double p95_ns = p95(per_query_ns);
-    const double avg_hits_per_query =
-        static_cast<double>(total_checksum) / static_cast<double>(total_queries * cfg.samples);
+    const f64 median_ns = bench::median(per_query_ns);
+    const f64 p95_ns = bench::p95(per_query_ns);
+    const f64 avg_hits_per_query = static_cast<f64>(total_checksum) / static_cast<f64>(total_queries * cfg.samples);
 
     std::println("");
     std::println("Config:");

@@ -1,5 +1,9 @@
 import std;
 
+import javelin.bench.cli;
+import javelin.bench.json;
+import javelin.bench.stats;
+import javelin.bench.timer;
 import javelin.core.time;
 import javelin.core.types;
 import javelin.math.quat;
@@ -50,11 +54,11 @@ struct Dataset final {
 };
 
 struct SampleSummary final {
-    std::vector<double> us_per_iteration{};
+    std::vector<f64> us_per_iteration{};
     u64 checksum{};
-    double avg_pairs_per_iteration{};
-    double avg_manifolds_per_iteration{};
-    double avg_points_per_iteration{};
+    f64 avg_pairs_per_iteration{};
+    f64 avg_manifolds_per_iteration{};
+    f64 avg_points_per_iteration{};
 };
 
 enum struct Mode : u8 {
@@ -62,35 +66,6 @@ enum struct Mode : u8 {
     sleep_aware = 1,
     incremental_moved_carry = 2,
 };
-
-[[nodiscard]] bool parse_u32(std::string_view text, u32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    u32 value = 0;
-    const char *begin = text.data();
-    const char *end = begin + text.size();
-    const auto result = std::from_chars(begin, end, value);
-    if (result.ec != std::errc{} || result.ptr != end) {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
-[[nodiscard]] bool parse_f32(std::string_view text, f32 &out) {
-    if (text.empty()) {
-        return false;
-    }
-    std::string tmp{text};
-    char *end = nullptr;
-    const f32 value = std::strtof(tmp.c_str(), &end);
-    if (end == tmp.c_str() || *end != '\0') {
-        return false;
-    }
-    out = value;
-    return true;
-}
 
 void print_usage(const char *exe, const Config &cfg) {
     std::println("Sleep-aware collision pipeline benchmark");
@@ -116,52 +91,46 @@ void print_usage(const char *exe, const Config &cfg) {
 }
 
 [[nodiscard]] bool parse_arg(std::string_view arg, Config &cfg) {
-    if (!arg.starts_with("--")) {
-        return false;
-    }
-    const auto eq = arg.find('=');
-    if (eq == std::string_view::npos) {
+    bench::ParsedArg parsed{};
+    if (!bench::split_key_value_arg(arg, parsed)) {
         return false;
     }
 
-    const std::string_view key = arg.substr(2, eq - 2);
-    const std::string_view value = arg.substr(eq + 1);
-
-    if (key == "bodies") {
-        return parse_u32(value, cfg.bodies);
+    if (parsed.key == "bodies") {
+        return bench::parse_u32(parsed.value, cfg.bodies);
     }
-    if (key == "awake-ratio") {
-        return parse_f32(value, cfg.awake_ratio);
+    if (parsed.key == "awake-ratio") {
+        return bench::parse_f32(parsed.value, cfg.awake_ratio);
     }
-    if (key == "moved-awake-ratio") {
-        return parse_f32(value, cfg.moved_awake_ratio);
+    if (parsed.key == "moved-awake-ratio") {
+        return bench::parse_f32(parsed.value, cfg.moved_awake_ratio);
     }
-    if (key == "moved-offset") {
-        return parse_f32(value, cfg.moved_offset);
+    if (parsed.key == "moved-offset") {
+        return bench::parse_f32(parsed.value, cfg.moved_offset);
     }
-    if (key == "spacing") {
-        return parse_f32(value, cfg.spacing);
+    if (parsed.key == "spacing") {
+        return bench::parse_f32(parsed.value, cfg.spacing);
     }
-    if (key == "half-extent") {
-        return parse_f32(value, cfg.half_extent);
+    if (parsed.key == "half-extent") {
+        return bench::parse_f32(parsed.value, cfg.half_extent);
     }
-    if (key == "center-y") {
-        return parse_f32(value, cfg.center_y);
+    if (parsed.key == "center-y") {
+        return bench::parse_f32(parsed.value, cfg.center_y);
     }
-    if (key == "iterations") {
-        return parse_u32(value, cfg.iterations);
+    if (parsed.key == "iterations") {
+        return bench::parse_u32(parsed.value, cfg.iterations);
     }
-    if (key == "warmup") {
-        return parse_u32(value, cfg.warmup);
+    if (parsed.key == "warmup") {
+        return bench::parse_u32(parsed.value, cfg.warmup);
     }
-    if (key == "samples") {
-        return parse_u32(value, cfg.samples);
+    if (parsed.key == "samples") {
+        return bench::parse_u32(parsed.value, cfg.samples);
     }
-    if (key == "seed") {
-        return parse_u32(value, cfg.seed);
+    if (parsed.key == "seed") {
+        return bench::parse_u32(parsed.value, cfg.seed);
     }
-    if (key == "json-out") {
-        cfg.json_out = std::string{value};
+    if (parsed.key == "json-out") {
+        cfg.json_out = std::string{parsed.value};
         return !cfg.json_out.empty();
     }
     return false;
@@ -342,10 +311,10 @@ void normalize_pairs(std::vector<BodyPair> &pairs) {
                     moved_query_ids.push_back(id);
                 }
 
-                const f32 moved_ratio =
-                    dataset.awake_dynamic_ids.empty()
-                        ? 0.0f
-                        : (static_cast<f32>(moved_query_ids.size()) / static_cast<f32>(dataset.awake_dynamic_ids.size()));
+                const f32 moved_ratio = dataset.awake_dynamic_ids.empty()
+                                            ? 0.0f
+                                            : (static_cast<f32>(moved_query_ids.size()) /
+                                               static_cast<f32>(dataset.awake_dynamic_ids.size()));
                 const bool fallback_to_full_query = moved_ratio >= kIncrementalFallbackMovedRatio;
                 query_ids = fallback_to_full_query ? std::span<const u32>{dataset.awake_dynamic_ids}
                                                    : std::span<const u32>{moved_query_ids};
@@ -360,8 +329,9 @@ void normalize_pairs(std::vector<BodyPair> &pairs) {
                 append_overlapping_previous_pairs(dataset.awake_query_mask);
             }
             normalize_pairs(pairs);
-            narrow_phase_contacts(position, dataset.orientation, dataset.shape_kind, dataset.shapes, dataset.shape_index,
-                                  dataset.inv_mass, pairs, previous_manifolds, ground_query_ids, next_manifolds);
+            narrow_phase_contacts(position, dataset.orientation, dataset.shape_kind, dataset.shapes,
+                                  dataset.shape_index, dataset.inv_mass, pairs, previous_manifolds, ground_query_ids,
+                                  next_manifolds);
             previous_manifolds.swap(next_manifolds);
 
             const u32 point_count = contact_point_count(previous_manifolds);
@@ -395,26 +365,14 @@ void normalize_pairs(std::vector<BodyPair> &pairs) {
         pair_total += pair_sum;
         manifold_total += manifold_sum;
         point_total += point_sum;
-        summary.us_per_iteration.push_back(static_cast<double>(elapsed.count()) /
-                                           (static_cast<double>(cfg.iterations) * 1000.0));
+        summary.us_per_iteration.push_back(bench::us_per_iteration(elapsed, static_cast<u64>(cfg.iterations)));
     }
 
-    const double total_iterations = static_cast<double>(cfg.samples) * static_cast<double>(cfg.iterations);
-    summary.avg_pairs_per_iteration = static_cast<double>(pair_total) / total_iterations;
-    summary.avg_manifolds_per_iteration = static_cast<double>(manifold_total) / total_iterations;
-    summary.avg_points_per_iteration = static_cast<double>(point_total) / total_iterations;
+    const f64 total_iterations = static_cast<f64>(cfg.samples) * static_cast<f64>(cfg.iterations);
+    summary.avg_pairs_per_iteration = static_cast<f64>(pair_total) / total_iterations;
+    summary.avg_manifolds_per_iteration = static_cast<f64>(manifold_total) / total_iterations;
+    summary.avg_points_per_iteration = static_cast<f64>(point_total) / total_iterations;
     return summary;
-}
-
-[[nodiscard]] double median(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    return values[values.size() / 2u];
-}
-
-[[nodiscard]] double p95(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    const usize p95_index = static_cast<usize>(std::ceil(values.size() * 0.95)) - 1u;
-    return values[p95_index];
 }
 
 void print_summary(const std::string_view label, const SampleSummary &summary) {
@@ -422,8 +380,8 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     for (usize i = 0; i < summary.us_per_iteration.size(); ++i) {
         std::println("  sample {}: {} us/iter", i + 1u, summary.us_per_iteration[i]);
     }
-    std::println("  median: {} us/iter", median(summary.us_per_iteration));
-    std::println("  p95: {} us/iter", p95(summary.us_per_iteration));
+    std::println("  median: {} us/iter", bench::median(summary.us_per_iteration));
+    std::println("  p95: {} us/iter", bench::p95(summary.us_per_iteration));
     std::println("  avg pairs/iter: {}", summary.avg_pairs_per_iteration);
     std::println("  avg manifolds/iter: {}", summary.avg_manifolds_per_iteration);
     std::println("  avg points/iter: {}", summary.avg_points_per_iteration);
@@ -433,35 +391,19 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
 
 [[nodiscard]] bool write_json_summary(const std::string &path, const Config &cfg, const SampleSummary &baseline,
                                       const SampleSummary &sleep_aware, const SampleSummary &incremental,
-                                      const u32 awake_count, const u32 sleeping_count,
-                                      const double baseline_median_us, const double baseline_p95_us,
-                                      const double sleep_aware_median_us, const double sleep_aware_p95_us,
-                                      const double incremental_median_us, const double incremental_p95_us,
-                                      const double speedup_sleep_aware, const double speedup_incremental,
-                                      const double incremental_speedup_vs_sleep_aware,
-                                      const double pair_reduction_sleep_aware, const double manifold_reduction_sleep_aware,
-                                      const double point_reduction_sleep_aware,
-                                      const double pair_reduction_incremental,
-                                      const double manifold_reduction_incremental,
-                                      const double point_reduction_incremental) {
-    namespace fs = std::filesystem;
-    const fs::path out_path{path};
-    std::error_code ec{};
-    if (out_path.has_parent_path()) {
-        fs::create_directories(out_path.parent_path(), ec);
-        if (ec) {
-            std::cerr << "Failed to create directory '" << out_path.parent_path().string()
-                      << "' for JSON output: " << ec.message() << "\n";
-            return false;
-        }
-    }
-
-    std::ofstream out{out_path};
-    if (!out.is_open()) {
-        std::cerr << "Failed to open JSON output file: " << out_path.string() << "\n";
+                                      const u32 awake_count, const u32 sleeping_count, const f64 baseline_median_us,
+                                      const f64 baseline_p95_us, const f64 sleep_aware_median_us,
+                                      const f64 sleep_aware_p95_us, const f64 incremental_median_us,
+                                      const f64 incremental_p95_us, const f64 speedup_sleep_aware,
+                                      const f64 speedup_incremental, const f64 incremental_speedup_vs_sleep_aware,
+                                      const f64 pair_reduction_sleep_aware, const f64 manifold_reduction_sleep_aware,
+                                      const f64 point_reduction_sleep_aware, const f64 pair_reduction_incremental,
+                                      const f64 manifold_reduction_incremental, const f64 point_reduction_incremental) {
+    std::ofstream out{};
+    if (!bench::open_json_output(path, out)) {
         return false;
     }
-    out << std::setprecision(17);
+
     out << "{\n";
     out << "  \"bench\": \"sleep_aware_collision\",\n";
     out << "  \"units\": \"us/iter\",\n";
@@ -502,14 +444,9 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "  },\n";
     out << "  \"modes\": {\n";
     out << "    \"baseline\": {\n";
-    out << "      \"samples_us_per_iter\": [";
-    for (usize i = 0u; i < baseline.us_per_iteration.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << baseline.us_per_iteration[i];
-    }
-    out << "],\n";
+    out << "      \"samples_us_per_iter\": ";
+    bench::write_json_f64_array(out, baseline.us_per_iteration);
+    out << ",\n";
     out << "      \"median_us_per_iter\": " << baseline_median_us << ",\n";
     out << "      \"p95_us_per_iter\": " << baseline_p95_us << ",\n";
     out << "      \"avg_pairs_per_iteration\": " << baseline.avg_pairs_per_iteration << ",\n";
@@ -518,14 +455,9 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "      \"checksum\": " << baseline.checksum << "\n";
     out << "    },\n";
     out << "    \"sleep_aware\": {\n";
-    out << "      \"samples_us_per_iter\": [";
-    for (usize i = 0u; i < sleep_aware.us_per_iteration.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << sleep_aware.us_per_iteration[i];
-    }
-    out << "],\n";
+    out << "      \"samples_us_per_iter\": ";
+    bench::write_json_f64_array(out, sleep_aware.us_per_iteration);
+    out << ",\n";
     out << "      \"median_us_per_iter\": " << sleep_aware_median_us << ",\n";
     out << "      \"p95_us_per_iter\": " << sleep_aware_p95_us << ",\n";
     out << "      \"avg_pairs_per_iteration\": " << sleep_aware.avg_pairs_per_iteration << ",\n";
@@ -534,14 +466,9 @@ void print_summary(const std::string_view label, const SampleSummary &summary) {
     out << "      \"checksum\": " << sleep_aware.checksum << "\n";
     out << "    },\n";
     out << "    \"incremental_moved_carry\": {\n";
-    out << "      \"samples_us_per_iter\": [";
-    for (usize i = 0u; i < incremental.us_per_iteration.size(); ++i) {
-        if (i > 0u) {
-            out << ", ";
-        }
-        out << incremental.us_per_iteration[i];
-    }
-    out << "],\n";
+    out << "      \"samples_us_per_iter\": ";
+    bench::write_json_f64_array(out, incremental.us_per_iteration);
+    out << ",\n";
     out << "      \"median_us_per_iter\": " << incremental_median_us << ",\n";
     out << "      \"p95_us_per_iter\": " << incremental_p95_us << ",\n";
     out << "      \"avg_pairs_per_iteration\": " << incremental.avg_pairs_per_iteration << ",\n";
@@ -560,7 +487,7 @@ int main(int argc, char **argv) {
     Config cfg{};
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg{argv[i]};
-        if (arg == "--help" || arg == "-h") {
+        if (bench::is_help_arg(arg)) {
             print_usage(argv[0], cfg);
             return 0;
         }
@@ -606,42 +533,41 @@ int main(int argc, char **argv) {
     print_summary("sleep-aware (query/update awake dynamic, ground for awake dynamic)", sleep_aware);
     print_summary("incremental (query moved awake + carry overlapping previous manifolds)", incremental);
 
-    const double baseline_median_us = median(baseline.us_per_iteration);
-    const double baseline_p95_us = p95(baseline.us_per_iteration);
-    const double sleep_aware_median_us = median(sleep_aware.us_per_iteration);
-    const double sleep_aware_p95_us = p95(sleep_aware.us_per_iteration);
-    const double incremental_median_us = median(incremental.us_per_iteration);
-    const double incremental_p95_us = p95(incremental.us_per_iteration);
-    const double speedup_sleep_aware = (sleep_aware_median_us > 0.0)
-                                           ? (baseline_median_us / sleep_aware_median_us)
-                                           : std::numeric_limits<double>::quiet_NaN();
-    const double speedup_incremental = (incremental_median_us > 0.0) ? (baseline_median_us / incremental_median_us)
-                                                                      : std::numeric_limits<double>::quiet_NaN();
-    const double incremental_speedup_vs_sleep_aware =
-        (incremental_median_us > 0.0) ? (sleep_aware_median_us / incremental_median_us)
-                                      : std::numeric_limits<double>::quiet_NaN();
+    const f64 baseline_median_us = bench::median(baseline.us_per_iteration);
+    const f64 baseline_p95_us = bench::p95(baseline.us_per_iteration);
+    const f64 sleep_aware_median_us = bench::median(sleep_aware.us_per_iteration);
+    const f64 sleep_aware_p95_us = bench::p95(sleep_aware.us_per_iteration);
+    const f64 incremental_median_us = bench::median(incremental.us_per_iteration);
+    const f64 incremental_p95_us = bench::p95(incremental.us_per_iteration);
+    const f64 speedup_sleep_aware = (sleep_aware_median_us > 0.0) ? (baseline_median_us / sleep_aware_median_us)
+                                                                  : std::numeric_limits<f64>::quiet_NaN();
+    const f64 speedup_incremental = (incremental_median_us > 0.0) ? (baseline_median_us / incremental_median_us)
+                                                                  : std::numeric_limits<f64>::quiet_NaN();
+    const f64 incremental_speedup_vs_sleep_aware = (incremental_median_us > 0.0)
+                                                       ? (sleep_aware_median_us / incremental_median_us)
+                                                       : std::numeric_limits<f64>::quiet_NaN();
 
-    const double pair_reduction_sleep_aware =
+    const f64 pair_reduction_sleep_aware =
         (baseline.avg_pairs_per_iteration > 0.0)
             ? (1.0 - sleep_aware.avg_pairs_per_iteration / baseline.avg_pairs_per_iteration)
             : 0.0;
-    const double manifold_reduction_sleep_aware =
+    const f64 manifold_reduction_sleep_aware =
         (baseline.avg_manifolds_per_iteration > 0.0)
             ? (1.0 - sleep_aware.avg_manifolds_per_iteration / baseline.avg_manifolds_per_iteration)
             : 0.0;
-    const double point_reduction_sleep_aware =
+    const f64 point_reduction_sleep_aware =
         (baseline.avg_points_per_iteration > 0.0)
             ? (1.0 - sleep_aware.avg_points_per_iteration / baseline.avg_points_per_iteration)
             : 0.0;
-    const double pair_reduction_incremental =
+    const f64 pair_reduction_incremental =
         (baseline.avg_pairs_per_iteration > 0.0)
             ? (1.0 - incremental.avg_pairs_per_iteration / baseline.avg_pairs_per_iteration)
             : 0.0;
-    const double manifold_reduction_incremental =
+    const f64 manifold_reduction_incremental =
         (baseline.avg_manifolds_per_iteration > 0.0)
             ? (1.0 - incremental.avg_manifolds_per_iteration / baseline.avg_manifolds_per_iteration)
             : 0.0;
-    const double point_reduction_incremental =
+    const f64 point_reduction_incremental =
         (baseline.avg_points_per_iteration > 0.0)
             ? (1.0 - incremental.avg_points_per_iteration / baseline.avg_points_per_iteration)
             : 0.0;
@@ -666,9 +592,8 @@ int main(int argc, char **argv) {
                                 baseline_median_us, baseline_p95_us, sleep_aware_median_us, sleep_aware_p95_us,
                                 incremental_median_us, incremental_p95_us, speedup_sleep_aware, speedup_incremental,
                                 incremental_speedup_vs_sleep_aware, pair_reduction_sleep_aware,
-                                manifold_reduction_sleep_aware, point_reduction_sleep_aware,
-                                pair_reduction_incremental, manifold_reduction_incremental,
-                                point_reduction_incremental)) {
+                                manifold_reduction_sleep_aware, point_reduction_sleep_aware, pair_reduction_incremental,
+                                manifold_reduction_incremental, point_reduction_incremental)) {
             return 1;
         }
     }
