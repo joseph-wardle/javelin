@@ -234,6 +234,11 @@ struct PhysicsSystem final {
         u32 chunk_size{};
     };
 
+    struct BroadPhaseDispatch final {
+        u32 worker_count{};
+        u32 chunk_size{};
+    };
+
     Scene *scene_{nullptr};
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
@@ -262,6 +267,15 @@ struct PhysicsSystem final {
     static constexpr u32 kQueryStackReserveFactor = 2;
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
+    // Broad-phase dispatch policy:
+    // - below kBroadPhaseParallelMinQueries, run single-threaded to avoid
+    //   scheduling overhead dominating useful work.
+    // - kBroadPhaseTargetQueriesPerWorker sets the desired work size per worker.
+    // - kBroadPhaseMinQueriesPerWorker is a hard lower bound to avoid tiny
+    //   chunks.
+    static constexpr u32 kBroadPhaseParallelMinQueries = 64u;
+    static constexpr u32 kBroadPhaseTargetQueriesPerWorker = 16u;
+    static constexpr u32 kBroadPhaseMinQueriesPerWorker = 8u;
     // Sleep parameters: a dynamic body is marked asleep once its sleep_timer
     // reaches kSleepTickThreshold consecutive ticks with both speeds below
     // threshold.
@@ -305,6 +319,7 @@ struct PhysicsSystem final {
     std::vector<ContactManifold> manifolds_{};
     std::vector<ContactManifold> next_manifolds_{};
     u32 broad_phase_worker_count_{0};
+    u32 broad_phase_worker_reserve_count_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<std::thread> broad_phase_threads_{};
     std::vector<usize> broad_phase_pair_offsets_{};
@@ -364,6 +379,31 @@ struct PhysicsSystem final {
 
     [[nodiscard]] static i64 tracy_counter_i64_(const u64 value) noexcept {
         return static_cast<i64>(std::min<u64>(value, static_cast<u64>(std::numeric_limits<i64>::max())));
+    }
+
+    [[nodiscard]] static u32 ceil_div_u32_(const u32 numerator, const u32 denominator) noexcept {
+        return (numerator + denominator - 1u) / denominator;
+    }
+
+    [[nodiscard]] static BroadPhaseDispatch choose_broad_phase_dispatch_(const u32 query_dynamic_count,
+                                                                         const u32 max_worker_count) noexcept {
+        if (query_dynamic_count == 0u || max_worker_count == 0u) {
+            return BroadPhaseDispatch{};
+        }
+
+        if (max_worker_count == 1u || query_dynamic_count < kBroadPhaseParallelMinQueries) {
+            return BroadPhaseDispatch{.worker_count = 1u, .chunk_size = query_dynamic_count};
+        }
+
+        const u32 worker_cap_by_chunk = std::max<u32>(1u, query_dynamic_count / kBroadPhaseMinQueriesPerWorker);
+        const u32 worker_cap = std::min(max_worker_count, worker_cap_by_chunk);
+        const u32 worker_target =
+            std::max<u32>(1u, ceil_div_u32_(query_dynamic_count, kBroadPhaseTargetQueriesPerWorker));
+        const u32 worker_count = std::clamp(worker_target, 1u, worker_cap);
+        return BroadPhaseDispatch{
+            .worker_count = worker_count,
+            .chunk_size = ceil_div_u32_(query_dynamic_count, worker_count),
+        };
     }
 
     [[nodiscard]] u64 next_completed_step_id_() const noexcept {
@@ -1543,19 +1583,37 @@ struct PhysicsSystem final {
             broad_phase_pair_offsets_.reserve(static_cast<usize>(broad_phase_worker_count_) + 1u);
             start_broad_phase_workers_();
         }
+        if (count <= broad_phase_worker_reserve_count_) {
+            return;
+        }
         for (auto &worker : broad_phase_workers_) {
             worker.reserve(count, kQueryStackReserveFactor, kPairReserveFactor);
         }
+        broad_phase_worker_reserve_count_ = count;
     }
 
     void run_broad_phase_queries_(std::span<const u32> query_dynamic_ids, std::span<const u8> query_dynamic_mask) {
         ZoneScopedN("Physics broad phase parallel");
         candidate_pairs_.clear();
         const u32 query_dynamic_count = static_cast<u32>(query_dynamic_ids.size());
-        if (query_dynamic_count == 0) {
+        if (query_dynamic_count == 0u) {
+            TracyPlot("physics_broad_phase_workers_used", static_cast<i64>(0));
+            TracyPlot("physics_broad_phase_chunk_size", static_cast<i64>(0));
             return;
         }
+#ifndef NDEBUG
+        if (broad_phase_worker_count_ == 0u || broad_phase_workers_.empty()) {
+            log::error(physics, "Broad phase workers not initialized before query dispatch");
+            std::terminate();
+        }
+#endif
 
+        const BroadPhaseDispatch dispatch =
+            choose_broad_phase_dispatch_(query_dynamic_count, broad_phase_worker_count_);
+        const u32 worker_count = dispatch.worker_count;
+        const u32 chunk_size = dispatch.chunk_size;
+        TracyPlot("physics_broad_phase_workers_used", static_cast<i64>(worker_count));
+        TracyPlot("physics_broad_phase_chunk_size", static_cast<i64>(chunk_size));
         // query_dynamic_ids are built in ascending order; assert in debug for
         // safety.
 #ifndef NDEBUG
@@ -1567,9 +1625,6 @@ struct PhysicsSystem final {
 
         // Worker pool: fixed thread count, contiguous chunks, deterministic merge
         // by chunk order.
-        const u32 worker_count = std::min(broad_phase_worker_count_, query_dynamic_count);
-        const u32 chunk_size = (query_dynamic_count + worker_count - 1u) / worker_count;
-
         const BroadPhaseJob job{
             .query_dynamic_ids = query_dynamic_ids,
             .query_dynamic_mask = query_dynamic_mask,
@@ -1599,21 +1654,27 @@ struct PhysicsSystem final {
 
         {
             ZoneScopedN("Physics broad phase merge");
-            // Deterministic output: concatenate chunks in increasing worker index.
-            broad_phase_pair_offsets_.resize(static_cast<usize>(worker_count) + 1u);
-            broad_phase_pair_offsets_[0] = 0;
-            for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
-                const usize count = broad_phase_workers_[worker_index].pairs.size();
-                broad_phase_pair_offsets_[static_cast<usize>(worker_index) + 1u] =
-                    broad_phase_pair_offsets_[worker_index] + count;
-            }
+            if (worker_count == 1u) {
+                const auto &pairs = broad_phase_workers_[0].pairs;
+                candidate_pairs_.assign(pairs.begin(), pairs.end());
+            } else {
+                // Deterministic output: concatenate chunks in increasing worker
+                // index.
+                broad_phase_pair_offsets_.resize(static_cast<usize>(worker_count) + 1u);
+                broad_phase_pair_offsets_[0] = 0;
+                for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
+                    const usize count = broad_phase_workers_[worker_index].pairs.size();
+                    broad_phase_pair_offsets_[static_cast<usize>(worker_index) + 1u] =
+                        broad_phase_pair_offsets_[worker_index] + count;
+                }
 
-            const usize total_pairs = broad_phase_pair_offsets_[worker_count];
-            candidate_pairs_.resize(total_pairs);
-            for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
-                auto &src = broad_phase_workers_[worker_index].pairs;
-                const usize offset = broad_phase_pair_offsets_[worker_index];
-                std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
+                const usize total_pairs = broad_phase_pair_offsets_[worker_count];
+                candidate_pairs_.resize(total_pairs);
+                for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
+                    auto &src = broad_phase_workers_[worker_index].pairs;
+                    const usize offset = broad_phase_pair_offsets_[worker_index];
+                    std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
+                }
             }
         }
         normalize_and_sort_candidate_pairs_();
