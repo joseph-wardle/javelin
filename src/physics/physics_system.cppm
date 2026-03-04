@@ -26,8 +26,10 @@ import javelin.scene.shapes;
 
 namespace javelin::detail {
 // Pair-wise material combination rules for contact resolution:
-// - restitution: geometric mean preserves the elastic range [0,1] symmetrically.
-// - friction: minimum gives the softer of the two surfaces (conservative slip threshold).
+// - restitution: geometric mean preserves the elastic range [0,1]
+// symmetrically.
+// - friction: minimum gives the softer of the two surfaces (conservative slip
+// threshold).
 [[nodiscard]] inline f32 combined_restitution(const f32 a, const f32 b) noexcept { return std::sqrt(a * b); }
 [[nodiscard]] inline f32 combined_friction(const f32 a, const f32 b) noexcept { return std::min(a, b); }
 } // namespace javelin::detail
@@ -210,7 +212,8 @@ struct PhysicsSystem final {
     }
 
   private:
-    // Per-worker broad phase storage: scratch query buffers and local pair output.
+    // Per-worker broad phase storage: scratch query buffers and local pair
+    // output.
     struct BroadPhaseWorker final {
         BroadPhaseScratch scratch{};
         std::vector<BodyPair> pairs{};
@@ -258,9 +261,11 @@ struct PhysicsSystem final {
     static constexpr u32 kPairReserveFactor = 8;
     static constexpr u32 kManifoldReserveFactor = 4;
     // Sleep parameters: a dynamic body is marked asleep once its sleep_timer
-    // reaches kSleepTickThreshold consecutive ticks with both speeds below threshold.
+    // reaches kSleepTickThreshold consecutive ticks with both speeds below
+    // threshold.
     //
-    // kSleepTickThreshold        — 60 ticks = 1 s at 60 Hz.  Long enough to exclude
+    // kSleepTickThreshold        — 60 ticks = 1 s at 60 Hz.  Long enough to
+    // exclude
     //   transient slow moments (e.g., apex of a bouncing arc) without delaying
     //   sleep detection on a genuinely settled stack.
     //
@@ -292,7 +297,8 @@ struct PhysicsSystem final {
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
-    // Double-buffered manifold storage: current frame and next-frame write target.
+    // Double-buffered manifold storage: current frame and next-frame write
+    // target.
     std::vector<ContactManifold> manifolds_{};
     std::vector<ContactManifold> next_manifolds_{};
     u32 broad_phase_worker_count_{0};
@@ -309,10 +315,12 @@ struct PhysicsSystem final {
     std::vector<u32> static_ids_{};
     std::vector<u32> dynamic_ids_{};
     std::vector<Aabb> bounds_cache_{};
-    // Per-manifold combined material properties, recomputed each tick before solve.
+    // Per-manifold combined material properties, recomputed each tick before
+    // solve.
     std::vector<f32> manifold_restitution_cache_{};
     std::vector<f32> manifold_friction_cache_{};
-    // Byte mask indexed by body id; set when body participates in any active contact this tick.
+    // Byte mask indexed by body id; set when body participates in any active
+    // contact this tick.
     std::vector<u8> contact_activity_mask_{};
     ContactDebugChannel contact_debug_channel_{};
     AabbDebugChannel aabb_debug_channel_{};
@@ -406,7 +414,7 @@ struct PhysicsSystem final {
         }
         // Stage 0: ensure frame scratch and previous-manifold lookup are ready.
         ensure_capacity_(count);
-        prepare_manifold_lookup_();
+        prepare_previous_manifolds_();
 
         // Stage 1: external forces and per-body bounds for broad phase.
         integrate_gravity_velocity(view.velocity, view.inv_mass, view.asleep, gravity, dt);
@@ -455,7 +463,8 @@ struct PhysicsSystem final {
                     const Vec3 abs0{std::fabs(c0.x), std::fabs(c0.y), std::fabs(c0.z)};
                     const Vec3 abs1{std::fabs(c1.x), std::fabs(c1.y), std::fabs(c1.z)};
                     const Vec3 abs2{std::fabs(c2.x), std::fabs(c2.y), std::fabs(c2.z)};
-                    const Vec3 extents = abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
+                    const Vec3 extents =
+                        abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
                     const Vec3 center = view.position[i];
                     bounds_cache_[i] = Aabb{center - extents, center + extents};
                 } break;
@@ -509,7 +518,8 @@ struct PhysicsSystem final {
 
         // Stage 4: solve constraints, damp, integrate, and publish transforms.
         // Pre-compute per-manifold combined material properties.
-        // Body b == kInvalidBody (ground plane) uses material id 0 (the default material).
+        // Body b == kInvalidBody (ground plane) uses material id 0 (the default
+        // material).
         manifold_restitution_cache_.resize(manifold_count);
         manifold_friction_cache_.resize(manifold_count);
         {
@@ -525,9 +535,10 @@ struct PhysicsSystem final {
                     detail::combined_friction(view.material_friction[mat_a], view.material_friction[mat_b]);
             }
         }
-        // Wake sleeping bodies before solving so just-woken bodies are solved on this tick.
-        // contact_activity_mask_ is rebuilt here for use by update_sleep_timers_ later.
-        // Only awake dynamic neighbours propagate wakes; ground and static bodies do not.
+        // Wake sleeping bodies before solving so just-woken bodies are solved on
+        // this tick. contact_activity_mask_ is rebuilt here for use by
+        // update_sleep_timers_ later. Only awake dynamic neighbours propagate
+        // wakes; ground and static bodies do not.
         mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
         wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold>{manifolds_}, view.inv_mass, view.asleep,
                                             view.sleep_timer);
@@ -542,13 +553,14 @@ struct PhysicsSystem final {
         apply_linear_damping(view.velocity, view.inv_mass, view.asleep, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, view.asleep, angular_damping, dt);
         // Clamp near-zero velocities on awake resting contacts to zero.
-        // Kills PGS residuals that would otherwise accumulate and destabilise tall stacks
-        // during the settling window (ticks 1..kSleepTickThreshold).
+        // Kills PGS residuals that would otherwise accumulate and destabilise tall
+        // stacks during the settling window (ticks 1..kSleepTickThreshold).
         clamp_resting_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass,
                                          std::span<const u8>{contact_activity_mask_.data(), count}, view.asleep,
                                          kSleepLinearSpeedThresholdSq, kSleepAngularSpeedThresholdSq);
-        // Update sleep timers after all velocity changes (solve + damping) are final,
-        // then mark any body whose timer has reached the threshold as asleep.
+        // Update sleep timers after all velocity changes (solve + damping) are
+        // final, then mark any body whose timer has reached the threshold as
+        // asleep.
         update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count}, view.velocity,
                              view.angular_velocity, view.inv_mass, view.sleep_timer, view.asleep);
         mark_bodies_asleep_(count, view.sleep_timer, view.asleep);
@@ -603,17 +615,20 @@ struct PhysicsSystem final {
     }
 
     // Prepares previous-frame manifold state for this tick.
-    // The previous manifold buffer is consumed as a pair-sorted contiguous stream.
-    void prepare_manifold_lookup_() {
-        ZoneScopedN("Physics prepare manifold lookup");
+    // manifolds_ is consumed as one pair-sorted contiguous stream by narrow phase
+    // and persistence refresh.
+    void prepare_previous_manifolds_() {
+        ZoneScopedN("Physics prepare previous manifolds");
         next_manifolds_.clear();
 #ifndef NDEBUG
         for (u32 i = 1; i < manifolds_.size(); ++i) {
             const ContactManifold &prev = manifolds_[i - 1u];
             const ContactManifold &curr = manifolds_[i];
             if (manifold_pair_less_(curr, prev)) {
-                log::error(physics, "Previous manifolds are not pair-sorted (index={} prev=({}, {}) curr=({}, {}))", i,
-                           prev.a, prev.b, curr.a, curr.b);
+                log::error(physics,
+                           "Previous manifolds are not pair-sorted (index={} prev=({}, "
+                           "{}) curr=({}, {}))",
+                           i, prev.a, prev.b, curr.a, curr.b);
                 std::terminate();
             }
             if (!manifold_pair_less_(prev, curr) && !manifold_pair_less_(curr, prev)) {
@@ -637,8 +652,10 @@ struct PhysicsSystem final {
             }
 #ifndef NDEBUG
             if (manifold.a >= body_count || (manifold.b != kInvalidBody && manifold.b >= body_count)) {
-                log::error(physics, "Contact activity mask manifold id out of range (a={} b={} count={})", manifold.a,
-                           manifold.b, body_count);
+                log::error(physics,
+                           "Contact activity mask manifold id out of range (a={} b={} "
+                           "count={})",
+                           manifold.a, manifold.b, body_count);
                 std::terminate();
             }
 #endif
@@ -650,10 +667,11 @@ struct PhysicsSystem final {
     }
 
     // Update per-body sleep timers using the velocity state for this tick.
-    // A body's timer increments when it is in contact AND both its linear and angular
-    // speeds are below the sleep thresholds; otherwise the timer resets to zero.
-    // Already-sleeping bodies are skipped: their timer is already at or above threshold.
-    // Static bodies (inv_mass == 0) are skipped: they are neither awake nor asleep.
+    // A body's timer increments when it is in contact AND both its linear and
+    // angular speeds are below the sleep thresholds; otherwise the timer resets
+    // to zero. Already-sleeping bodies are skipped: their timer is already at or
+    // above threshold. Static bodies (inv_mass == 0) are skipped: they are
+    // neither awake nor asleep.
     void update_sleep_timers_(const u32 count, std::span<const u8> in_contact, std::span<const Vec3> velocity,
                               std::span<const Vec3> angular_velocity, std::span<const f32> inv_mass,
                               std::span<u32> sleep_timer, std::span<const u8> asleep) noexcept {
@@ -673,15 +691,16 @@ struct PhysicsSystem final {
     }
 
     // Wake sleeping bodies whose manifolds contain an awake dynamic contact.
-    // Ground (kInvalidBody) and static bodies (inv_mass == 0) do not propagate wakes:
-    // a body resting on a static surface should stay asleep.
-    // Clears both asleep_ and sleep_timer_ so the body must re-earn sleep from scratch.
+    // Ground (kInvalidBody) and static bodies (inv_mass == 0) do not propagate
+    // wakes: a body resting on a static surface should stay asleep. Clears both
+    // asleep_ and sleep_timer_ so the body must re-earn sleep from scratch.
     // Called BEFORE the solver so just-woken bodies are solved on the same tick.
     //
-    // Note: wake propagation is single-pass and manifold-order-dependent.  In a chain
-    // A(sleep)–B(sleep)–C(awake), if the A–B manifold is processed before B–C, B is
-    // still asleep when A is checked, so A wakes one tick later than B.  This one-tick
-    // lag is imperceptible and avoids an O(manifolds × depth) graph traversal.
+    // Note: wake propagation is single-pass and manifold-order-dependent.  In a
+    // chain A(sleep)–B(sleep)–C(awake), if the A–B manifold is processed before
+    // B–C, B is still asleep when A is checked, so A wakes one tick later than B.
+    // This one-tick lag is imperceptible and avoids an O(manifolds × depth) graph
+    // traversal.
     void wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold> manifolds, std::span<const f32> inv_mass,
                                              std::span<u8> asleep, std::span<u32> sleep_timer) noexcept {
         ZoneScopedN("Physics wake sleeping bodies");
@@ -705,9 +724,10 @@ struct PhysicsSystem final {
     }
 
     // Mark bodies asleep once their sleep timer has reached the threshold.
-    // Only transitions awake → asleep; wake-on-new-contact is in wake_sleeping_bodies_with_contacts_.
-    // Static bodies are already excluded from update_sleep_timers_ so their
-    // timer stays zero and they are never marked asleep here.
+    // Only transitions awake → asleep; wake-on-new-contact is in
+    // wake_sleeping_bodies_with_contacts_. Static bodies are already excluded
+    // from update_sleep_timers_ so their timer stays zero and they are never
+    // marked asleep here.
     void mark_bodies_asleep_(const u32 count, std::span<const u32> sleep_timer, std::span<u8> asleep) noexcept {
         ZoneScopedN("Physics mark bodies asleep");
         for (u32 i = 0; i < count; ++i) {
@@ -773,9 +793,10 @@ struct PhysicsSystem final {
     }
 
     // Copies bounds_cache_ into the aabb_debug_channel_.
-    // bounds_cache_ holds tight per-body AABBs computed from pre-integration positions
-    // at the start of this tick.  The one-tick positional lag relative to published
-    // poses is imperceptible at 60 Hz and avoids recomputing bounds a second time.
+    // bounds_cache_ holds tight per-body AABBs computed from pre-integration
+    // positions at the start of this tick.  The one-tick positional lag relative
+    // to published poses is imperceptible at 60 Hz and avoids recomputing bounds
+    // a second time.
     void publish_aabb_debug_snapshot_(const u32 count, const u64 step_id) {
         ZoneScopedN("Physics publish AABB debug");
         AabbDebugWrite out = aabb_debug_channel_.write_aabbs(count);
@@ -801,7 +822,12 @@ struct PhysicsSystem final {
         return lhs.b < rhs.b;
     }
 
-    // Canonicalizes pair order and removes duplicates to keep narrow phase deterministic.
+    [[nodiscard]] static bool manifold_pair_equal_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
+        return lhs.a == rhs.a && lhs.b == rhs.b;
+    }
+
+    // Canonicalizes pair order and removes duplicates to keep narrow phase
+    // deterministic.
     void normalize_and_sort_candidate_pairs_() {
         ZoneScopedN("Physics normalize candidate pairs");
         if (candidate_pairs_.empty()) {
@@ -936,7 +962,8 @@ struct PhysicsSystem final {
         }
     }
 
-    // Drops cached impulses when anchor drift exceeds thresholds in the current manifold frame.
+    // Drops cached impulses when anchor drift exceeds thresholds in the current
+    // manifold frame.
     [[nodiscard]] bool should_drop_persisted_point_(std::span<const Vec3> position, std::span<const Quat> orientation,
                                                     const ContactManifold &manifold, const ContactPoint &next_point,
                                                     const ContactPoint &previous_point) const noexcept {
@@ -982,38 +1009,42 @@ struct PhysicsSystem final {
                                          const ContactManifold &previous_manifold) const {
 #ifndef NDEBUG
         if (next_manifold.point_count > kMaxManifoldPoints || previous_manifold.point_count > kMaxManifoldPoints) {
-            log::error(physics, "Invalid manifold point_count during persistence refresh (next={} previous={})",
+            log::error(physics,
+                       "Invalid manifold point_count during persistence refresh "
+                       "(next={} previous={})",
                        next_manifold.point_count, previous_manifold.point_count);
             std::terminate();
         }
 #endif
+        const u32 next_point_count = next_manifold.point_count;
+        const u32 previous_point_count = previous_manifold.point_count;
         const bool manifold_has_body_b = next_manifold.b != kInvalidBody;
-        std::array<bool, kMaxManifoldPoints> previous_used{};
+        u8 previous_used_mask = 0u;
+        const u8 all_previous_used_mask = static_cast<u8>((1u << previous_point_count) - 1u);
 
-        for (u32 i = 0; i < next_manifold.point_count; ++i) {
+        for (u32 i = 0; i < next_point_count; ++i) {
             reset_point_cache_(next_manifold.points[i]);
         }
 
-        // Match order is deterministic: feature id pass first, then local-anchor fallback.
+        // Match order is deterministic: feature id pass first, then local-anchor
+        // fallback.
         auto try_match_point = [&](const u32 next_index, const bool match_feature_first) {
             ContactPoint &next_point = next_manifold.points[next_index];
-            const bool next_has_feature = next_point.feature_id != kInvalidContactFeature;
-            if (match_feature_first && !next_has_feature) {
+            const u32 next_feature_id = next_point.feature_id;
+            if (match_feature_first && next_feature_id == kInvalidContactFeature) {
                 return false;
             }
 
             u32 best_previous = kMaxManifoldPoints;
             f32 best_metric = std::numeric_limits<f32>::infinity();
-            for (u32 previous_index = 0; previous_index < previous_manifold.point_count; ++previous_index) {
-                if (previous_used[previous_index]) {
+            for (u32 previous_index = 0; previous_index < previous_point_count; ++previous_index) {
+                const u8 previous_bit = static_cast<u8>(1u << previous_index);
+                if ((previous_used_mask & previous_bit) != 0u) {
                     continue;
                 }
                 const ContactPoint &previous_point = previous_manifold.points[previous_index];
-                const bool previous_has_feature = previous_point.feature_id != kInvalidContactFeature;
-                if (match_feature_first) {
-                    if (!previous_has_feature || previous_point.feature_id != next_point.feature_id) {
-                        continue;
-                    }
+                if (match_feature_first && previous_point.feature_id != next_feature_id) {
+                    continue;
                 }
 
                 const f32 metric = local_anchor_match_distance_sq_(next_point, previous_point, manifold_has_body_b);
@@ -1039,14 +1070,20 @@ struct PhysicsSystem final {
             }
 
             copy_point_cache_(next_point, previous_point);
-            previous_used[best_previous] = true;
+            previous_used_mask |= static_cast<u8>(1u << best_previous);
             return true;
         };
 
-        for (u32 i = 0; i < next_manifold.point_count; ++i) {
+        for (u32 i = 0; i < next_point_count; ++i) {
+            if (previous_used_mask == all_previous_used_mask) {
+                return;
+            }
             static_cast<void>(try_match_point(i, true));
         }
-        for (u32 i = 0; i < next_manifold.point_count; ++i) {
+        for (u32 i = 0; i < next_point_count; ++i) {
+            if (previous_used_mask == all_previous_used_mask) {
+                return;
+            }
             if (next_manifold.points[i].persisted) {
                 continue;
             }
@@ -1054,30 +1091,90 @@ struct PhysicsSystem final {
         }
     }
 
-    // Refreshes per-point warm-start caches by matching next_manifolds_ against manifolds_.
-    // Matching order is deterministic and stats are exposed for diagnostics.
+    // Refreshes per-point warm-start caches by matching next_manifolds_ against
+    // manifolds_. Matching order is deterministic and stats are exposed for
+    // diagnostics.
     [[nodiscard]] PersistenceRefreshStats refresh_manifold_persistence_(std::span<const Vec3> position,
                                                                         std::span<const Quat> orientation) {
         ZoneScopedN("Physics refresh manifold persistence");
         PersistenceRefreshStats stats{
             .previous_point_count = contact_point_count_(manifolds_),
         };
-        u32 previous_index = 0u;
-        for (ContactManifold &next_manifold : next_manifolds_) {
-            stats.next_point_count += next_manifold.point_count;
-
-            while (previous_index < manifolds_.size() && manifold_pair_less_(manifolds_[previous_index], next_manifold)) {
-                ++previous_index;
-            }
-            if (previous_index >= manifolds_.size() || manifold_pair_less_(next_manifold, manifolds_[previous_index])) {
+        const u32 previous_count = manifolds_.size();
+        const u32 next_count = next_manifolds_.size();
+        auto reset_unmatched_next_range = [&](const u32 begin, const u32 end) {
+            for (u32 i = begin; i < end; ++i) {
+                ContactManifold &next_manifold = next_manifolds_[i];
+                stats.next_point_count += next_manifold.point_count;
                 reset_manifold_point_cache_(next_manifold);
+            }
+        };
+#ifndef NDEBUG
+        for (u32 i = 1; i < next_count; ++i) {
+            const ContactManifold &prev = next_manifolds_[i - 1u];
+            const ContactManifold &curr = next_manifolds_[i];
+            if (manifold_pair_less_(curr, prev)) {
+                log::error(physics,
+                           "Next manifolds are not pair-sorted (index={} prev=({}, {}) "
+                           "curr=({}, {}))",
+                           i, prev.a, prev.b, curr.a, curr.b);
+                std::terminate();
+            }
+            if (manifold_pair_equal_(curr, prev)) {
+                log::error(physics, "Duplicate next manifold pair (index={} pair=({}, {}))", i, curr.a, curr.b);
+                std::terminate();
+            }
+        }
+#endif
+        if (next_count == 0u) {
+            return stats;
+        }
+        if (previous_count == 0u) {
+            reset_unmatched_next_range(0u, next_count);
+            return stats;
+        }
+
+        const ContactManifold &previous_first = manifolds_.front();
+        const ContactManifold &previous_last = manifolds_.back();
+        const ContactManifold &next_first = next_manifolds_.front();
+        const ContactManifold &next_last = next_manifolds_.back();
+        const bool disjoint_pair_ranges =
+            manifold_pair_less_(previous_last, next_first) || manifold_pair_less_(next_last, previous_first);
+        if (disjoint_pair_ranges) {
+            reset_unmatched_next_range(0u, next_count);
+            return stats;
+        }
+
+        u32 next_index = static_cast<u32>(
+            std::lower_bound(next_manifolds_.begin(), next_manifolds_.end(), previous_first, manifold_pair_less_) -
+            next_manifolds_.begin());
+        reset_unmatched_next_range(0u, next_index);
+        if (next_index >= next_count) {
+            return stats;
+        }
+
+        u32 previous_index = static_cast<u32>(
+            std::lower_bound(manifolds_.begin(), manifolds_.end(), next_manifolds_[next_index], manifold_pair_less_) -
+            manifolds_.begin());
+        while (next_index < next_count && previous_index < previous_count) {
+            ContactManifold &next_manifold = next_manifolds_[next_index];
+            const ContactManifold &previous_manifold = manifolds_[previous_index];
+
+            if (manifold_pair_less_(previous_manifold, next_manifold)) {
+                ++previous_index;
                 continue;
             }
-            const ContactManifold &previous_manifold = manifolds_[previous_index];
+            stats.next_point_count += next_manifold.point_count;
+            if (manifold_pair_less_(next_manifold, previous_manifold)) {
+                reset_manifold_point_cache_(next_manifold);
+                ++next_index;
+                continue;
+            }
 #ifndef NDEBUG
-            if (previous_manifold.a != next_manifold.a || previous_manifold.b != next_manifold.b) {
+            if (!manifold_pair_equal_(previous_manifold, next_manifold)) {
                 log::error(physics,
-                           "Manifold pair mismatch during persistence refresh (next=({}, {}) previous=({}, {}))",
+                           "Manifold pair mismatch during persistence refresh "
+                           "(next=({}, {}) previous=({}, {}))",
                            next_manifold.a, next_manifold.b, previous_manifold.a, previous_manifold.b);
                 std::terminate();
             }
@@ -1089,7 +1186,10 @@ struct PhysicsSystem final {
             for (u32 i = 0; i < next_manifold.point_count; ++i) {
                 stats.matched_point_count += next_manifold.points[i].persisted ? 1u : 0u;
             }
+            ++previous_index;
+            ++next_index;
         }
+        reset_unmatched_next_range(next_index, next_count);
         stats.dropped_point_count = (stats.previous_point_count > stats.matched_point_count)
                                         ? (stats.previous_point_count - stats.matched_point_count)
                                         : 0u;
@@ -1126,7 +1226,8 @@ struct PhysicsSystem final {
         }
 #endif
 
-        // Worker pool: fixed thread count, contiguous chunks, deterministic merge by chunk order.
+        // Worker pool: fixed thread count, contiguous chunks, deterministic merge
+        // by chunk order.
         const u32 worker_count = std::min(broad_phase_worker_count_, dynamic_count);
         const u32 chunk_size = (dynamic_count + worker_count - 1u) / worker_count;
 
