@@ -239,6 +239,13 @@ struct PhysicsSystem final {
         u32 chunk_size{};
     };
 
+    struct HotPathCapacitySnapshot final {
+        usize candidate_pairs_capacity{};
+        usize manifold_capacity{};
+        usize manifold_material_capacity{};
+        usize broad_phase_worker_pair_capacity_sum{};
+    };
+
     Scene *scene_{nullptr};
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
@@ -320,6 +327,7 @@ struct PhysicsSystem final {
     std::vector<ContactManifold> next_manifolds_{};
     u32 broad_phase_worker_count_{0};
     u32 broad_phase_worker_reserve_count_{0};
+    usize broad_phase_worker_pair_reserve_hint_{0};
     std::vector<BroadPhaseWorker> broad_phase_workers_{};
     std::vector<std::thread> broad_phase_threads_{};
     std::vector<usize> broad_phase_pair_offsets_{};
@@ -352,6 +360,8 @@ struct PhysicsSystem final {
     // solve.
     std::vector<f32> manifold_restitution_cache_{};
     std::vector<f32> manifold_friction_cache_{};
+    usize candidate_pair_reserve_hint_{0};
+    usize manifold_reserve_hint_{0};
     // Byte mask indexed by body id; set when body participates in any active
     // contact or dynamic constraint this tick.
     std::vector<u8> activity_mask_{};
@@ -379,6 +389,22 @@ struct PhysicsSystem final {
 
     [[nodiscard]] static i64 tracy_counter_i64_(const u64 value) noexcept {
         return static_cast<i64>(std::min<u64>(value, static_cast<u64>(std::numeric_limits<i64>::max())));
+    }
+
+    [[nodiscard]] static usize grown_capacity_(const usize current_capacity, const usize required_capacity) noexcept {
+        if (required_capacity <= current_capacity) {
+            return current_capacity;
+        }
+        const usize base = std::max<usize>(current_capacity, 64u);
+        const usize grown = base + base / 2u;
+        return std::max(grown, required_capacity);
+    }
+
+    static void update_reserve_hint_(const usize observed_size, usize &reserve_hint) noexcept {
+        if (observed_size <= reserve_hint) {
+            return;
+        }
+        reserve_hint = grown_capacity_(reserve_hint, observed_size);
     }
 
     [[nodiscard]] static u32 ceil_div_u32_(const u32 numerator, const u32 denominator) noexcept {
@@ -410,6 +436,66 @@ struct PhysicsSystem final {
         // This tick is counted by the outer loop immediately after
         // simulate_one_fixed_tick_() returns true.
         return completed_sim_step_count_.load(std::memory_order_relaxed) + 1u;
+    }
+
+    void reserve_contact_pipeline_buffers_() {
+        if (candidate_pair_reserve_hint_ > candidate_pairs_.capacity()) {
+            candidate_pairs_.reserve(candidate_pair_reserve_hint_);
+        }
+        if (manifold_reserve_hint_ > manifolds_.capacity()) {
+            manifolds_.reserve(manifold_reserve_hint_);
+            next_manifolds_.reserve(manifold_reserve_hint_);
+            manifold_restitution_cache_.reserve(manifold_reserve_hint_);
+            manifold_friction_cache_.reserve(manifold_reserve_hint_);
+        }
+    }
+
+    void reserve_broad_phase_worker_pair_buffers_(const usize pair_capacity_hint) {
+        if (pair_capacity_hint <= broad_phase_worker_pair_reserve_hint_) {
+            return;
+        }
+        for (auto &worker : broad_phase_workers_) {
+            worker.pairs.reserve(pair_capacity_hint);
+        }
+        broad_phase_worker_pair_reserve_hint_ = pair_capacity_hint;
+    }
+
+    [[nodiscard]] HotPathCapacitySnapshot capture_hot_path_capacity_snapshot_() const noexcept {
+        HotPathCapacitySnapshot snapshot{};
+        snapshot.candidate_pairs_capacity = candidate_pairs_.capacity();
+        snapshot.manifold_capacity = manifolds_.capacity();
+        snapshot.manifold_material_capacity = manifold_restitution_cache_.capacity();
+        for (const auto &worker : broad_phase_workers_) {
+            snapshot.broad_phase_worker_pair_capacity_sum += worker.pairs.capacity();
+        }
+        return snapshot;
+    }
+
+    void publish_hot_path_capacity_growth_(const HotPathCapacitySnapshot &before) const noexcept {
+        const HotPathCapacitySnapshot after = capture_hot_path_capacity_snapshot_();
+        i64 growth_events = 0;
+        usize growth_bytes = 0;
+
+        const auto accumulate_growth = [&](const usize before_capacity, const usize after_capacity,
+                                           const usize elem_size) {
+            if (after_capacity <= before_capacity) {
+                return;
+            }
+            ++growth_events;
+            growth_bytes += (after_capacity - before_capacity) * elem_size;
+        };
+        accumulate_growth(before.candidate_pairs_capacity, after.candidate_pairs_capacity, sizeof(BodyPair));
+        accumulate_growth(before.manifold_capacity, after.manifold_capacity, sizeof(ContactManifold));
+        accumulate_growth(before.manifold_material_capacity, after.manifold_material_capacity, sizeof(f32) * 2u);
+        accumulate_growth(before.broad_phase_worker_pair_capacity_sum, after.broad_phase_worker_pair_capacity_sum,
+                          sizeof(BodyPair));
+
+        TracyPlot("physics_hot_capacity_growth_events", growth_events);
+        TracyPlot("physics_hot_capacity_growth_bytes", static_cast<i64>(growth_bytes));
+        TracyPlot("physics_candidate_pairs_capacity", static_cast<i64>(after.candidate_pairs_capacity));
+        TracyPlot("physics_manifold_capacity", static_cast<i64>(after.manifold_capacity));
+        TracyPlot("physics_broad_phase_worker_pair_capacity_sum",
+                  static_cast<i64>(after.broad_phase_worker_pair_capacity_sum));
     }
 
     // Sleeps only while paused and idle (no pending steps / no reset request).
@@ -472,6 +558,8 @@ struct PhysicsSystem final {
         }
         // Stage 0: ensure frame scratch and previous-manifold lookup are ready.
         ensure_capacity_(count);
+        reserve_contact_pipeline_buffers_();
+        const HotPathCapacitySnapshot hot_capacity_before = capture_hot_path_capacity_snapshot_();
         prepare_previous_manifolds_();
 
         // Stage 1: external forces and per-body bounds for broad phase.
@@ -553,6 +641,7 @@ struct PhysicsSystem final {
         broad_phase_update_dynamic_bvh(bvh_update_ids, dynamic_bvh_, bounds_cache_);
         // Read-only phase: query pairs from awake dynamics only.
         run_broad_phase_queries_(awake_dynamic_ids, std::span<const u8>{awake_dynamic_mask_.data(), count});
+        update_reserve_hint_(candidate_pairs_.size(), candidate_pair_reserve_hint_);
         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
 
         // Stage 3: narrow phase manifolds + warm-start persistence refresh.
@@ -568,6 +657,7 @@ struct PhysicsSystem final {
         {
             ZoneScopedN("Physics manifold statistics");
             manifold_count = static_cast<u32>(manifolds_.size());
+            update_reserve_hint_(manifold_count, manifold_reserve_hint_);
             contact_point_count = contact_point_count_(manifolds_);
             const f32 avg_points_per_manifold =
                 (manifold_count > 0u) ? (static_cast<f32>(contact_point_count) / static_cast<f32>(manifold_count))
@@ -654,6 +744,7 @@ struct PhysicsSystem final {
         aabb_debug_enabled_last_tick_ = publish_aabb_debug;
 
         publish_poses(view.poses, view.position, view.orientation, view.asleep, count);
+        publish_hot_path_capacity_growth_(hot_capacity_before);
         return true;
     }
 
@@ -695,6 +786,8 @@ struct PhysicsSystem final {
         next_manifolds_.reserve(manifold_reserve);
         manifold_restitution_cache_.reserve(manifold_reserve);
         manifold_friction_cache_.reserve(manifold_reserve);
+        update_reserve_hint_(candidate_pairs_.capacity(), candidate_pair_reserve_hint_);
+        update_reserve_hint_(manifolds_.capacity(), manifold_reserve_hint_);
         ensure_broad_phase_workers_(count);
     }
 
@@ -1584,12 +1677,16 @@ struct PhysicsSystem final {
             start_broad_phase_workers_();
         }
         if (count <= broad_phase_worker_reserve_count_) {
+            reserve_broad_phase_worker_pair_buffers_(broad_phase_worker_pair_reserve_hint_);
             return;
         }
         for (auto &worker : broad_phase_workers_) {
             worker.reserve(count, kQueryStackReserveFactor, kPairReserveFactor);
         }
         broad_phase_worker_reserve_count_ = count;
+        const usize pair_capacity_floor = static_cast<usize>(count) * kPairReserveFactor;
+        update_reserve_hint_(pair_capacity_floor, broad_phase_worker_pair_reserve_hint_);
+        reserve_broad_phase_worker_pair_buffers_(broad_phase_worker_pair_reserve_hint_);
     }
 
     void run_broad_phase_queries_(std::span<const u32> query_dynamic_ids, std::span<const u8> query_dynamic_mask) {
@@ -1654,9 +1751,11 @@ struct PhysicsSystem final {
 
         {
             ZoneScopedN("Physics broad phase merge");
+            usize max_worker_pair_count = 0u;
             if (worker_count == 1u) {
                 const auto &pairs = broad_phase_workers_[0].pairs;
                 candidate_pairs_.assign(pairs.begin(), pairs.end());
+                max_worker_pair_count = pairs.size();
             } else {
                 // Deterministic output: concatenate chunks in increasing worker
                 // index.
@@ -1664,6 +1763,7 @@ struct PhysicsSystem final {
                 broad_phase_pair_offsets_[0] = 0;
                 for (u32 worker_index = 0; worker_index < worker_count; ++worker_index) {
                     const usize count = broad_phase_workers_[worker_index].pairs.size();
+                    max_worker_pair_count = std::max(max_worker_pair_count, count);
                     broad_phase_pair_offsets_[static_cast<usize>(worker_index) + 1u] =
                         broad_phase_pair_offsets_[worker_index] + count;
                 }
@@ -1676,6 +1776,8 @@ struct PhysicsSystem final {
                     std::copy(src.begin(), src.end(), candidate_pairs_.data() + offset);
                 }
             }
+            update_reserve_hint_(max_worker_pair_count, broad_phase_worker_pair_reserve_hint_);
+            reserve_broad_phase_worker_pair_buffers_(broad_phase_worker_pair_reserve_hint_);
         }
         normalize_and_sort_candidate_pairs_();
 

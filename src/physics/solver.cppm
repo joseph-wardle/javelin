@@ -60,6 +60,15 @@ inline constexpr f32 kAngularCorrectionEpsSq = 1e-12f;
 // Below this threshold the contact is treated as resting and should not bounce.
 inline constexpr f32 kRestitutionVelocityThreshold = 1.0f;
 
+[[nodiscard]] inline usize grown_capacity(const usize current_capacity, const usize required_capacity) noexcept {
+    if (required_capacity <= current_capacity) {
+        return current_capacity;
+    }
+    const usize base = std::max<usize>(current_capacity, 64u);
+    const usize grown = base + base / 2u;
+    return std::max(grown, required_capacity);
+}
+
 [[nodiscard]] inline Vec3 to_body_space(const Quat q, const Vec3 v) noexcept { return rotate(inverse_unit(q), v); }
 
 [[nodiscard]] inline Vec3 to_world_space(const Quat q, const Vec3 v) noexcept { return rotate(q, v); }
@@ -193,7 +202,7 @@ struct SolverPointStreams final {
     std::vector<f32> velocity_bias{};
     std::vector<f32> friction_coeff{};
 
-    void clear_and_reserve(const usize capacity) {
+    [[nodiscard]] bool clear_and_reserve(const usize required_capacity) {
         contact_point.clear();
         body_a.clear();
         body_b.clear();
@@ -208,19 +217,25 @@ struct SolverPointStreams final {
         velocity_bias.clear();
         friction_coeff.clear();
 
-        contact_point.reserve(capacity);
-        body_a.reserve(capacity);
-        body_b.reserve(capacity);
-        normal.reserve(capacity);
-        tangent_u.reserve(capacity);
-        tangent_v.reserve(capacity);
-        r_a.reserve(capacity);
-        r_b.reserve(capacity);
-        normal_mass.reserve(capacity);
-        tangent_mass_u.reserve(capacity);
-        tangent_mass_v.reserve(capacity);
-        velocity_bias.reserve(capacity);
-        friction_coeff.reserve(capacity);
+        if (contact_point.capacity() >= required_capacity) {
+            return false;
+        }
+
+        const usize new_capacity = grown_capacity(contact_point.capacity(), required_capacity);
+        contact_point.reserve(new_capacity);
+        body_a.reserve(new_capacity);
+        body_b.reserve(new_capacity);
+        normal.reserve(new_capacity);
+        tangent_u.reserve(new_capacity);
+        tangent_v.reserve(new_capacity);
+        r_a.reserve(new_capacity);
+        r_b.reserve(new_capacity);
+        normal_mass.reserve(new_capacity);
+        tangent_mass_u.reserve(new_capacity);
+        tangent_mass_v.reserve(new_capacity);
+        velocity_bias.reserve(new_capacity);
+        friction_coeff.reserve(new_capacity);
+        return true;
     }
 
     [[nodiscard]] usize push_back(ContactPoint *point_ptr, const u32 a, const u32 b, const Vec3 normal_axis,
@@ -244,6 +259,7 @@ struct SolverPointStreams final {
     }
 
     [[nodiscard]] usize size() const noexcept { return contact_point.size(); }
+    [[nodiscard]] usize capacity() const noexcept { return contact_point.capacity(); }
 };
 
 [[nodiscard]] inline SolverPointStreams &solver_points_cache() {
@@ -256,10 +272,19 @@ void build_world_inv_inertia_cache(std::span<const f32> inv_mass, std::span<cons
     ZoneScopedN("Physics build world inv inertia cache");
     WorldInvInertiaCache &cache = world_inv_inertia_cache();
     const u32 body_count = static_cast<u32>(inv_mass.size());
+    bool cache_grew = false;
     if (cache.tensors.size() < body_count) {
+        const usize new_capacity = grown_capacity(cache.tensors.capacity(), body_count);
+        if (cache.tensors.capacity() < new_capacity) {
+            cache.tensors.reserve(new_capacity);
+            cache.valid.reserve(new_capacity);
+            cache_grew = true;
+        }
         cache.tensors.resize(body_count);
         cache.valid.resize(body_count);
     }
+    TracyPlot("physics_world_inv_inertia_capacity", static_cast<i64>(cache.tensors.capacity()));
+    TracyPlot("physics_world_inv_inertia_capacity_grew", cache_grew ? static_cast<i64>(1) : static_cast<i64>(0));
 
     constexpr Vec3 unit_x = Vec3{1.0f, 0.0f, 0.0f};
     constexpr Vec3 unit_y = Vec3{0.0f, 1.0f, 0.0f};
@@ -490,7 +515,10 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
     const detail::WorldInvInertiaCache &world_inv_inertia = detail::world_inv_inertia_view();
 
     detail::SolverPointStreams &solver_points = detail::solver_points_cache();
-    solver_points.clear_and_reserve(point_count);
+    const bool solver_points_capacity_grew = solver_points.clear_and_reserve(point_count);
+    TracyPlot("physics_solver_points_capacity", static_cast<i64>(solver_points.capacity()));
+    TracyPlot("physics_solver_points_capacity_grew",
+              solver_points_capacity_grew ? static_cast<i64>(1) : static_cast<i64>(0));
 
     // Pre-step: world anchors, tangent basis, effective masses, and velocity bias.
     // Skip manifolds where both participants are asleep: a body is only still
@@ -792,7 +820,14 @@ void solve_distance_constraints(std::span<Vec3> velocity, std::span<Vec3> angula
     // velocity iterations.
     std::vector<detail::ConstraintGeometry> &geom = detail::constraint_geometry_cache();
     geom.clear();
-    geom.reserve(constraints.size());
+    bool geom_capacity_grew = false;
+    if (geom.capacity() < constraints.size()) {
+        const usize new_capacity = detail::grown_capacity(geom.capacity(), constraints.size());
+        geom.reserve(new_capacity);
+        geom_capacity_grew = true;
+    }
+    TracyPlot("physics_constraint_geom_capacity", static_cast<i64>(geom.capacity()));
+    TracyPlot("physics_constraint_geom_capacity_grew", geom_capacity_grew ? static_cast<i64>(1) : static_cast<i64>(0));
 
     for (const DistanceConstraint &c : constraints) {
         // Skip constraints where both participants are asleep.  One-asleep constraints
