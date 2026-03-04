@@ -32,7 +32,7 @@ inline constexpr u32 kPositionSolverIterations = 4;
 // Degenerate-contact guards: skip impulse or correction when effective mass or dt
 // is below these epsilons to avoid divide-by-zero and NaN propagation.
 inline constexpr f32 kMassEps = 1e-8f;
-inline constexpr f32 kDtEps   = 1e-8f;
+inline constexpr f32 kDtEps = 1e-8f;
 
 // Baumgarte stabilisation injects a closing velocity to resolve penetration:
 //   kPenetrationBiasFactor — fraction of penetration depth resolved per tick (20%).
@@ -42,8 +42,8 @@ inline constexpr f32 kDtEps   = 1e-8f;
 //   kMaxPenetrationBias    — cap on injected correction velocity (m/s); prevents
 //                            explosive separation from very deep interpenetrations.
 inline constexpr f32 kPenetrationBiasFactor = 0.2f;
-inline constexpr f32 kPenetrationSlop       = 0.005f;
-inline constexpr f32 kMaxPenetrationBias    = 2.0f;
+inline constexpr f32 kPenetrationSlop = 0.005f;
+inline constexpr f32 kMaxPenetrationBias = 2.0f;
 
 // Position solver: one-shot geometric correction applied after the velocity pass.
 //   kPositionSlop             — 1 mm contacts are not corrected; avoids fighting
@@ -52,9 +52,9 @@ inline constexpr f32 kMaxPenetrationBias    = 2.0f;
 //                               under-relaxed to prevent oscillation.
 //   kAngularCorrectionEpsSq   — skip quaternion update when |Δθ|² < 1e-12
 //                               (i.e. |Δθ| < 1e-6 rad) to avoid normalising noise.
-inline constexpr f32 kPositionSlop            = 0.001f;
+inline constexpr f32 kPositionSlop = 0.001f;
 inline constexpr f32 kPositionCorrectionFactor = 0.2f;
-inline constexpr f32 kAngularCorrectionEpsSq  = 1e-12f;
+inline constexpr f32 kAngularCorrectionEpsSq = 1e-12f;
 
 // Restitution is only applied when the closing speed exceeds 1 m/s.
 // Below this threshold the contact is treated as resting and should not bounce.
@@ -90,7 +90,7 @@ struct SolverPoint final {
     f32 tangent_mass_u{};
     f32 tangent_mass_v{};
     f32 velocity_bias{};
-    f32 friction_coeff{};   // combined per-contact friction (min of two body materials)
+    f32 friction_coeff{}; // combined per-contact friction (min of two body materials)
 };
 
 [[nodiscard]] inline bool has_body_b(const SolverPoint &point) noexcept { return point.b != kInvalidBody; }
@@ -222,9 +222,9 @@ inline void apply_impulse_at_point(const SolverPoint &point, const Vec3 impulse,
         apply_inv_inertia(inv_inertia_body[point.b], orientation[point.b], cross(point.r_b, impulse));
 }
 
-inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoint &point,
-                                    std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
-                                    std::span<const f32> inv_mass, std::span<const Vec3> inv_inertia_body,
+inline void warm_start_solver_point(const SolverPoint &solver_point, ContactPoint &point, std::span<Vec3> velocity,
+                                    std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
+                                    std::span<const Vec3> inv_inertia_body,
                                     std::span<const Quat> orientation) noexcept {
     point.normal_impulse = std::max(point.normal_impulse, 0.0f);
     point.tangent_impulse = project_and_clamp_tangent_impulse(point.tangent_impulse, solver_point.normal,
@@ -261,13 +261,13 @@ inline constexpr f32 kConstraintAxisEpsSq = 1e-8f;
 struct ConstraintGeometry final {
     u32 a{};
     u32 b{};
-    Vec3 r_a{};          // world-space anchor offset from body A COM (metres)
-    Vec3 r_b{};          // world-space anchor offset from body B COM (metres)
-    Vec3 n{};            // unit axis from anchor_a toward anchor_b
-    Vec3 ra_cross_n{};   // r_a × n; precomputed to avoid cross in the inner loop
-    Vec3 rb_cross_n{};   // r_b × n; precomputed to avoid cross in the inner loop
-    f32 C_pos{};         // position violation: dist − rest_length (metres)
-    f32 k_eff{};         // 1 / (w_eff + alpha_tilde); effective impulse scale
+    Vec3 r_a{};        // world-space anchor offset from body A COM (metres)
+    Vec3 r_b{};        // world-space anchor offset from body B COM (metres)
+    Vec3 n{};          // unit axis from anchor_a toward anchor_b
+    Vec3 ra_cross_n{}; // r_a × n; precomputed to avoid cross in the inner loop
+    Vec3 rb_cross_n{}; // r_b × n; precomputed to avoid cross in the inner loop
+    f32 C_pos{};       // position violation: dist − rest_length (metres)
+    f32 k_eff{};       // 1 / (w_eff + alpha_tilde); effective impulse scale
 };
 
 [[nodiscard]] inline std::vector<ConstraintGeometry> &constraint_geometry_cache() {
@@ -289,7 +289,8 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
         velocity.size() != inv_inertia_body.size() || velocity.size() != orientation.size() ||
         velocity.size() != asleep.size()) {
         log::error(physics,
-                   "Velocity solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} orientation={} asleep={})",
+                   "Velocity solver span size mismatch (vel={} ang_vel={} inv_mass={} inv_inertia={} orientation={} "
+                   "asleep={})",
                    velocity.size(), angular_velocity.size(), inv_mass.size(), inv_inertia_body.size(),
                    orientation.size(), asleep.size());
         std::terminate();
@@ -393,8 +394,8 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
     // Warm start: apply accumulated normal impulse plus projected/clamped world-space friction impulse.
     for (const detail::SolverPoint &solver_point : solver_points) {
         ContactPoint &point = manifolds[solver_point.manifold_index].points[solver_point.point_index];
-        detail::warm_start_solver_point(solver_point, point, velocity, angular_velocity, inv_mass,
-                                        inv_inertia_body, orientation);
+        detail::warm_start_solver_point(solver_point, point, velocity, angular_velocity, inv_mass, inv_inertia_body,
+                                        orientation);
     }
 
     // Iterative projected Gauss-Seidel.
@@ -453,9 +454,10 @@ void solve_contact_penetration(std::span<Vec3> position, std::span<Quat> orienta
 #ifndef NDEBUG
     if (position.size() != orientation.size() || position.size() != inv_mass.size() ||
         position.size() != inv_inertia_body.size() || position.size() != asleep.size()) {
-        log::error(physics,
-                   "Position solver span size mismatch (position={} orientation={} inv_mass={} inv_inertia={} asleep={})",
-                   position.size(), orientation.size(), inv_mass.size(), inv_inertia_body.size(), asleep.size());
+        log::error(
+            physics,
+            "Position solver span size mismatch (position={} orientation={} inv_mass={} inv_inertia={} asleep={})",
+            position.size(), orientation.size(), inv_mass.size(), inv_inertia_body.size(), asleep.size());
         std::terminate();
     }
 #endif
@@ -656,15 +658,15 @@ void solve_distance_constraints(std::span<Vec3> velocity, std::span<Vec3> angula
         }
 
         geom.push_back(detail::ConstraintGeometry{
-            .a          = c.body_a,
-            .b          = c.body_b,
-            .r_a        = r_a,
-            .r_b        = r_b,
-            .n          = n,
+            .a = c.body_a,
+            .b = c.body_b,
+            .r_a = r_a,
+            .r_b = r_b,
+            .n = n,
             .ra_cross_n = ra_cross_n,
             .rb_cross_n = rb_cross_n,
-            .C_pos      = C_pos,
-            .k_eff      = 1.0f / denom,
+            .C_pos = C_pos,
+            .k_eff = 1.0f / denom,
         });
     }
 

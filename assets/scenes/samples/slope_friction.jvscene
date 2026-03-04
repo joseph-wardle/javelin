@@ -1,0 +1,56 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# scene: slope friction demo — four slopes with identical geometry and angle.
+#
+# All cubes use high friction (μ=0.9 via material id=4) so lane friction controls motion.
+# Slopes vary from low to high friction using material ids 0..3 (different colors):
+#   slope_1 μ=0.05 (material 0), slope_2 μ=0.15 (material 1),
+#   slope_3 μ=0.25 (material 2), slope_4 μ=0.35 (material 3)
+#
+# Angle is fixed at 25° for every slope. Coulomb criterion: μ_combined >= tan(theta) to stay.
+# tan(25°)=0.466. Combined friction = min(cube_μ, slope_μ), so with cube_μ=0.9
+# each lane is limited by its slope friction. All are below tan(25°), so all slide.
+#
+#   μ=0.05 -> slides fastest
+#   μ=0.15 -> slides
+#   μ=0.25 -> slides
+#   μ=0.35 -> slides slowest
+#
+# Shared slope geometry (hx=3.0 hy=0.12 hz=0.8, theta=25°):
+#   Rotation around Z: oz=sin(-12.5°)=-0.21644, ow=cos(12.5°)=0.97630
+#   py chosen so low end sits ~0.25 m above y=0:
+#     py = hx*sin(theta) + hy*cos(theta) + 0.25 = 1.626
+#
+# Shared cube placement near uphill end:
+#   cx = -2.152, cy = 2.927
+scene version=1 units=m
+
+# physics_materials
+# ids 0..3 are also used for render colors; use low->high slope friction across these ids.
+physics_material id=0 restitution=0.2 friction=0.05
+physics_material id=1 restitution=0.2 friction=0.15
+physics_material id=2 restitution=0.2 friction=0.25
+physics_material id=3 restitution=0.3 friction=0.35
+physics_material id=4 restitution=0.1 friction=0.9
+
+# shapes
+shape id=ramp kind=box hx=3.0 hy=0.12 hz=0.8
+shape id=cube kind=box hx=0.15 hy=0.15 hz=0.15
+
+# Side-by-side touching layout in Z: center spacing is 1.6 m = 2*hz.
+#
+# 25° lane 1 (low friction) - slides
+body id=slope_1 shape=ramp motion=static material=0 mesh=0 px=0 py=1.626 pz=-2.4 ox=0 oy=0 oz=-0.21644 ow=0.97630
+body id=cube_1  shape=cube motion=dynamic material=4 mesh=0 px=-2.152 py=2.927 pz=-2.4
+
+# 25° lane 2 - slides
+body id=slope_2 shape=ramp motion=static material=1 mesh=0 px=0 py=1.626 pz=-0.8 ox=0 oy=0 oz=-0.21644 ow=0.97630
+body id=cube_2  shape=cube motion=dynamic material=4 mesh=0 px=-2.152 py=2.927 pz=-0.8
+
+# 25° lane 3 - slides
+body id=slope_3 shape=ramp motion=static material=2 mesh=0 px=0 py=1.626 pz=0.8 ox=0 oy=0 oz=-0.21644 ow=0.97630
+body id=cube_3  shape=cube motion=dynamic material=4 mesh=0 px=-2.152 py=2.927 pz=0.8
+
+# 25° lane 4 (high friction) - slides
+body id=slope_4 shape=ramp motion=static material=3 mesh=0 px=0 py=1.626 pz=2.4 ox=0 oy=0 oz=-0.21644 ow=0.97630
+body id=cube_4  shape=cube motion=dynamic material=4 mesh=0 px=-2.152 py=2.927 pz=2.4

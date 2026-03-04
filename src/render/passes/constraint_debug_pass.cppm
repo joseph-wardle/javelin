@@ -3,22 +3,51 @@ module;
 #include <glad/gl.h>
 #include <tracy/TracyOpenGL.hpp>
 
-export module javelin.render.passes.aabb_debug_pass;
+export module javelin.render.passes.constraint_debug_pass;
 
 import std;
 
 import javelin.core.logging;
 import javelin.core.types;
+import javelin.math.quat;
 import javelin.math.vec3;
-import javelin.physics.aabb;
-import javelin.physics.aabb_debug;
+import javelin.physics.constraint_types;
 import javelin.render.color;
 import javelin.render.render_context;
 import javelin.render.render_targets;
 import javelin.render.types;
+import javelin.scene.pose_channel;
 
 namespace javelin::detail {
-u32 compile_aabb_shader(const GLenum type, const std::string_view source) noexcept {
+
+constexpr std::string_view kConstraintDebugVertexShader = R"glsl(
+#version 460 core
+layout(location = 0) in vec3 a_position;
+layout(location = 1) in vec3 a_color;
+
+uniform mat4 u_view_proj;
+
+out vec3 v_color;
+
+void main() {
+    gl_Position = u_view_proj * vec4(a_position, 1.0);
+    v_color = a_color;
+}
+)glsl";
+
+constexpr std::string_view kConstraintDebugFragmentShader = R"glsl(
+#version 460 core
+in vec3 v_color;
+layout(location = 0) out vec4 frag_color;
+
+uniform float u_alpha;
+
+void main() {
+    frag_color = vec4(v_color, u_alpha);
+}
+)glsl";
+
+u32 compile_constraint_shader(const GLenum type, const std::string_view source) noexcept {
     const GLuint shader = glCreateShader(type);
     const char *src = source.data();
     const GLint len = static_cast<GLint>(source.size());
@@ -33,12 +62,12 @@ u32 compile_aabb_shader(const GLenum type, const std::string_view source) noexce
 
     std::array<char, 1024> info{};
     glGetShaderInfoLog(shader, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "AABB debug shader compile failed: {}", info.data());
+    log::error(render, "Constraint debug shader compile failed: {}", info.data());
     glDeleteShader(shader);
     return 0;
 }
 
-u32 link_aabb_program(const u32 vs, const u32 fs) noexcept {
+u32 link_constraint_program(const u32 vs, const u32 fs) noexcept {
     const GLuint program = glCreateProgram();
     glAttachShader(program, vs);
     glAttachShader(program, fs);
@@ -56,53 +85,34 @@ u32 link_aabb_program(const u32 vs, const u32 fs) noexcept {
 
     std::array<char, 1024> info{};
     glGetProgramInfoLog(program, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "AABB debug shader link failed: {}", info.data());
+    log::error(render, "Constraint debug shader link failed: {}", info.data());
     glDeleteProgram(program);
     glDeleteShader(vs);
     glDeleteShader(fs);
     return 0;
 }
-
-constexpr std::string_view kAabbDebugVertexShader = R"glsl(
-#version 460 core
-layout(location = 0) in vec3 a_position;
-layout(location = 1) in vec3 a_color;
-
-uniform mat4 u_view_proj;
-
-out vec3 v_color;
-
-void main() {
-    gl_Position = u_view_proj * vec4(a_position, 1.0);
-    v_color = a_color;
-}
-)glsl";
-
-constexpr std::string_view kAabbDebugFragmentShader = R"glsl(
-#version 460 core
-in vec3 v_color;
-layout(location = 0) out vec4 frag_color;
-
-uniform float u_alpha;
-
-void main() {
-    frag_color = vec4(v_color, u_alpha);
-}
-)glsl";
 } // namespace javelin::detail
 
 export namespace javelin {
 
-struct AabbDebugPass final {
+// Renders a line between the world-space anchor points of each distance constraint.
+//
+// Pipeline position: after WorldGridPass, before x-ray debug overlays.
+// Depth mode: x-ray (no depth test) — constraint wires remain visible through geometry
+//   so the full constraint topology can be inspected regardless of body occlusion.
+//
+// Rigid constraints (compliance = 0): icy blue-white — stiff rod.
+// Soft constraints  (compliance > 0): warm orange     — elastic spring.
+struct ConstraintDebugPass final {
     struct Settings final {
-        // Alpha of wireframe lines blended over the scene.
-        f32 alpha{0.75f};
+        // Alpha of constraint lines blended over the scene.
+        f32 alpha{0.85f};
     };
 
     Settings settings{};
 
     template <class Device> void init(Device &) {
-        log::info(render, "Initializing AABB debug pass");
+        log::info(render, "Initializing constraint debug pass");
         create_shader_();
         create_buffers_();
     }
@@ -110,28 +120,32 @@ struct AabbDebugPass final {
     template <class Device> void resize(Device &, Extent2D) {}
 
     template <class Device> void shutdown(Device &) {
-        log::info(render, "Shutting down AABB debug pass");
+        log::info(render, "Shutting down constraint debug pass");
         release_();
     }
 
     void execute(RenderContext &ctx) {
-        if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0 || !ctx.debug.draw_aabbs || ctx.aabbs.count == 0u) {
+        if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0 || !ctx.debug.draw_constraints ||
+            ctx.view.constraints.empty()) {
             return;
         }
         if (program_ == 0 || vao_ == 0 || vbo_ == 0) {
             return;
         }
 
-        ZoneScopedN("AabbDebugPass");
-        TracyGpuZone("AabbDebugPass");
+        ZoneScopedN("ConstraintDebugPass");
+        TracyGpuZone("ConstraintDebugPass");
 
-        build_aabb_vertices_(ctx.aabbs);
+        build_vertices_(ctx);
+        if (line_vertex_count_ == 0) {
+            return;
+        }
         upload_vertices_();
 
         glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);
-        // X-ray overlay: drawn without depth test so physics bounds remain visible
-        // through opaque geometry, making shape/bound mismatches easy to spot.
+        // X-ray overlay: constraint wires stay visible through geometry so the
+        // full pendulum/chain topology is always readable.
         glDisable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
         glEnable(GL_BLEND);
@@ -142,7 +156,9 @@ struct AabbDebugPass final {
         glUniform1f(u_alpha_, settings.alpha);
 
         glBindVertexArray(vao_);
+        glLineWidth(kConstraintLineWidthPx);
         glDrawArrays(GL_LINES, 0, line_vertex_count_);
+        glLineWidth(1.0f);
         glBindVertexArray(0);
         glUseProgram(0);
 
@@ -156,59 +172,47 @@ struct AabbDebugPass final {
         Vec3 color{};
     };
 
-    // Amber wireframe — distinct from contact debug colors (red/green points, blue normals).
-    static constexpr Vec3 kAabbWireframeColor = linear_srgb_to_acescg(Vec3{0.9f, 0.7f, 0.1f});
+    // Rigid rod — icy blue-white; evokes a stiff wire or steel cable.
+    static constexpr Vec3 kRigidConstraintColor = linear_srgb_to_acescg(Vec3{0.75f, 0.90f, 1.00f});
+    // Elastic spring — warm orange; high contrast against the rigid color and the
+    // sleep/contact debug overlays.
+    static constexpr Vec3 kSoftConstraintColor = linear_srgb_to_acescg(Vec3{1.00f, 0.55f, 0.10f});
+    // Line width in pixels; slightly thicker than the default so wires are readable
+    // at a distance without being visually overwhelming.
+    static constexpr f32 kConstraintLineWidthPx = 2.0f;
 
-    // 12 edges × 2 endpoints = 24 vertices per AABB wireframe box.
-    static constexpr u32 kVerticesPerAabb = 24u;
+    void build_vertices_(const RenderContext &ctx) {
+        const usize constraint_count = ctx.view.constraints.size();
+        const u32 body_count = ctx.poses.count;
+        vertices_.clear();
+        vertices_.reserve(constraint_count * 2u);
 
-    // Each row is one edge: indices into the 8-corner local array below.
-    // Corners are numbered:
-    //   0:(min,min,min)  1:(max,min,min)  2:(max,max,min)  3:(min,max,min)  (near face, z=min)
-    //   4:(min,min,max)  5:(max,min,max)  6:(max,max,max)  7:(min,max,max)  (far  face, z=max)
-    static constexpr std::array<std::array<u8, 2>, 12> kEdges = {{
-        {0, 1},
-        {1, 2},
-        {2, 3},
-        {3, 0}, // near face bottom/top/left/right
-        {4, 5},
-        {5, 6},
-        {6, 7},
-        {7, 4}, // far  face bottom/top/left/right
-        {0, 4},
-        {1, 5},
-        {2, 6},
-        {3, 7}, // lateral edges connecting near to far
-    }};
-
-    void build_aabb_vertices_(const AabbDebugSnapshot &aabbs) {
-        const usize aabb_count = static_cast<usize>(aabbs.count);
-        vertices_.resize(aabb_count * kVerticesPerAabb);
-        line_vertex_count_ = static_cast<GLsizei>(vertices_.size());
-
-        usize write = 0;
-        for (usize i = 0; i < aabb_count; ++i) {
-            const Aabb &box = aabbs.aabbs[i];
-            const Vec3 corners[8] = {
-                {box.min.x, box.min.y, box.min.z}, {box.max.x, box.min.y, box.min.z}, {box.max.x, box.max.y, box.min.z},
-                {box.min.x, box.max.y, box.min.z}, {box.min.x, box.min.y, box.max.z}, {box.max.x, box.min.y, box.max.z},
-                {box.max.x, box.max.y, box.max.z}, {box.min.x, box.max.y, box.max.z},
-            };
-            for (const std::array<u8, 2> &edge : kEdges) {
-                vertices_[write++] = Vertex{.position = corners[edge[0]], .color = kAabbWireframeColor};
-                vertices_[write++] = Vertex{.position = corners[edge[1]], .color = kAabbWireframeColor};
+        for (const DistanceConstraint &c : ctx.view.constraints) {
+            if (c.body_a >= body_count || c.body_b >= body_count) {
+                continue;
             }
+            const PoseSample pose_a = sample_pose(ctx.poses, c.body_a, ctx.pose_alpha);
+            const PoseSample pose_b = sample_pose(ctx.poses, c.body_b, ctx.pose_alpha);
+
+            const Vec3 world_a = pose_a.position + rotate(pose_a.orientation, c.anchor_a);
+            const Vec3 world_b = pose_b.position + rotate(pose_b.orientation, c.anchor_b);
+
+            const Vec3 color = (c.compliance == 0.0f) ? kRigidConstraintColor : kSoftConstraintColor;
+            vertices_.push_back(Vertex{.position = world_a, .color = color});
+            vertices_.push_back(Vertex{.position = world_b, .color = color});
         }
+
+        line_vertex_count_ = static_cast<GLsizei>(vertices_.size());
     }
 
     void upload_vertices_() {
-        const usize needed_vertex_count = vertices_.size();
-        if (needed_vertex_count == 0u) {
+        const usize needed = vertices_.size();
+        if (needed == 0u) {
             return;
         }
 
-        if (needed_vertex_count > vertex_capacity_) {
-            vertex_capacity_ = std::max(needed_vertex_count, vertex_capacity_ + vertex_capacity_ / 2u + 1u);
+        if (needed > vertex_capacity_) {
+            vertex_capacity_ = std::max(needed, vertex_capacity_ + vertex_capacity_ / 2u + 1u);
             glBindBuffer(GL_ARRAY_BUFFER, vbo_);
             glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertex_capacity_ * sizeof(Vertex)), nullptr,
                          GL_DYNAMIC_DRAW);
@@ -216,8 +220,7 @@ struct AabbDebugPass final {
             glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         }
 
-        glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(needed_vertex_count * sizeof(Vertex)),
-                        vertices_.data());
+        glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(needed * sizeof(Vertex)), vertices_.data());
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
@@ -226,8 +229,8 @@ struct AabbDebugPass final {
             return;
         }
 
-        const u32 vs = detail::compile_aabb_shader(GL_VERTEX_SHADER, detail::kAabbDebugVertexShader);
-        const u32 fs = detail::compile_aabb_shader(GL_FRAGMENT_SHADER, detail::kAabbDebugFragmentShader);
+        const u32 vs = detail::compile_constraint_shader(GL_VERTEX_SHADER, detail::kConstraintDebugVertexShader);
+        const u32 fs = detail::compile_constraint_shader(GL_FRAGMENT_SHADER, detail::kConstraintDebugFragmentShader);
         if (vs == 0 || fs == 0) {
             if (vs != 0) {
                 glDeleteShader(vs);
@@ -238,7 +241,7 @@ struct AabbDebugPass final {
             return;
         }
 
-        program_ = detail::link_aabb_program(vs, fs);
+        program_ = detail::link_constraint_program(vs, fs);
         if (program_ == 0) {
             return;
         }

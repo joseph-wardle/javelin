@@ -79,7 +79,7 @@ namespace detail {
 }
 
 [[nodiscard]] inline f32 shape_inv_mass(const SceneFileBodyMotion motion, const ShapeData &shape,
-                                       const f32 density) noexcept {
+                                        const f32 density) noexcept {
     if (motion == SceneFileBodyMotion::static_body) {
         return 0.0f;
     }
@@ -111,8 +111,6 @@ struct Scene final {
       sized to cover max MaterialId.value across both body references and authored
       physics_material records; all entries default to kDefaultPhysicsMaterial, then
       authored records overwrite their specific indices.
-      Material 0 may be overridden at runtime via set_physics_material(0u, ...) so that
-      global ImGui sliders (restitution/friction) tune the fallback material live.
     - sleep state: sleep_timer_ counts consecutive ticks a body has been below the
       sleep velocity threshold; asleep_ (u8, 0=awake/1=asleep) is set once the timer
       reaches the threshold. Both reset to 0 on restore_simulation_from_initial_().
@@ -179,8 +177,10 @@ struct Scene final {
             .shape_index = std::span<const u32>{shape_index_.data(), count_},
             .shapes = std::span<const ShapeData>{shapes_.data(), shapes_.size()},
             .material = std::span<const MaterialId>{material_.data(), count_},
-            .material_restitution = std::span<const f32>{physics_material_restitution_.data(), physics_material_restitution_.size()},
-            .material_friction = std::span<const f32>{physics_material_friction_.data(), physics_material_friction_.size()},
+            .material_restitution =
+                std::span<const f32>{physics_material_restitution_.data(), physics_material_restitution_.size()},
+            .material_friction =
+                std::span<const f32>{physics_material_friction_.data(), physics_material_friction_.size()},
             .mesh = std::span<const MeshId>{mesh_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
             .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
@@ -206,26 +206,13 @@ struct Scene final {
             .mesh = std::span<const MeshId>{mesh_.data(), count_},
             .inv_mass = std::span<const f32>{inv_mass_.data(), count_},
             .inv_inertia = std::span<const Vec3>{inv_inertia_.data(), count_},
+            .constraints = std::span<const DistanceConstraint>{constraints_.data(), constraints_.size()},
             .position = std::span<const Vec3>{position_.data(), count_},
             .velocity = std::span<const Vec3>{velocity_.data(), count_},
             .orientation = std::span<const Quat>{orientation_.data(), count_},
             .angular_velocity = std::span<const Vec3>{angular_velocity_.data(), count_},
             .poses = poses_,
         };
-    }
-
-    // Updates restitution and friction for a physics material in the runtime pool by id.
-    // id=0 (the implicit default) is always present; ids beyond the pool size are ignored.
-    // Intended for live overrides: the global ImGui sliders call this each tick to push
-    // their current values into material 0, which any body with no explicit material uses.
-    // density is intentionally NOT updated here: it is baked into inv_mass_ at load time
-    // and has no effect on body masses at runtime.
-    void set_physics_material(const u32 id, const PhysicsMaterial material) noexcept {
-        if (id >= physics_material_restitution_.size()) {
-            return;
-        }
-        physics_material_restitution_[id] = material.restitution;
-        physics_material_friction_[id] = material.friction;
     }
 
     // Render reads this each frame for interpolation.
@@ -268,28 +255,33 @@ struct Scene final {
         // Material id=0 equal to kDefaultPhysicsMaterial with default density is implicit and skipped.
         const usize pool_size = physics_material_restitution_.size();
         auto is_default_material = [&](const u32 i) {
-            const f32 density = (i < physics_material_density_.size()) ? physics_material_density_[i]
-                                                                        : kDefaultMaterialDensity;
+            const f32 density =
+                (i < physics_material_density_.size()) ? physics_material_density_[i] : kDefaultMaterialDensity;
             return physics_material_restitution_[i] == kDefaultPhysicsMaterial.restitution &&
-                   physics_material_friction_[i]    == kDefaultPhysicsMaterial.friction    &&
-                   density                          == kDefaultMaterialDensity;
+                   physics_material_friction_[i] == kDefaultPhysicsMaterial.friction &&
+                   density == kDefaultMaterialDensity;
         };
         u32 authored_material_count = 0u;
         for (u32 i = 0; i < pool_size; ++i) {
-            if (!is_default_material(i)) { ++authored_material_count; }
+            if (!is_default_material(i)) {
+                ++authored_material_count;
+            }
         }
         out.reserve(static_cast<u32>(shapes_.size()), count_, authored_material_count,
                     static_cast<u32>(constraints_.size()));
         for (u32 i = 0; i < pool_size; ++i) {
-            if (is_default_material(i)) { continue; }
-            const f32 density = (i < physics_material_density_.size()) ? physics_material_density_[i]
-                                                                        : kDefaultMaterialDensity;
+            if (is_default_material(i)) {
+                continue;
+            }
+            const f32 density =
+                (i < physics_material_density_.size()) ? physics_material_density_[i] : kDefaultMaterialDensity;
             out.physics_materials.push_back(SceneFilePhysicsMaterial{
-                .id      = i,
-                .material = PhysicsMaterial{
-                    .restitution = physics_material_restitution_[i],
-                    .friction    = physics_material_friction_[i],
-                },
+                .id = i,
+                .material =
+                    PhysicsMaterial{
+                        .restitution = physics_material_restitution_[i],
+                        .friction = physics_material_friction_[i],
+                    },
                 .density = density,
             });
         }
@@ -439,7 +431,9 @@ struct Scene final {
         // Unlisted materials default to kDefaultMaterialDensity (1.0).
         auto material_density = [&](const u32 mat_id) -> f32 {
             for (const SceneFilePhysicsMaterial &mat : in.physics_materials) {
-                if (mat.id == mat_id) { return mat.density; }
+                if (mat.id == mat_id) {
+                    return mat.density;
+                }
             }
             return kDefaultMaterialDensity;
         };
@@ -505,7 +499,7 @@ struct Scene final {
         for (const SceneFilePhysicsMaterial &authored : in.physics_materials) {
             out.physics_material_restitution_[authored.id] = authored.material.restitution;
             out.physics_material_friction_[authored.id] = authored.material.friction;
-            out.physics_material_density_[authored.id]  = authored.density;
+            out.physics_material_density_[authored.id] = authored.density;
         }
 
         // Resolve constraint body string ids to scene body indices.
@@ -527,9 +521,8 @@ struct Scene final {
                 const auto b_it = body_lookup.find(c.body_b_id);
                 // Body refs were already cross-validated by SceneFile::load(); this is a safety net.
                 if (a_it == body_lookup.end() || b_it == body_lookup.end()) {
-                    log::error(scene,
-                               "Constraint '{}' references unknown body (body_a='{}' body_b='{}')",
-                               c.id, c.body_a_id, c.body_b_id);
+                    log::error(scene, "Constraint '{}' references unknown body (body_a='{}' body_b='{}')", c.id,
+                               c.body_a_id, c.body_b_id);
                     std::terminate();
                 }
                 out.constraints_.push_back(DistanceConstraint{
@@ -583,13 +576,12 @@ struct Scene final {
     std::vector<SceneFileBodyMotion> body_motion_{};
 
     // Authored render/material references (serialized values).
-    std::vector<MaterialId> material_{};   // per-body index into physics material pool
+    std::vector<MaterialId> material_{}; // per-body index into physics material pool
     std::vector<MeshId> mesh_{};
 
     // Physics material pool: indexed by MaterialId.value.
     // Always contains kDefaultPhysicsMaterial at index 0; sized to cover the
     // maximum MaterialId.value used by any body in the scene.
-    // restitution and friction are live-overrideable per tick via set_physics_material().
     // density is load-time only; it is stored here solely for the save round-trip.
     std::vector<f32> physics_material_restitution_{};
     std::vector<f32> physics_material_friction_{};
@@ -609,7 +601,7 @@ struct Scene final {
     // sleep_timer_: consecutive ticks the body's speed has stayed below the sleep threshold.
     // asleep_:      0 = awake, 1 = asleep; set once sleep_timer_ reaches the threshold.
     std::vector<u32> sleep_timer_{};
-    std::vector<u8>  asleep_{};
+    std::vector<u8> asleep_{};
 
     std::vector<Vec3> initial_position_{};
     std::vector<Vec3> initial_velocity_{};

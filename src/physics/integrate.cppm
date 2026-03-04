@@ -14,7 +14,7 @@ namespace javelin::detail {
 // (i.e., |ω| < 1e-6 rad/s).  Avoids computing a near-identity quaternion step
 // that would be normalised away immediately and contributes only floating-point noise.
 inline constexpr f32 kAngularVelocityEpsSq = 1e-12f;
-}
+} // namespace javelin::detail
 
 export namespace javelin {
 
@@ -23,8 +23,8 @@ export namespace javelin {
 // - inv_mass[i] == 0 marks static/kinematic bodies that are skipped.
 // - asleep[i] != 0 marks sleeping bodies that are skipped (functions that accept asleep).
 // - loops are single-pass, contiguous, and allocation-free.
-void integrate_gravity_velocity(std::span<Vec3> velocity, std::span<const f32> inv_mass,
-                                std::span<const u8> asleep, const f32 gravity, const f32 dt) noexcept {
+void integrate_gravity_velocity(std::span<Vec3> velocity, std::span<const f32> inv_mass, std::span<const u8> asleep,
+                                const f32 gravity, const f32 dt) noexcept {
     ZoneScopedN("Physics accumulate forces");
 #ifndef NDEBUG
     if (velocity.size() != inv_mass.size() || velocity.size() != asleep.size()) {
@@ -65,8 +65,7 @@ void integrate_positions(std::span<Vec3> position, std::span<const Vec3> velocit
                          std::span<const u8> asleep, const f32 dt) noexcept {
     ZoneScopedN("Physics integrate positions");
 #ifndef NDEBUG
-    if (position.size() != velocity.size() || position.size() != inv_mass.size() ||
-        position.size() != asleep.size()) {
+    if (position.size() != velocity.size() || position.size() != inv_mass.size() || position.size() != asleep.size()) {
         std::terminate();
     }
 #endif
@@ -145,8 +144,8 @@ void clamp_resting_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> 
     }
 }
 
-void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32> inv_mass,
-                           std::span<const u8> asleep, const f32 damping, const f32 dt) noexcept {
+void apply_angular_damping(std::span<Vec3> angular_velocity, std::span<const f32> inv_mass, std::span<const u8> asleep,
+                           const f32 damping, const f32 dt) noexcept {
     ZoneScopedN("Physics angular damping");
 #ifndef NDEBUG
     if (angular_velocity.size() != inv_mass.size() || angular_velocity.size() != asleep.size()) {

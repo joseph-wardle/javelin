@@ -21,7 +21,6 @@ import javelin.physics.publish;
 import javelin.physics.solve;
 import javelin.physics.types;
 import javelin.scene;
-import javelin.scene.physics_materials;
 import javelin.scene.physics_view;
 import javelin.scene.shapes;
 
@@ -59,8 +58,6 @@ struct PhysicsSystem final {
     }
 
     void set_gravity(const f32 gravity) noexcept { gravity_.store(gravity, std::memory_order_relaxed); }
-    void set_restitution(const f32 restitution) noexcept { restitution_.store(restitution, std::memory_order_relaxed); }
-    void set_friction(const f32 friction) noexcept { friction_.store(friction, std::memory_order_relaxed); }
     void set_linear_damping(const f32 damping) noexcept {
         linear_damping_.store(std::max(damping, 0.0f), std::memory_order_relaxed);
     }
@@ -110,22 +107,20 @@ struct PhysicsSystem final {
     }
 
     [[nodiscard]] f32 gravity() const noexcept { return gravity_.load(std::memory_order_relaxed); }
-    [[nodiscard]] f32 restitution() const noexcept { return restitution_.load(std::memory_order_relaxed); }
-    [[nodiscard]] f32 friction() const noexcept { return friction_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 linear_damping() const noexcept { return linear_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] f32 angular_damping() const noexcept { return angular_damping_.load(std::memory_order_relaxed); }
     [[nodiscard]] bool contact_debug_enabled() const noexcept {
         return contact_debug_enabled_.load(std::memory_order_acquire);
     }
-    [[nodiscard]] ContactDebugSnapshot contact_debug_snapshot() const noexcept { return contact_debug_channel_.snapshot(); }
+    [[nodiscard]] ContactDebugSnapshot contact_debug_snapshot() const noexcept {
+        return contact_debug_channel_.snapshot();
+    }
     [[nodiscard]] bool aabb_debug_enabled() const noexcept {
         return aabb_debug_enabled_.load(std::memory_order_acquire);
     }
     [[nodiscard]] AabbDebugSnapshot aabb_debug_snapshot() const noexcept { return aabb_debug_channel_.snapshot(); }
     [[nodiscard]] f32 last_tick_dt_ms() const noexcept { return last_tick_dt_ms_.load(std::memory_order_relaxed); }
-    [[nodiscard]] bool simulation_paused() const noexcept {
-        return simulation_paused_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] bool simulation_paused() const noexcept { return simulation_paused_.load(std::memory_order_acquire); }
     [[nodiscard]] u32 pending_simulation_steps() const noexcept {
         return pending_step_budget_.load(std::memory_order_acquire);
     }
@@ -143,8 +138,8 @@ struct PhysicsSystem final {
         }
 
         log::info(physics, "Starting physics system");
-        log::info(physics, "Params gravity={} restitution={} friction={} linear_damping={} angular_damping={}",
-                  gravity(), restitution(), friction(), linear_damping(), angular_damping());
+        log::info(physics, "Params gravity={} linear_damping={} angular_damping={}", gravity(), linear_damping(),
+                  angular_damping());
         thread_ = std::jthread([this](const std::stop_token &stop_token) {
             tracy::SetThreadName("Physics");
 
@@ -237,8 +232,6 @@ struct PhysicsSystem final {
     Scene *scene_{nullptr};
     std::jthread thread_{};
     std::atomic<f32> gravity_{-9.8f};
-    std::atomic<f32> restitution_{0.3f};
-    std::atomic<f32> friction_{0.2f};
     std::atomic<f32> linear_damping_{0.1f};
     std::atomic<f32> angular_damping_{0.4f};
     std::atomic<bool> contact_debug_enabled_{false};
@@ -280,11 +273,11 @@ struct PhysicsSystem final {
     //   < 0.10° per tick — sub-perceptual for any ordinary viewing distance.
     //
     // Squared variants pre-computed to avoid std::sqrt in the per-body hot loop.
-    static constexpr u32 kSleepTickThreshold            = 60u;
-    static constexpr f32 kSleepLinearSpeedThreshold     = 0.05f;
-    static constexpr f32 kSleepAngularSpeedThreshold    = 0.10f;
-    static constexpr f32 kSleepLinearSpeedThresholdSq   = kSleepLinearSpeedThreshold  * kSleepLinearSpeedThreshold;
-    static constexpr f32 kSleepAngularSpeedThresholdSq  = kSleepAngularSpeedThreshold * kSleepAngularSpeedThreshold;
+    static constexpr u32 kSleepTickThreshold = 60u;
+    static constexpr f32 kSleepLinearSpeedThreshold = 0.05f;
+    static constexpr f32 kSleepAngularSpeedThreshold = 0.10f;
+    static constexpr f32 kSleepLinearSpeedThresholdSq = kSleepLinearSpeedThreshold * kSleepLinearSpeedThreshold;
+    static constexpr f32 kSleepAngularSpeedThresholdSq = kSleepAngularSpeedThreshold * kSleepAngularSpeedThreshold;
     // Persistence thresholds in world-space meters.
     // A cached point is dropped when either threshold is exceeded.
     static constexpr f32 kPersistenceAnchorThreshold = 0.03f;
@@ -402,13 +395,6 @@ struct PhysicsSystem final {
 
         static_cast<void>(apply_pending_reset_());
 
-        // Material 0 is the fallback for any body with no explicit physics_material record.
-        // Push the live global slider values into it so ImGui edits take effect immediately.
-        scene_->set_physics_material(0u, PhysicsMaterial{
-            .restitution = restitution_.load(std::memory_order_relaxed),
-            .friction    = friction_.load(std::memory_order_relaxed),
-        });
-
         PhysicsView view = scene_->physics_view();
         const u32 count = view.count;
         const f32 dt = kFixedStepDtSeconds;
@@ -492,17 +478,17 @@ struct PhysicsSystem final {
                               view.inv_mass, candidate_pairs_, manifolds_, manifold_lookup_, next_manifolds_);
         sort_manifold_points_(next_manifolds_);
         sort_manifolds_(next_manifolds_);
-        const PersistenceRefreshStats persistence_stats = refresh_manifold_persistence_(view.position, view.orientation);
+        const PersistenceRefreshStats persistence_stats =
+            refresh_manifold_persistence_(view.position, view.orientation);
         manifolds_.swap(next_manifolds_);
         const u32 manifold_count = static_cast<u32>(manifolds_.size());
         const u32 contact_point_count = contact_point_count_(manifolds_);
         const f32 avg_points_per_manifold =
             (manifold_count > 0u) ? (static_cast<f32>(contact_point_count) / static_cast<f32>(manifold_count)) : 0.0f;
-        const f32 warm_start_match_rate =
-            (persistence_stats.next_point_count > 0u)
-                ? (static_cast<f32>(persistence_stats.matched_point_count) /
-                   static_cast<f32>(persistence_stats.next_point_count))
-                : 0.0f;
+        const f32 warm_start_match_rate = (persistence_stats.next_point_count > 0u)
+                                              ? (static_cast<f32>(persistence_stats.matched_point_count) /
+                                                 static_cast<f32>(persistence_stats.next_point_count))
+                                              : 0.0f;
         TracyPlot("physics_manifolds", static_cast<i64>(manifold_count));
         TracyPlot("physics_contact_points", static_cast<i64>(contact_point_count));
         TracyPlot("physics_avg_points_per_manifold", avg_points_per_manifold);
@@ -530,16 +516,13 @@ struct PhysicsSystem final {
         // contact_activity_mask_ is rebuilt here for use by update_sleep_timers_ later.
         // Only awake dynamic neighbours propagate wakes; ground and static bodies do not.
         mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
-        wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold>{manifolds_},
-                                            view.inv_mass, view.asleep, view.sleep_timer);
-        solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia, view.orientation,
-                                 manifolds_, dt,
-                                 std::span<const f32>{manifold_restitution_cache_},
-                                 std::span<const f32>{manifold_friction_cache_},
-                                 std::span<const u8>{view.asleep});
+        wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold>{manifolds_}, view.inv_mass, view.asleep,
+                                            view.sleep_timer);
+        solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
+                                 view.orientation, manifolds_, dt, std::span<const f32>{manifold_restitution_cache_},
+                                 std::span<const f32>{manifold_friction_cache_}, std::span<const u8>{view.asleep});
         solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
-                                  std::span<const ContactManifold>{manifolds_},
-                                  std::span<const u8>{view.asleep});
+                                  std::span<const ContactManifold>{manifolds_}, std::span<const u8>{view.asleep});
         solve_distance_constraints(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
                                    view.orientation, view.position, view.constraints, dt,
                                    std::span<const u8>{view.asleep});
@@ -549,20 +532,19 @@ struct PhysicsSystem final {
         // Kills PGS residuals that would otherwise accumulate and destabilise tall stacks
         // during the settling window (ticks 1..kSleepTickThreshold).
         clamp_resting_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass,
-                                         std::span<const u8>{contact_activity_mask_.data(), count},
-                                         view.asleep,
+                                         std::span<const u8>{contact_activity_mask_.data(), count}, view.asleep,
                                          kSleepLinearSpeedThresholdSq, kSleepAngularSpeedThresholdSq);
         // Update sleep timers after all velocity changes (solve + damping) are final,
         // then mark any body whose timer has reached the threshold as asleep.
-        update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count},
-                             view.velocity, view.angular_velocity, view.inv_mass, view.sleep_timer, view.asleep);
+        update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count}, view.velocity,
+                             view.angular_velocity, view.inv_mass, view.sleep_timer, view.asleep);
         mark_bodies_asleep_(count, view.sleep_timer, view.asleep);
         integrate_positions(view.position, view.velocity, view.inv_mass, view.asleep, dt);
         integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, view.asleep, dt);
         const bool publish_contact_debug = contact_debug_enabled_.load(std::memory_order_acquire);
         if (publish_contact_debug) {
-            publish_contact_debug_snapshot_(view.position, view.orientation, std::span<const ContactManifold>{manifolds_},
-                                            next_completed_step_id_());
+            publish_contact_debug_snapshot_(view.position, view.orientation,
+                                            std::span<const ContactManifold>{manifolds_}, next_completed_step_id_());
         } else if (contact_debug_enabled_last_tick_) {
             contact_debug_channel_.publish_empty(next_completed_step_id_());
         }
@@ -662,7 +644,7 @@ struct PhysicsSystem final {
             if (inv_mass[i] == 0.0f || asleep[i] != 0u) {
                 continue;
             }
-            const bool at_rest = velocity[i].length_sq()         <= kSleepLinearSpeedThresholdSq &&
+            const bool at_rest = velocity[i].length_sq() <= kSleepLinearSpeedThresholdSq &&
                                  angular_velocity[i].length_sq() <= kSleepAngularSpeedThresholdSq;
             if (in_contact[i] != 0u && at_rest) {
                 ++sleep_timer[i];
@@ -682,9 +664,8 @@ struct PhysicsSystem final {
     // A(sleep)–B(sleep)–C(awake), if the A–B manifold is processed before B–C, B is
     // still asleep when A is checked, so A wakes one tick later than B.  This one-tick
     // lag is imperceptible and avoids an O(manifolds × depth) graph traversal.
-    void wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold> manifolds,
-                                             std::span<const f32> inv_mass, std::span<u8> asleep,
-                                             std::span<u32> sleep_timer) noexcept {
+    void wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold> manifolds, std::span<const f32> inv_mass,
+                                             std::span<u8> asleep, std::span<u32> sleep_timer) noexcept {
         for (const ContactManifold &manifold : manifolds) {
             if (manifold.point_count == 0u) {
                 continue;

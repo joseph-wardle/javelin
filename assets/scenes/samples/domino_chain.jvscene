@@ -1,0 +1,49 @@
+# javelin scene file (.jvscene)
+# schema=v1 units=m one-record-per-line key=value
+# scene: domino chain — 20 wooden dominoes in a line; first is given an initial clockwise
+#        spin that topples it into the second, propagating the chain.
+#
+# Geometry:
+#   domino half-extents  hx=0.04  hy=0.50  hz=0.25   (8 × 100 × 50 cm)
+#   centre height        py=0.50  (resting on ground at y=0)
+#   spacing              0.40 m centre-to-centre
+#   face gap             0.40 - 2*0.04 = 0.32 m     (well within tip reach of ~1.0 m)
+#
+# Material: wood — moderate friction keeps each domino upright until struck.
+#
+# Initial condition:
+#   dom_00 receives wz = -3 rad/s.  Negative Z angular velocity rotates the top of the
+#   domino in the +X direction (right-hand rule: ω × r where r points from CM to top
+#   is in +X).  The base is constrained by ground-contact friction, so the domino pivots
+#   about its front-bottom edge rather than sliding, and topples into dom_01.
+scene version=1 units=m
+
+# physics_materials
+# id=1  wood: low restitution, moderate friction — stays upright, topples cleanly
+physics_material id=1 restitution=0.2 friction=0.6
+
+# shapes
+shape id=domino kind=box hx=0.04 hy=0.5 hz=0.25
+
+# bodies
+# dom_00 receives the initial clockwise spin to start the chain
+body id=dom_00 shape=domino motion=dynamic material=1 mesh=0 px=0.0 py=0.5 pz=0 wx=0.0 wy=0.0 wz=-3.0
+body id=dom_01 shape=domino motion=dynamic material=1 mesh=0 px=0.4 py=0.5 pz=0
+body id=dom_02 shape=domino motion=dynamic material=1 mesh=0 px=0.8 py=0.5 pz=0
+body id=dom_03 shape=domino motion=dynamic material=1 mesh=0 px=1.2 py=0.5 pz=0
+body id=dom_04 shape=domino motion=dynamic material=1 mesh=0 px=1.6 py=0.5 pz=0
+body id=dom_05 shape=domino motion=dynamic material=1 mesh=0 px=2.0 py=0.5 pz=0
+body id=dom_06 shape=domino motion=dynamic material=1 mesh=0 px=2.4 py=0.5 pz=0
+body id=dom_07 shape=domino motion=dynamic material=1 mesh=0 px=2.8 py=0.5 pz=0
+body id=dom_08 shape=domino motion=dynamic material=1 mesh=0 px=3.2 py=0.5 pz=0
+body id=dom_09 shape=domino motion=dynamic material=1 mesh=0 px=3.6 py=0.5 pz=0
+body id=dom_10 shape=domino motion=dynamic material=1 mesh=0 px=4.0 py=0.5 pz=0
+body id=dom_11 shape=domino motion=dynamic material=1 mesh=0 px=4.4 py=0.5 pz=0
+body id=dom_12 shape=domino motion=dynamic material=1 mesh=0 px=4.8 py=0.5 pz=0
+body id=dom_13 shape=domino motion=dynamic material=1 mesh=0 px=5.2 py=0.5 pz=0
+body id=dom_14 shape=domino motion=dynamic material=1 mesh=0 px=5.6 py=0.5 pz=0
+body id=dom_15 shape=domino motion=dynamic material=1 mesh=0 px=6.0 py=0.5 pz=0
+body id=dom_16 shape=domino motion=dynamic material=1 mesh=0 px=6.4 py=0.5 pz=0
+body id=dom_17 shape=domino motion=dynamic material=1 mesh=0 px=6.8 py=0.5 pz=0
+body id=dom_18 shape=domino motion=dynamic material=1 mesh=0 px=7.2 py=0.5 pz=0
+body id=dom_19 shape=domino motion=dynamic material=1 mesh=0 px=7.6 py=0.5 pz=0
