@@ -15,6 +15,7 @@ import javelin.physics.bvh_static;
 import javelin.physics.broad_phase;
 import javelin.physics.aabb_debug;
 import javelin.physics.contact_debug;
+import javelin.physics.constraint_types;
 import javelin.physics.integrate;
 import javelin.physics.narrow_phase;
 import javelin.physics.publish;
@@ -295,6 +296,7 @@ struct PhysicsSystem final {
     static constexpr f32 kPersistenceMatchEps = 1e-6f;
     static constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
     static constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
+    static constexpr u32 kInvalidIsland = std::numeric_limits<u32>::max();
     DynamicBvh dynamic_bvh_{};
     StaticBvh static_bvh_{};
     std::vector<BodyPair> candidate_pairs_{};
@@ -317,14 +319,27 @@ struct PhysicsSystem final {
     std::vector<u32> dynamic_ids_{};
     std::vector<u32> awake_dynamic_ids_{};
     std::vector<u8> awake_dynamic_mask_{};
+    // Per-tick island scratch (union-find + component member lists).
+    std::vector<u32> island_parent_{};
+    std::vector<u8> island_rank_{};
+    std::vector<u32> island_member_head_{};
+    std::vector<u32> island_member_next_{};
+    std::vector<u32> island_member_count_{};
+    std::vector<u32> island_roots_{};
+    // Persistent sleeping-island membership for island-level wake propagation.
+    std::vector<u32> sleep_island_of_body_{};
+    std::vector<u32> sleep_island_next_body_{};
+    std::vector<u32> sleep_island_head_{};
+    std::vector<u32> sleep_island_size_{};
+    std::vector<u32> sleep_island_free_ids_{};
     std::vector<Aabb> bounds_cache_{};
     // Per-manifold combined material properties, recomputed each tick before
     // solve.
     std::vector<f32> manifold_restitution_cache_{};
     std::vector<f32> manifold_friction_cache_{};
     // Byte mask indexed by body id; set when body participates in any active
-    // contact this tick.
-    std::vector<u8> contact_activity_mask_{};
+    // contact or dynamic constraint this tick.
+    std::vector<u8> activity_mask_{};
     ContactDebugChannel contact_debug_channel_{};
     AabbDebugChannel aabb_debug_channel_{};
     // Physics-thread state: tracks enable->disable transitions so we can clear
@@ -549,13 +564,15 @@ struct PhysicsSystem final {
                     detail::combined_friction(view.material_friction[mat_a], view.material_friction[mat_b]);
             }
         }
-        // Wake sleeping bodies before solving so just-woken bodies are solved on
-        // this tick. contact_activity_mask_ is rebuilt here for use by
-        // update_sleep_timers_ later. Only awake dynamic neighbours propagate
-        // wakes; ground and static bodies do not.
-        mark_bodies_with_active_contacts_(count, std::span<const ContactManifold>{manifolds_});
-        wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold>{manifolds_}, view.inv_mass, view.asleep,
-                                            view.sleep_timer);
+        // Build per-body contact/constraint activity and dynamic islands once.
+        // Wake and sleep transitions then run from these contiguous island
+        // streams.
+        mark_bodies_with_active_edges_(count, std::span<const ContactManifold>{manifolds_}, view.constraints,
+                                       view.inv_mass);
+        build_dynamic_islands_(count, view.inv_mass, std::span<const ContactManifold>{manifolds_}, view.constraints);
+        static_cast<void>(wake_sleeping_islands_with_active_edges_(std::span<const ContactManifold>{manifolds_},
+                                                                   view.constraints, view.inv_mass, view.asleep,
+                                                                   view.sleep_timer));
         solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
                                  view.orientation, manifolds_, dt, std::span<const f32>{manifold_restitution_cache_},
                                  std::span<const f32>{manifold_friction_cache_}, std::span<const u8>{view.asleep});
@@ -570,14 +587,13 @@ struct PhysicsSystem final {
         // Kills PGS residuals that would otherwise accumulate and destabilise tall
         // stacks during the settling window (ticks 1..kSleepTickThreshold).
         clamp_resting_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass,
-                                         std::span<const u8>{contact_activity_mask_.data(), count}, view.asleep,
+                                         std::span<const u8>{activity_mask_.data(), count}, view.asleep,
                                          kSleepLinearSpeedThresholdSq, kSleepAngularSpeedThresholdSq);
         // Update sleep timers after all velocity changes (solve + damping) are
-        // final, then mark any body whose timer has reached the threshold as
-        // asleep.
-        update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count}, view.velocity,
+        // final, then sleep any ready connected components as a unit.
+        update_sleep_timers_(count, std::span<const u8>{activity_mask_.data(), count}, view.velocity,
                              view.angular_velocity, view.inv_mass, view.sleep_timer, view.asleep);
-        mark_bodies_asleep_(count, view.sleep_timer, view.asleep);
+        static_cast<void>(sleep_awake_islands_(view.sleep_timer, view.asleep));
         integrate_positions(view.position, view.velocity, view.inv_mass, view.asleep, dt);
         integrate_orientations(view.orientation, view.angular_velocity, view.inv_mass, view.asleep, dt);
         const bool publish_contact_debug = contact_debug_enabled_.load(std::memory_order_acquire);
@@ -615,7 +631,24 @@ struct PhysicsSystem final {
         dynamic_ids_.reserve(count);
         awake_dynamic_ids_.reserve(count);
         awake_dynamic_mask_.reserve(count);
-        contact_activity_mask_.reserve(count);
+        island_parent_.reserve(count);
+        island_rank_.reserve(count);
+        island_member_head_.reserve(count);
+        island_member_next_.reserve(count);
+        island_member_count_.reserve(count);
+        island_roots_.reserve(count);
+        sleep_island_of_body_.reserve(count);
+        sleep_island_next_body_.reserve(count);
+        sleep_island_head_.reserve(count);
+        sleep_island_size_.reserve(count);
+        sleep_island_free_ids_.reserve(count);
+        activity_mask_.reserve(count);
+        if (sleep_island_of_body_.size() < count) {
+            sleep_island_of_body_.resize(count, kInvalidIsland);
+        }
+        if (sleep_island_next_body_.size() < count) {
+            sleep_island_next_body_.resize(count, kInvalidBody);
+        }
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
         const usize manifold_reserve = static_cast<usize>(count) * kManifoldReserveFactor;
         manifolds_.reserve(manifold_reserve);
@@ -628,6 +661,12 @@ struct PhysicsSystem final {
     void clear_manifold_state_() {
         manifolds_.clear();
         next_manifolds_.clear();
+        island_roots_.clear();
+        sleep_island_head_.clear();
+        sleep_island_size_.clear();
+        sleep_island_free_ids_.clear();
+        sleep_island_of_body_.assign(capacity_, kInvalidIsland);
+        sleep_island_next_body_.assign(capacity_, kInvalidBody);
     }
 
     // Prepares previous-frame manifold state for this tick.
@@ -680,12 +719,14 @@ struct PhysicsSystem final {
         }
     }
 
-    void mark_bodies_with_active_contacts_(const u32 body_count, std::span<const ContactManifold> manifolds) {
-        ZoneScopedN("Physics mark active contacts");
-        if (contact_activity_mask_.size() < body_count) {
-            contact_activity_mask_.resize(body_count);
+    void mark_bodies_with_active_edges_(const u32 body_count, std::span<const ContactManifold> manifolds,
+                                        std::span<const DistanceConstraint> constraints,
+                                        std::span<const f32> inv_mass) {
+        ZoneScopedN("Physics mark active edges");
+        if (activity_mask_.size() < body_count) {
+            activity_mask_.resize(body_count);
         }
-        std::fill_n(contact_activity_mask_.begin(), body_count, static_cast<u8>(0u));
+        std::fill_n(activity_mask_.begin(), body_count, static_cast<u8>(0u));
 
         for (const ContactManifold &manifold : manifolds) {
             if (manifold.point_count == 0u) {
@@ -693,18 +734,321 @@ struct PhysicsSystem final {
             }
 #ifndef NDEBUG
             if (manifold.a >= body_count || (manifold.b != kInvalidBody && manifold.b >= body_count)) {
-                log::error(physics,
-                           "Contact activity mask manifold id out of range (a={} b={} "
-                           "count={})",
-                           manifold.a, manifold.b, body_count);
+                log::error(physics, "Activity mask manifold id out of range (a={} b={} count={})", manifold.a,
+                           manifold.b, body_count);
                 std::terminate();
             }
 #endif
-            contact_activity_mask_[manifold.a] = 1u;
-            if (manifold.b != kInvalidBody) {
-                contact_activity_mask_[manifold.b] = 1u;
+            if (inv_mass[manifold.a] > 0.0f) {
+                activity_mask_[manifold.a] = 1u;
+            }
+            if (manifold.b != kInvalidBody && inv_mass[manifold.b] > 0.0f) {
+                activity_mask_[manifold.b] = 1u;
             }
         }
+
+        for (const DistanceConstraint &constraint : constraints) {
+#ifndef NDEBUG
+            if (constraint.body_a >= body_count || constraint.body_b >= body_count) {
+                log::error(physics, "Activity mask constraint id out of range (a={} b={} count={})", constraint.body_a,
+                           constraint.body_b, body_count);
+                std::terminate();
+            }
+#endif
+            if (inv_mass[constraint.body_a] > 0.0f) {
+                activity_mask_[constraint.body_a] = 1u;
+            }
+            if (inv_mass[constraint.body_b] > 0.0f) {
+                activity_mask_[constraint.body_b] = 1u;
+            }
+        }
+    }
+
+    [[nodiscard]] u32 island_find_root_(const u32 body) {
+        u32 root = body;
+        while (island_parent_[root] != root) {
+            root = island_parent_[root];
+        }
+
+        u32 current = body;
+        while (island_parent_[current] != current) {
+            const u32 parent = island_parent_[current];
+            island_parent_[current] = root;
+            current = parent;
+        }
+        return root;
+    }
+
+    void island_union_(const u32 lhs, const u32 rhs) {
+        u32 root_lhs = island_find_root_(lhs);
+        u32 root_rhs = island_find_root_(rhs);
+        if (root_lhs == root_rhs) {
+            return;
+        }
+        const u8 rank_lhs = island_rank_[root_lhs];
+        const u8 rank_rhs = island_rank_[root_rhs];
+        if (rank_lhs < rank_rhs) {
+            std::swap(root_lhs, root_rhs);
+        }
+        island_parent_[root_rhs] = root_lhs;
+        if (rank_lhs == rank_rhs) {
+            ++island_rank_[root_lhs];
+        }
+    }
+
+    void build_dynamic_islands_(const u32 body_count, std::span<const f32> inv_mass,
+                                std::span<const ContactManifold> manifolds,
+                                std::span<const DistanceConstraint> constraints) {
+        ZoneScopedN("Physics build islands");
+        if (island_parent_.size() < body_count) {
+            island_parent_.resize(body_count, kInvalidBody);
+            island_rank_.resize(body_count, 0u);
+            island_member_head_.resize(body_count, kInvalidBody);
+            island_member_next_.resize(body_count, kInvalidBody);
+            island_member_count_.resize(body_count, 0u);
+        }
+
+        std::fill_n(island_parent_.begin(), body_count, kInvalidBody);
+        std::fill_n(island_rank_.begin(), body_count, static_cast<u8>(0u));
+        std::fill_n(island_member_head_.begin(), body_count, kInvalidBody);
+        std::fill_n(island_member_next_.begin(), body_count, kInvalidBody);
+        std::fill_n(island_member_count_.begin(), body_count, 0u);
+        island_roots_.clear();
+
+        for (const u32 body : dynamic_ids_) {
+#ifndef NDEBUG
+            if (body >= body_count) {
+                log::error(physics, "Dynamic id out of range while building islands (id={} count={})", body,
+                           body_count);
+                std::terminate();
+            }
+#endif
+            island_parent_[body] = body;
+        }
+
+        for (const ContactManifold &manifold : manifolds) {
+            if (manifold.point_count == 0u || manifold.b == kInvalidBody) {
+                continue;
+            }
+            const u32 a = manifold.a;
+            const u32 b = manifold.b;
+#ifndef NDEBUG
+            if (a >= body_count || b >= body_count) {
+                log::error(physics, "Island contact manifold id out of range (a={} b={} count={})", a, b, body_count);
+                std::terminate();
+            }
+#endif
+            if (inv_mass[a] == 0.0f || inv_mass[b] == 0.0f) {
+                continue;
+            }
+            island_union_(a, b);
+        }
+
+        for (const DistanceConstraint &constraint : constraints) {
+            const u32 a = constraint.body_a;
+            const u32 b = constraint.body_b;
+#ifndef NDEBUG
+            if (a >= body_count || b >= body_count) {
+                log::error(physics, "Island constraint id out of range (a={} b={} count={})", a, b, body_count);
+                std::terminate();
+            }
+#endif
+            if (inv_mass[a] == 0.0f || inv_mass[b] == 0.0f) {
+                continue;
+            }
+            island_union_(a, b);
+        }
+
+        u32 max_island_size = 0u;
+        for (const u32 body : dynamic_ids_) {
+            const u32 root = island_find_root_(body);
+            if (island_member_head_[root] == kInvalidBody) {
+                island_roots_.push_back(root);
+            }
+            island_member_next_[body] = island_member_head_[root];
+            island_member_head_[root] = body;
+            ++island_member_count_[root];
+            max_island_size = std::max(max_island_size, island_member_count_[root]);
+        }
+        TracyPlot("physics_island_count", static_cast<i64>(island_roots_.size()));
+        TracyPlot("physics_max_island_size", static_cast<i64>(max_island_size));
+    }
+
+    [[nodiscard]] u32 allocate_sleep_island_id_() {
+        if (!sleep_island_free_ids_.empty()) {
+            const u32 id = sleep_island_free_ids_.back();
+            sleep_island_free_ids_.pop_back();
+            return id;
+        }
+        const u32 id = static_cast<u32>(sleep_island_head_.size());
+        sleep_island_head_.push_back(kInvalidBody);
+        sleep_island_size_.push_back(0u);
+        return id;
+    }
+
+    void register_sleep_island_for_component_(const u32 component_head) {
+        if (component_head == kInvalidBody) {
+            return;
+        }
+        const u32 island_id = allocate_sleep_island_id_();
+        u32 member_count = 0u;
+        u32 body = component_head;
+        while (body != kInvalidBody) {
+            const u32 next = island_member_next_[body];
+#ifndef NDEBUG
+            if (sleep_island_of_body_[body] != kInvalidIsland) {
+                log::error(physics, "Body already belongs to a sleep island (body={} island={})", body,
+                           sleep_island_of_body_[body]);
+                std::terminate();
+            }
+#endif
+            sleep_island_of_body_[body] = island_id;
+            sleep_island_next_body_[body] = sleep_island_head_[island_id];
+            sleep_island_head_[island_id] = body;
+            ++member_count;
+            body = next;
+        }
+        sleep_island_size_[island_id] = member_count;
+    }
+
+    [[nodiscard]] u32 wake_sleep_island_(const u32 island_id, std::span<u8> asleep,
+                                         std::span<u32> sleep_timer) noexcept {
+        if (island_id == kInvalidIsland || island_id >= sleep_island_head_.size()) {
+            return 0u;
+        }
+        u32 body = sleep_island_head_[island_id];
+        if (body == kInvalidBody) {
+            return 0u;
+        }
+
+        u32 woken_body_count = 0u;
+        while (body != kInvalidBody) {
+            const u32 next = sleep_island_next_body_[body];
+            asleep[body] = 0u;
+            sleep_timer[body] = 0u;
+            sleep_island_of_body_[body] = kInvalidIsland;
+            sleep_island_next_body_[body] = kInvalidBody;
+            ++woken_body_count;
+            body = next;
+        }
+
+        sleep_island_head_[island_id] = kInvalidBody;
+        sleep_island_size_[island_id] = 0u;
+        sleep_island_free_ids_.push_back(island_id);
+        return woken_body_count;
+    }
+
+    struct IslandWakeStats final {
+        u32 woken_island_count{};
+        u32 woken_body_count{};
+    };
+
+    [[nodiscard]] IslandWakeStats wake_sleeping_islands_with_active_edges_(
+        std::span<const ContactManifold> manifolds, std::span<const DistanceConstraint> constraints,
+        std::span<const f32> inv_mass, std::span<u8> asleep, std::span<u32> sleep_timer) {
+        ZoneScopedN("Physics wake sleeping islands");
+        IslandWakeStats stats{};
+
+        auto wake_if_sleeping = [&](const u32 body) {
+            if (asleep[body] == 0u) {
+                return;
+            }
+            const u32 island_id = sleep_island_of_body_[body];
+            if (island_id == kInvalidIsland) {
+                asleep[body] = 0u;
+                sleep_timer[body] = 0u;
+                ++stats.woken_body_count;
+                return;
+            }
+            const u32 woke = wake_sleep_island_(island_id, asleep, sleep_timer);
+            if (woke > 0u) {
+                ++stats.woken_island_count;
+                stats.woken_body_count += woke;
+            }
+        };
+
+        for (const ContactManifold &manifold : manifolds) {
+            if (manifold.point_count == 0u || manifold.b == kInvalidBody) {
+                continue;
+            }
+            const u32 a = manifold.a;
+            const u32 b = manifold.b;
+            if (inv_mass[a] == 0.0f || inv_mass[b] == 0.0f) {
+                continue;
+            }
+            const bool a_awake = asleep[a] == 0u;
+            const bool b_awake = asleep[b] == 0u;
+            if (a_awake == b_awake) {
+                continue;
+            }
+            wake_if_sleeping(a_awake ? b : a);
+        }
+
+        for (const DistanceConstraint &constraint : constraints) {
+            const u32 a = constraint.body_a;
+            const u32 b = constraint.body_b;
+            if (inv_mass[a] == 0.0f || inv_mass[b] == 0.0f) {
+                continue;
+            }
+            const bool a_awake = asleep[a] == 0u;
+            const bool b_awake = asleep[b] == 0u;
+            if (a_awake == b_awake) {
+                continue;
+            }
+            wake_if_sleeping(a_awake ? b : a);
+        }
+
+        TracyPlot("physics_islands_woken", static_cast<i64>(stats.woken_island_count));
+        TracyPlot("physics_bodies_woken", static_cast<i64>(stats.woken_body_count));
+        return stats;
+    }
+
+    struct IslandSleepStats final {
+        u32 slept_island_count{};
+        u32 slept_body_count{};
+    };
+
+    [[nodiscard]] IslandSleepStats sleep_awake_islands_(std::span<u32> sleep_timer, std::span<u8> asleep) {
+        ZoneScopedN("Physics sleep islands");
+        IslandSleepStats stats{};
+        for (const u32 root : island_roots_) {
+            const u32 component_head = island_member_head_[root];
+            if (component_head == kInvalidBody) {
+                continue;
+            }
+
+            bool has_awake_member = false;
+            bool all_awake_members_ready = true;
+            u32 body = component_head;
+            while (body != kInvalidBody) {
+                if (asleep[body] == 0u) {
+                    has_awake_member = true;
+                    if (sleep_timer[body] < kSleepTickThreshold) {
+                        all_awake_members_ready = false;
+                    }
+                }
+                body = island_member_next_[body];
+            }
+
+            if (!has_awake_member || !all_awake_members_ready) {
+                continue;
+            }
+
+            u32 member_count = 0u;
+            body = component_head;
+            while (body != kInvalidBody) {
+                asleep[body] = 1u;
+                sleep_timer[body] = std::max(sleep_timer[body], kSleepTickThreshold);
+                ++member_count;
+                body = island_member_next_[body];
+            }
+            register_sleep_island_for_component_(component_head);
+            ++stats.slept_island_count;
+            stats.slept_body_count += member_count;
+        }
+        TracyPlot("physics_islands_slept", static_cast<i64>(stats.slept_island_count));
+        TracyPlot("physics_bodies_slept", static_cast<i64>(stats.slept_body_count));
+        return stats;
     }
 
     // Update per-body sleep timers using the velocity state for this tick.
@@ -727,53 +1071,6 @@ struct PhysicsSystem final {
                 ++sleep_timer[i];
             } else {
                 sleep_timer[i] = 0u;
-            }
-        }
-    }
-
-    // Wake sleeping bodies whose manifolds contain an awake dynamic contact.
-    // Ground (kInvalidBody) and static bodies (inv_mass == 0) do not propagate
-    // wakes: a body resting on a static surface should stay asleep. Clears both
-    // asleep_ and sleep_timer_ so the body must re-earn sleep from scratch.
-    // Called BEFORE the solver so just-woken bodies are solved on the same tick.
-    //
-    // Note: wake propagation is single-pass and manifold-order-dependent.  In a
-    // chain A(sleep)–B(sleep)–C(awake), if the A–B manifold is processed before
-    // B–C, B is still asleep when A is checked, so A wakes one tick later than B.
-    // This one-tick lag is imperceptible and avoids an O(manifolds × depth) graph
-    // traversal.
-    void wake_sleeping_bodies_with_contacts_(std::span<const ContactManifold> manifolds, std::span<const f32> inv_mass,
-                                             std::span<u8> asleep, std::span<u32> sleep_timer) noexcept {
-        ZoneScopedN("Physics wake sleeping bodies");
-        for (const ContactManifold &manifold : manifolds) {
-            if (manifold.point_count == 0u) {
-                continue;
-            }
-            const u32 a = manifold.a;
-            const u32 b = manifold.b;
-            const bool a_dynamic_awake = inv_mass[a] > 0.0f && asleep[a] == 0u;
-            const bool b_dynamic_awake = b != kInvalidBody && inv_mass[b] > 0.0f && asleep[b] == 0u;
-            if (asleep[a] != 0u && b_dynamic_awake) {
-                asleep[a] = 0u;
-                sleep_timer[a] = 0u;
-            }
-            if (b != kInvalidBody && asleep[b] != 0u && a_dynamic_awake) {
-                asleep[b] = 0u;
-                sleep_timer[b] = 0u;
-            }
-        }
-    }
-
-    // Mark bodies asleep once their sleep timer has reached the threshold.
-    // Only transitions awake → asleep; wake-on-new-contact is in
-    // wake_sleeping_bodies_with_contacts_. Static bodies are already excluded
-    // from update_sleep_timers_ so their timer stays zero and they are never
-    // marked asleep here.
-    void mark_bodies_asleep_(const u32 count, std::span<const u32> sleep_timer, std::span<u8> asleep) noexcept {
-        ZoneScopedN("Physics mark bodies asleep");
-        for (u32 i = 0; i < count; ++i) {
-            if (sleep_timer[i] >= kSleepTickThreshold) {
-                asleep[i] = 1u;
             }
         }
     }

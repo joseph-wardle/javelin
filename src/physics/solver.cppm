@@ -329,9 +329,10 @@ void solve_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_
     solver_points.reserve(point_count);
 
     // Pre-step: world anchors, tangent basis, effective masses, and velocity bias.
-    // Skip manifolds where both participants are asleep: a body is only still asleep
-    // if all its contacts are ground/static/other-sleeping (wake_sleeping_bodies_with_contacts_
-    // already cleared asleep for any body touched by an awake dynamic neighbour).
+    // Skip manifolds where both participants are asleep: a body is only still
+    // asleep if all its contacts are ground/static/other-sleeping (the island
+    // wake pass already cleared asleep for any body touched by an awake dynamic
+    // neighbour).
     for (u32 manifold_index = 0; manifold_index < manifolds.size(); ++manifold_index) {
         ContactManifold &manifold = manifolds[manifold_index];
         if (manifold.point_count == 0u) {
