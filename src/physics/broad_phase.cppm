@@ -19,12 +19,10 @@ export namespace javelin {
 // - ordering inside each chunk follows dynamic id order; global canonicalization
 //   and de-duplication are performed by PhysicsSystem.
 struct BroadPhaseScratch final {
-    std::vector<u32> query_hits{};
-    std::vector<u32> query_stack{};
+    std::vector<u32> query_stack_overflow{};
 
     void reserve(const u32 count, const u32 query_stack_factor) {
-        query_hits.reserve(count);
-        query_stack.reserve(static_cast<usize>(count) * query_stack_factor);
+        query_stack_overflow.reserve(static_cast<usize>(count) * query_stack_factor);
     }
 };
 
@@ -58,29 +56,33 @@ void broad_phase_chunk(std::span<const u32> query_dynamic_ids, const DynamicBvh 
     for (const u32 id : query_dynamic_ids) {
         const Aabb query_bounds = bounds_cache[id];
 
-        scratch.query_hits.clear();
-        dynamic_bvh.query(query_bounds, scratch.query_hits, scratch.query_stack);
-        for (const u32 j : scratch.query_hits) {
-            if (j == id) {
-                continue;
-            }
-            const bool j_is_query_body = (j < query_dynamic_mask.size()) && query_dynamic_mask[j] != 0u;
-            if (j_is_query_body && j < id) {
-                continue;
-            }
-            pairs.push_back(BodyPair{.a = id, .b = j});
-        }
-
-        if (has_static) {
-            scratch.query_hits.clear();
-            static_bvh.query(query_bounds, scratch.query_hits, scratch.query_stack);
-            for (const u32 j : scratch.query_hits) {
+        dynamic_bvh.query_each_overlap(
+            query_bounds,
+            [&](const u32 j) {
                 if (j == id) {
-                    continue;
+                    return;
+                }
+                const bool j_is_query_body = (j < query_dynamic_mask.size()) && query_dynamic_mask[j] != 0u;
+                if (j_is_query_body && j < id) {
+                    return;
                 }
                 pairs.push_back(BodyPair{.a = id, .b = j});
-            }
+            },
+            scratch.query_stack_overflow);
+
+        if (!has_static) {
+            continue;
         }
+
+        static_bvh.query_each_overlap(
+            query_bounds,
+            [&](const u32 j) {
+                if (j == id) {
+                    return;
+                }
+                pairs.push_back(BodyPair{.a = id, .b = j});
+            },
+            scratch.query_stack_overflow);
     }
 }
 

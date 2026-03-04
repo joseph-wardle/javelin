@@ -91,21 +91,43 @@ struct DynamicBvh final {
         return true;
     }
 
-    // Appends overlapping body ids to out (caller-owned). stack is scratch storage.
-    void query(const Aabb aabb, std::vector<u32> &out, std::vector<u32> &stack) const {
+    // Calls on_hit(body_id) for each leaf whose bounds overlap aabb.
+    // Stack policy:
+    // - fixed-size local stack for the common case (no allocations),
+    // - caller scratch vector only when traversal depth exceeds local capacity.
+    template <typename OnHit>
+    void query_each_overlap(const Aabb aabb, OnHit &&on_hit, std::vector<u32> &overflow_stack) const {
         ZoneScopedN("Physics query dynamic BVH");
         if (root_ == kInvalidNode) {
             return;
         }
 
         const Node *nodes = nodes_.data();
+        std::array<u32, kQueryStackInlineCapacity> local_stack{};
+        u32 local_count = 0u;
+        overflow_stack.clear();
+        local_stack[local_count++] = root_;
 
-        stack.clear();
-        stack.push_back(root_);
+        auto push_node = [&](const u32 node_index) {
+            if (local_count < local_stack.size()) {
+                local_stack[local_count++] = node_index;
+                return;
+            }
+            overflow_stack.push_back(node_index);
+        };
 
-        while (!stack.empty()) {
-            const u32 node_index = stack.back();
-            stack.pop_back();
+        auto pop_node = [&]() {
+            if (!overflow_stack.empty()) {
+                const u32 node_index = overflow_stack.back();
+                overflow_stack.pop_back();
+                return node_index;
+            }
+            --local_count;
+            return local_stack[local_count];
+        };
+
+        while (local_count > 0u || !overflow_stack.empty()) {
+            const u32 node_index = pop_node();
 
             const Node &node = nodes[node_index];
             if (!overlaps(node.bounds, aabb)) {
@@ -114,14 +136,19 @@ struct DynamicBvh final {
 
             const u32 left = node.left;
             if (left == kInvalidNode) {
-                out.push_back(node.body_id);
+                on_hit(node.body_id);
                 continue;
             }
 
             // Internal node: both children are valid.
-            stack.push_back(left);
-            stack.push_back(node.right);
+            push_node(left);
+            push_node(node.right);
         }
+    }
+
+    // Compatibility wrapper: appends overlapping body ids to out.
+    void query(const Aabb aabb, std::vector<u32> &out, std::vector<u32> &stack) const {
+        query_each_overlap(aabb, [&](const u32 body_id) { out.push_back(body_id); }, stack);
     }
 
     [[nodiscard]] bool empty() const noexcept { return root_ == kInvalidNode; }
@@ -129,6 +156,7 @@ struct DynamicBvh final {
 
   private:
     static constexpr u32 kInvalidNode = std::numeric_limits<u32>::max();
+    static constexpr usize kQueryStackInlineCapacity = 128u;
     // Extra margin around dynamic leaves to avoid frequent tree updates for jitter-level motion.
     static constexpr f32 kFatMargin = 0.1f;
 
