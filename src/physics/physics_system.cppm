@@ -315,6 +315,20 @@ struct PhysicsSystem final {
     static constexpr f32 kSleepAngularSpeedThreshold = 0.10f;
     static constexpr f32 kSleepLinearSpeedThresholdSq = kSleepLinearSpeedThreshold * kSleepLinearSpeedThreshold;
     static constexpr f32 kSleepAngularSpeedThresholdSq = kSleepAngularSpeedThreshold * kSleepAngularSpeedThreshold;
+    // Sleep-timer hysteresis:
+    // - moving bodies (speed above threshold) reset immediately.
+    // - still but non-contact bodies decay instead of hard-reset, so one-frame
+    //   contact flicker does not restart the full sleep countdown.
+    static constexpr u32 kSleepTimerDecayPerMiss = 1u;
+    // Resting-contact velocity clamp parameters.
+    // Clamp thresholds are intentionally stricter than sleep thresholds:
+    // this removes solver jitter on sustained resting contacts without killing
+    // legitimate low-speed motion.
+    static constexpr f32 kClampLinearSpeedThreshold = 0.02f;
+    static constexpr f32 kClampAngularSpeedThreshold = 0.04f;
+    static constexpr f32 kClampLinearSpeedThresholdSq = kClampLinearSpeedThreshold * kClampLinearSpeedThreshold;
+    static constexpr f32 kClampAngularSpeedThresholdSq = kClampAngularSpeedThreshold * kClampAngularSpeedThreshold;
+    static constexpr u8 kClampRestTickThreshold = 4u;
     // Persistence thresholds in world-space meters.
     // A cached point is dropped when either threshold is exceeded.
     static constexpr f32 kPersistenceAnchorThreshold = 0.03f;
@@ -324,6 +338,18 @@ struct PhysicsSystem final {
     static constexpr f32 kPersistenceTangentialDriftBreakThresholdSq =
         kPersistenceTangentialDriftBreakThreshold * kPersistenceTangentialDriftBreakThreshold;
     static constexpr f32 kPersistenceMatchEps = 1e-6f;
+    // If manifold normal rotates too much between frames, drop warm-start
+    // impulses for that manifold to avoid injecting stale impulses.
+    static constexpr f32 kPersistenceNormalSimilarityThreshold = 0.98f;
+    // Contact solver policy:
+    // - default: fixed 16 iterations (deterministic baseline).
+    // - complex islands: adaptive mode with a higher cap.
+    static constexpr u32 kContactSolverBaseMaxIterations = 16u;
+    static constexpr u32 kContactSolverComplexMaxIterations = 20u;
+    static constexpr u32 kContactSolverAdaptiveMinIterations = 6u;
+    static constexpr f32 kContactSolverAdaptiveImpulseEpsilon = 5e-5f;
+    static constexpr u32 kContactSolverComplexIslandSizeThreshold = 12u;
+    static constexpr u32 kContactSolverComplexPointCountThreshold = 48u;
     static constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
     static constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
     static constexpr u32 kInvalidIsland = std::numeric_limits<u32>::max();
@@ -376,9 +402,15 @@ struct PhysicsSystem final {
     std::vector<f32> manifold_friction_cache_{};
     usize candidate_pair_reserve_hint_{0};
     usize manifold_reserve_hint_{0};
-    // Byte mask indexed by body id; set when body participates in any active
-    // contact or dynamic constraint this tick.
-    std::vector<u8> activity_mask_{};
+    // Per-body activity masks.
+    // contact_activity_mask_ is used for resting clamp and sleep timers.
+    // constraint_activity_mask_ is diagnostics-oriented and keeps edge-type
+    // separation explicit.
+    std::vector<u8> contact_activity_mask_{};
+    std::vector<u8> constraint_activity_mask_{};
+    // Per-body consecutive resting-contact ticks used by velocity clamp
+    // hysteresis.
+    std::vector<u8> clamp_rest_counter_{};
     ContactDebugChannel contact_debug_channel_{};
     AabbDebugChannel aabb_debug_channel_{};
     // Physics-thread state: tracks enable->disable transitions so we can clear
@@ -393,6 +425,9 @@ struct PhysicsSystem final {
         u32 dropped_point_count{};
         // Optional diagnostic: manifold-level box-axis key changes across frames.
         u32 axis_flip_count{};
+        // Number of manifolds where warm-start cache was invalidated due to
+        // unstable frame changes (axis flip or large normal rotation).
+        u32 cache_invalidation_count{};
     };
 
     struct BoxAxisKey final {
@@ -723,6 +758,8 @@ struct PhysicsSystem final {
             TracyPlot("physics_warm_start_match_rate", warm_start_match_rate);
             TracyPlot("physics_dropped_points", static_cast<i64>(persistence_stats.dropped_point_count));
             TracyPlot("physics_axis_flip_count", static_cast<i64>(persistence_stats.axis_flip_count));
+            TracyPlot("physics_persistence_cache_invalidations",
+                      static_cast<i64>(persistence_stats.cache_invalidation_count));
             TracyPlot("physics_contacts", static_cast<i64>(contact_point_count));
         }
 
@@ -746,17 +783,30 @@ struct PhysicsSystem final {
             }
         }
         // Build per-body contact/constraint activity and dynamic islands once.
-        // Wake and sleep transitions then run from these contiguous island
-        // streams.
-        mark_bodies_with_active_edges_(count, std::span<const ContactManifold>{manifolds_}, view.constraints,
-                                       view.inv_mass);
-        build_dynamic_islands_(count, view.inv_mass, std::span<const ContactManifold>{manifolds_}, view.constraints);
+        // Resting clamp and sleep timers consume contact-only activity so
+        // constraint-only motion (for example pendulum arcs) is not mistaken for
+        // resting contact.
+        build_activity_masks_(count, std::span<const ContactManifold>{manifolds_}, view.constraints, view.inv_mass);
+        const u32 max_dynamic_island_size =
+            build_dynamic_islands_(count, view.inv_mass, std::span<const ContactManifold>{manifolds_}, view.constraints);
         static_cast<void>(wake_sleeping_islands_with_active_edges_(std::span<const ContactManifold>{manifolds_},
                                                                    view.constraints, view.inv_mass, view.asleep,
                                                                    view.sleep_timer));
+        const bool complex_contact_solve = max_dynamic_island_size >= kContactSolverComplexIslandSizeThreshold ||
+                                           contact_point_count >= kContactSolverComplexPointCountThreshold;
+        const ContactSolveConfig contact_solve_config{
+            .adaptive_iteration_cap = complex_contact_solve,
+            .max_iterations =
+                complex_contact_solve ? kContactSolverComplexMaxIterations : kContactSolverBaseMaxIterations,
+            .min_iterations_before_adapt = kContactSolverAdaptiveMinIterations,
+            .adaptive_impulse_epsilon = kContactSolverAdaptiveImpulseEpsilon,
+        };
+        TracyPlot("physics_contact_solver_adaptive_mode", complex_contact_solve ? static_cast<i64>(1) : static_cast<i64>(0));
+        TracyPlot("physics_contact_solver_max_iterations", static_cast<i64>(contact_solve_config.max_iterations));
         solve_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
                                  view.orientation, manifolds_, dt, std::span<const f32>{manifold_restitution_cache_},
-                                 std::span<const f32>{manifold_friction_cache_}, std::span<const u8>{view.asleep});
+                                 std::span<const f32>{manifold_friction_cache_}, std::span<const u8>{view.asleep},
+                                 contact_solve_config);
         solve_contact_penetration(view.position, view.orientation, view.inv_mass, view.inv_inertia,
                                   std::span<const ContactManifold>{manifolds_}, std::span<const u8>{view.asleep});
         solve_distance_constraints(view.velocity, view.angular_velocity, view.inv_mass, view.inv_inertia,
@@ -764,15 +814,17 @@ struct PhysicsSystem final {
                                    std::span<const u8>{view.asleep});
         apply_linear_damping(view.velocity, view.inv_mass, view.asleep, linear_damping, dt);
         apply_angular_damping(view.angular_velocity, view.inv_mass, view.asleep, angular_damping, dt);
-        // Clamp near-zero velocities on awake resting contacts to zero.
-        // Kills PGS residuals that would otherwise accumulate and destabilise tall
-        // stacks during the settling window (ticks 1..kSleepTickThreshold).
+        // Clamp near-zero velocities on sustained resting contacts.
+        // Clamp hysteresis prevents one-frame threshold crossings from killing
+        // valid low-speed motion.
         clamp_resting_contact_velocities(view.velocity, view.angular_velocity, view.inv_mass,
-                                         std::span<const u8>{activity_mask_.data(), count}, view.asleep,
-                                         kSleepLinearSpeedThresholdSq, kSleepAngularSpeedThresholdSq);
+                                         std::span<const u8>{contact_activity_mask_.data(), count}, view.asleep,
+                                         std::span<u8>{clamp_rest_counter_.data(), count},
+                                         kClampLinearSpeedThresholdSq, kClampAngularSpeedThresholdSq,
+                                         kClampRestTickThreshold);
         // Update sleep timers after all velocity changes (solve + damping) are
         // final, then sleep any ready connected components as a unit.
-        update_sleep_timers_(count, std::span<const u8>{activity_mask_.data(), count}, view.velocity,
+        update_sleep_timers_(count, std::span<const u8>{contact_activity_mask_.data(), count}, view.velocity,
                              view.angular_velocity, view.inv_mass, view.sleep_timer, view.asleep);
         static_cast<void>(sleep_awake_islands_(view.sleep_timer, view.asleep));
         integrate_positions(view.position, view.velocity, view.inv_mass, view.asleep, dt);
@@ -826,12 +878,23 @@ struct PhysicsSystem final {
         sleep_island_head_.reserve(count);
         sleep_island_size_.reserve(count);
         sleep_island_free_ids_.reserve(count);
-        activity_mask_.reserve(count);
+        contact_activity_mask_.reserve(count);
+        constraint_activity_mask_.reserve(count);
+        clamp_rest_counter_.reserve(count);
         if (sleep_island_of_body_.size() < count) {
             sleep_island_of_body_.resize(count, kInvalidIsland);
         }
         if (sleep_island_next_body_.size() < count) {
             sleep_island_next_body_.resize(count, kInvalidBody);
+        }
+        if (contact_activity_mask_.size() < count) {
+            contact_activity_mask_.resize(count, 0u);
+        }
+        if (constraint_activity_mask_.size() < count) {
+            constraint_activity_mask_.resize(count, 0u);
+        }
+        if (clamp_rest_counter_.size() < count) {
+            clamp_rest_counter_.resize(count, 0u);
         }
         candidate_pairs_.reserve(static_cast<usize>(count) * kPairReserveFactor);
 #if defined(JAVELIN_BROAD_PHASE_VALIDATE)
@@ -856,6 +919,9 @@ struct PhysicsSystem final {
         sleep_island_free_ids_.clear();
         sleep_island_of_body_.assign(capacity_, kInvalidIsland);
         sleep_island_next_body_.assign(capacity_, kInvalidBody);
+        contact_activity_mask_.assign(capacity_, 0u);
+        constraint_activity_mask_.assign(capacity_, 0u);
+        clamp_rest_counter_.assign(capacity_, 0u);
     }
 
     // Prepares previous-frame manifold state for this tick.
@@ -973,14 +1039,17 @@ struct PhysicsSystem final {
         return stats;
     }
 
-    void mark_bodies_with_active_edges_(const u32 body_count, std::span<const ContactManifold> manifolds,
-                                        std::span<const DistanceConstraint> constraints,
-                                        std::span<const f32> inv_mass) {
-        ZoneScopedN("Physics mark active edges");
-        if (activity_mask_.size() < body_count) {
-            activity_mask_.resize(body_count);
+    void build_activity_masks_(const u32 body_count, std::span<const ContactManifold> manifolds,
+                               std::span<const DistanceConstraint> constraints, std::span<const f32> inv_mass) {
+        ZoneScopedN("Physics build activity masks");
+        if (contact_activity_mask_.size() < body_count) {
+            contact_activity_mask_.resize(body_count);
         }
-        std::fill_n(activity_mask_.begin(), body_count, static_cast<u8>(0u));
+        if (constraint_activity_mask_.size() < body_count) {
+            constraint_activity_mask_.resize(body_count);
+        }
+        std::fill_n(contact_activity_mask_.begin(), body_count, static_cast<u8>(0u));
+        std::fill_n(constraint_activity_mask_.begin(), body_count, static_cast<u8>(0u));
 
         for (const ContactManifold &manifold : manifolds) {
             if (manifold.point_count == 0u) {
@@ -988,32 +1057,32 @@ struct PhysicsSystem final {
             }
 #ifndef NDEBUG
             if (manifold.a >= body_count || (manifold.b != kInvalidBody && manifold.b >= body_count)) {
-                log::error(physics, "Activity mask manifold id out of range (a={} b={} count={})", manifold.a,
+                log::error(physics, "Contact mask manifold id out of range (a={} b={} count={})", manifold.a,
                            manifold.b, body_count);
                 std::terminate();
             }
 #endif
             if (inv_mass[manifold.a] > 0.0f) {
-                activity_mask_[manifold.a] = 1u;
+                contact_activity_mask_[manifold.a] = 1u;
             }
             if (manifold.b != kInvalidBody && inv_mass[manifold.b] > 0.0f) {
-                activity_mask_[manifold.b] = 1u;
+                contact_activity_mask_[manifold.b] = 1u;
             }
         }
 
         for (const DistanceConstraint &constraint : constraints) {
 #ifndef NDEBUG
             if (constraint.body_a >= body_count || constraint.body_b >= body_count) {
-                log::error(physics, "Activity mask constraint id out of range (a={} b={} count={})", constraint.body_a,
+                log::error(physics, "Constraint mask id out of range (a={} b={} count={})", constraint.body_a,
                            constraint.body_b, body_count);
                 std::terminate();
             }
 #endif
             if (inv_mass[constraint.body_a] > 0.0f) {
-                activity_mask_[constraint.body_a] = 1u;
+                constraint_activity_mask_[constraint.body_a] = 1u;
             }
             if (inv_mass[constraint.body_b] > 0.0f) {
-                activity_mask_[constraint.body_b] = 1u;
+                constraint_activity_mask_[constraint.body_b] = 1u;
             }
         }
     }
@@ -1050,9 +1119,9 @@ struct PhysicsSystem final {
         }
     }
 
-    void build_dynamic_islands_(const u32 body_count, std::span<const f32> inv_mass,
-                                std::span<const ContactManifold> manifolds,
-                                std::span<const DistanceConstraint> constraints) {
+    [[nodiscard]] u32 build_dynamic_islands_(const u32 body_count, std::span<const f32> inv_mass,
+                                             std::span<const ContactManifold> manifolds,
+                                             std::span<const DistanceConstraint> constraints) {
         ZoneScopedN("Physics build islands");
         if (island_parent_.size() < body_count) {
             island_parent_.resize(body_count, kInvalidBody);
@@ -1126,6 +1195,7 @@ struct PhysicsSystem final {
         }
         TracyPlot("physics_island_count", static_cast<i64>(island_roots_.size()));
         TracyPlot("physics_max_island_size", static_cast<i64>(max_island_size));
+        return max_island_size;
     }
 
     [[nodiscard]] u32 allocate_sleep_island_id_() {
@@ -1241,6 +1311,10 @@ struct PhysicsSystem final {
         for (const DistanceConstraint &constraint : constraints) {
             const u32 a = constraint.body_a;
             const u32 b = constraint.body_b;
+            // Constraint wake propagation is dynamic-dynamic only.
+            // Static-anchored constraints do not wake sleeping bodies directly;
+            // sleep eligibility is contact-driven, so this avoids perpetual
+            // wake/sleep thrash on anchored chains.
             if (inv_mass[a] == 0.0f || inv_mass[b] == 0.0f) {
                 continue;
             }
@@ -1305,12 +1379,13 @@ struct PhysicsSystem final {
         return stats;
     }
 
-    // Update per-body sleep timers using the velocity state for this tick.
-    // A body's timer increments when it is in contact AND both its linear and
-    // angular speeds are below the sleep thresholds; otherwise the timer resets
-    // to zero. Already-sleeping bodies are skipped: their timer is already at or
-    // above threshold. Static bodies (inv_mass == 0) are skipped: they are
-    // neither awake nor asleep.
+    // Update per-body sleep timers using contact activity and final velocities.
+    // Timer policy:
+    // - in contact + under threshold: increment.
+    // - over threshold: reset immediately.
+    // - under threshold but no contact: decay (hysteresis), avoiding full resets
+    //   from one-frame contact flicker.
+    // Sleeping and static bodies are skipped.
     void update_sleep_timers_(const u32 count, std::span<const u8> in_contact, std::span<const Vec3> velocity,
                               std::span<const Vec3> angular_velocity, std::span<const f32> inv_mass,
                               std::span<u32> sleep_timer, std::span<const u8> asleep) noexcept {
@@ -1322,9 +1397,14 @@ struct PhysicsSystem final {
             const bool at_rest = velocity[i].length_sq() <= kSleepLinearSpeedThresholdSq &&
                                  angular_velocity[i].length_sq() <= kSleepAngularSpeedThresholdSq;
             if (in_contact[i] != 0u && at_rest) {
-                ++sleep_timer[i];
-            } else {
+                if (sleep_timer[i] < std::numeric_limits<u32>::max()) {
+                    ++sleep_timer[i];
+                }
+            } else if (!at_rest) {
                 sleep_timer[i] = 0u;
+            } else {
+                sleep_timer[i] = (sleep_timer[i] > kSleepTimerDecayPerMiss) ? (sleep_timer[i] - kSleepTimerDecayPerMiss)
+                                                                             : 0u;
             }
         }
     }
@@ -1527,6 +1607,20 @@ struct PhysicsSystem final {
             return false;
         }
         return previous_axis.type != next_axis.type || previous_axis.i != next_axis.i || previous_axis.j != next_axis.j;
+    }
+
+    [[nodiscard]] static bool manifold_normal_changed_(const ContactManifold &previous_manifold,
+                                                       const ContactManifold &next_manifold) noexcept {
+        if (previous_manifold.point_count == 0u || next_manifold.point_count == 0u) {
+            return true;
+        }
+
+        Vec3 previous_normal = previous_manifold.normal;
+        Vec3 next_normal = next_manifold.normal;
+        if (!previous_normal.try_normalize() || !next_normal.try_normalize()) {
+            return true;
+        }
+        return dot(previous_normal, next_normal) < kPersistenceNormalSimilarityThreshold;
     }
 
     [[nodiscard]] static f32 local_anchor_match_distance_sq_(const ContactPoint &lhs, const ContactPoint &rhs,
@@ -1775,8 +1869,16 @@ struct PhysicsSystem final {
                 std::terminate();
             }
 #endif
-            if (manifold_axis_flipped_(previous_manifold, next_manifold)) {
+            const bool axis_flipped = manifold_axis_flipped_(previous_manifold, next_manifold);
+            if (axis_flipped) {
                 ++stats.axis_flip_count;
+            }
+            if (axis_flipped || manifold_normal_changed_(previous_manifold, next_manifold)) {
+                reset_manifold_point_cache_(next_manifold);
+                ++stats.cache_invalidation_count;
+                ++previous_index;
+                ++next_index;
+                continue;
             }
             match_and_transfer_point_cache_(position, orientation, next_manifold, previous_manifold);
             for (u32 i = 0; i < next_manifold.point_count; ++i) {

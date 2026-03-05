@@ -110,36 +110,47 @@ void integrate_orientations(std::span<Quat> orientation, std::span<const Vec3> a
     }
 }
 
-// Clamps near-zero velocities to zero for awake dynamic bodies that are in contact.
+// Clamps near-zero velocities to zero for awake dynamic bodies in contact.
 // Called every tick after the solver and damping, before integration.
 //
-// Purpose: the PGS velocity solver leaves small residual velocities on resting contacts
-// (insufficient iterations to reach machine-epsilon convergence for tall stacks).
-// Without this clamp those residuals accumulate across ticks, perturb contact geometry,
-// and eventually topple stacks — well before the sleep timer fires.
-//
-// This is complementary to the sleep system: clamping stabilises the settling phase
-// (ticks 1–N), sleeping eliminates computation once the stack is fully settled.
-// Both use the same speed thresholds so a body eligible for clamping is also eligible
-// for sleep, ensuring the two mechanisms agree on what "at rest" means.
+// This helper uses a small per-body consecutive-tick counter before clamping.
+// The hysteresis avoids zeroing legitimate slow motion that briefly crosses the
+// speed thresholds (for example pendulum apex motion), while still removing
+// persistent solver jitter on settled stacks.
 void clamp_resting_contact_velocities(std::span<Vec3> velocity, std::span<Vec3> angular_velocity,
                                       std::span<const f32> inv_mass, std::span<const u8> in_contact,
-                                      std::span<const u8> asleep, const f32 linear_speed_sq_threshold,
-                                      const f32 angular_speed_sq_threshold) noexcept {
+                                      std::span<const u8> asleep, std::span<u8> consecutive_rest_ticks,
+                                      const f32 linear_speed_sq_threshold, const f32 angular_speed_sq_threshold,
+                                      const u8 min_rest_ticks_to_clamp) noexcept {
     ZoneScopedN("Physics clamp resting velocities");
 #ifndef NDEBUG
     if (velocity.size() != angular_velocity.size() || velocity.size() != inv_mass.size() ||
-        velocity.size() != in_contact.size() || velocity.size() != asleep.size()) {
+        velocity.size() != in_contact.size() || velocity.size() != asleep.size() ||
+        velocity.size() != consecutive_rest_ticks.size()) {
         std::terminate();
     }
 #endif
+    if (min_rest_ticks_to_clamp == 0u) {
+        return;
+    }
+
     const u32 count = static_cast<u32>(velocity.size());
     for (u32 i = 0; i < count; ++i) {
-        if (inv_mass[i] == 0.0f || in_contact[i] == 0u || asleep[i] != 0u) {
+        if (inv_mass[i] == 0.0f || asleep[i] != 0u || in_contact[i] == 0u) {
+            consecutive_rest_ticks[i] = 0u;
             continue;
         }
-        if (velocity[i].length_sq() <= linear_speed_sq_threshold &&
-            angular_velocity[i].length_sq() <= angular_speed_sq_threshold) {
+
+        const bool under_threshold = velocity[i].length_sq() <= linear_speed_sq_threshold &&
+                                     angular_velocity[i].length_sq() <= angular_speed_sq_threshold;
+        if (!under_threshold) {
+            consecutive_rest_ticks[i] = 0u;
+            continue;
+        }
+
+        const u8 next_ticks = static_cast<u8>(std::min<u32>(static_cast<u32>(consecutive_rest_ticks[i]) + 1u, 255u));
+        consecutive_rest_ticks[i] = next_ticks;
+        if (next_ticks >= min_rest_ticks_to_clamp) {
             velocity[i] = Vec3{};
             angular_velocity[i] = Vec3{};
         }
