@@ -12,9 +12,11 @@ target_sources(javelin_physics_tests
             suites/sphere_sphere_contact.cppm
             suites/box_box_sat.cppm
             suites/solve_contact_velocities.cppm
+            suites/resting_contact_clamp.cppm
 )
 target_link_libraries(javelin_physics_tests PRIVATE javelin::javelin)
 
 add_test(NAME sphere_sphere_contact COMMAND javelin_physics_tests sphere_sphere_contact)
 add_test(NAME box_box_sat COMMAND javelin_physics_tests box_box_sat)
 add_test(NAME solve_contact_velocities COMMAND javelin_physics_tests solve_contact_velocities)
+add_test(NAME resting_contact_clamp COMMAND javelin_physics_tests resting_contact_clamp)
