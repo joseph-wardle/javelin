@@ -204,8 +204,8 @@ struct VelocityDebugPass final {
                 const Vec3 v = ctx.view.velocity[i];
                 if (dot(v, v) >= kMinVelocityEpsilon * kMinVelocityEpsilon) {
                     vertices_.push_back(Vertex{.position = pose.position, .color = kLinearVelocityColor});
-                    vertices_.push_back(Vertex{.position = pose.position + v * settings.scale,
-                                               .color = kLinearVelocityColor});
+                    vertices_.push_back(
+                        Vertex{.position = pose.position + v * settings.scale, .color = kLinearVelocityColor});
                 }
             }
 
@@ -213,8 +213,8 @@ struct VelocityDebugPass final {
                 const Vec3 w = ctx.view.angular_velocity[i];
                 if (dot(w, w) >= kMinVelocityEpsilon * kMinVelocityEpsilon) {
                     vertices_.push_back(Vertex{.position = pose.position, .color = kAngularVelocityColor});
-                    vertices_.push_back(Vertex{.position = pose.position + w * settings.scale,
-                                               .color = kAngularVelocityColor});
+                    vertices_.push_back(
+                        Vertex{.position = pose.position + w * settings.scale, .color = kAngularVelocityColor});
                 }
             }
         }

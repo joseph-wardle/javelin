@@ -690,8 +690,8 @@ struct PhysicsSystem final {
         TracyPlot("physics_moved_awake_ratio", moved_awake_ratio);
         TracyPlot("physics_carried_pair_count", static_cast<i64>(carried_pair_count));
         TracyPlot("physics_validated_pair_count", static_cast<i64>(validated_pair_count));
-        TracyPlot("physics_broad_phase_full_query", fallback_to_full_awake_query ? static_cast<i64>(1)
-                                                                                 : static_cast<i64>(0));
+        TracyPlot("physics_broad_phase_full_query",
+                  fallback_to_full_awake_query ? static_cast<i64>(1) : static_cast<i64>(0));
         update_reserve_hint_(candidate_pairs_.size(), candidate_pair_reserve_hint_);
         TracyPlot("physics_pairs", static_cast<i64>(candidate_pairs_.size()));
 
@@ -940,8 +940,8 @@ struct PhysicsSystem final {
         u32 validated_pair_count{};
     };
 
-    [[nodiscard]] BroadPhaseCarryForwardStats append_overlapping_previous_pairs_(
-        const u32 body_count, std::span<const u8> awake_dynamic_mask) {
+    [[nodiscard]] BroadPhaseCarryForwardStats
+    append_overlapping_previous_pairs_(const u32 body_count, std::span<const u8> awake_dynamic_mask) {
         ZoneScopedN("Physics carry manifold pairs");
         BroadPhaseCarryForwardStats stats{};
         if (manifolds_.empty()) {
@@ -2006,12 +2006,10 @@ struct PhysicsSystem final {
                                    broad_phase_expected_pairs_, worker.scratch);
         normalize_and_sort_body_pairs_(broad_phase_expected_pairs_);
         TracyPlot("physics_broad_phase_validator_ran", static_cast<i64>(1));
-        TracyPlot("physics_broad_phase_validator_expected_pairs",
-                  static_cast<i64>(broad_phase_expected_pairs_.size()));
+        TracyPlot("physics_broad_phase_validator_expected_pairs", static_cast<i64>(broad_phase_expected_pairs_.size()));
 
         if (broad_phase_expected_pairs_.size() != candidate_pairs_.size()) {
-            log::error(physics,
-                       "Incremental broad phase validation failed (step={} expected_pairs={} actual_pairs={})",
+            log::error(physics, "Incremental broad phase validation failed (step={} expected_pairs={} actual_pairs={})",
                        step_id, broad_phase_expected_pairs_.size(), candidate_pairs_.size());
             std::terminate();
         }
