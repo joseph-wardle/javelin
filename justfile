@@ -44,9 +44,10 @@ configure preset=default_preset: _check-build-tools
 build preset=default_preset: (configure preset)
     cmake --build "{{ build_root }}/{{ preset }}"
 
-run preset=default_preset *args: (build preset)
+run preset=default_preset *args: (configure preset)
     #!/usr/bin/env bash
     set -euo pipefail
+    cmake --build "{{ build_root }}/{{ preset }}" --target "{{ sandbox_target }}"
     bin_a="{{ build_root }}/{{ preset }}/examples/{{ sandbox_target }}"
     bin_b="{{ build_root }}/{{ preset }}/{{ sandbox_target }}"
     if [[ -x "$bin_a" ]]; then
@@ -54,13 +55,14 @@ run preset=default_preset *args: (build preset)
     elif [[ -x "$bin_b" ]]; then
         "$bin_b" {{ args }}
     else
-        echo "Sandbox binary not found. Build target '{{ sandbox_target }}' first." >&2
+        echo "Sandbox binary not found after building target '{{ sandbox_target }}'." >&2
         exit 1
     fi
 
-scene-tool preset=default_preset *args: (build preset)
+scene-tool preset=default_preset *args: (configure preset)
     #!/usr/bin/env bash
     set -euo pipefail
+    cmake --build "{{ build_root }}/{{ preset }}" --target "{{ scene_tool_target }}"
     bin_a="{{ build_root }}/{{ preset }}/examples/{{ scene_tool_target }}"
     bin_b="{{ build_root }}/{{ preset }}/{{ scene_tool_target }}"
     if [[ -x "$bin_a" ]]; then
@@ -68,14 +70,15 @@ scene-tool preset=default_preset *args: (build preset)
     elif [[ -x "$bin_b" ]]; then
         "$bin_b" {{ args }}
     else
-        echo "Scene tool binary not found. Build target '{{ scene_tool_target }}' first." >&2
+        echo "Scene tool binary not found after building target '{{ scene_tool_target }}'." >&2
         exit 1
     fi
 
-bench name preset=default_preset *args: (build preset)
+bench name preset=default_preset *args: (configure preset)
     #!/usr/bin/env bash
     set -euo pipefail
     target="javelin_bench_{{ name }}"
+    cmake --build "{{ build_root }}/{{ preset }}" --target "$target"
     bin_a="{{ build_root }}/{{ preset }}/bench/$target"
     bin_b="{{ build_root }}/{{ preset }}/$target"
     if [[ -x "$bin_a" ]]; then
@@ -83,7 +86,7 @@ bench name preset=default_preset *args: (build preset)
     elif [[ -x "$bin_b" ]]; then
         "$bin_b" {{ args }}
     else
-        echo "Benchmark binary not found. Build target '$target' first." >&2
+        echo "Benchmark binary not found after building target '$target'." >&2
         exit 1
     fi
 
@@ -116,9 +119,10 @@ scenes-generate-procedural counts="":
         python3 tools/generate_procedural_scene_files.py
     fi
 
-scenes-verify-roundtrip preset=default_preset: (build preset)
+scenes-verify-roundtrip preset=default_preset: (configure preset)
     #!/usr/bin/env bash
     set -euo pipefail
+    cmake --build "{{ build_root }}/{{ preset }}" --target "{{ scene_tool_target }}"
     bin_a="{{ build_root }}/{{ preset }}/examples/{{ scene_tool_target }}"
     bin_b="{{ build_root }}/{{ preset }}/{{ scene_tool_target }}"
     if [[ -x "$bin_a" ]]; then

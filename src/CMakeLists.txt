@@ -4,6 +4,7 @@ add_library(javelin STATIC)
 add_library(javelin::javelin ALIAS javelin)
 
 target_compile_features(javelin PUBLIC cxx_std_23)
+javelin_enable_import_std(javelin)
 
 target_sources(javelin
     PUBLIC

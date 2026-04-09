@@ -1,5 +1,6 @@
 add_library(javelin_bench_support STATIC)
 target_compile_features(javelin_bench_support PUBLIC cxx_std_23)
+javelin_enable_import_std(javelin_bench_support)
 target_sources(javelin_bench_support
     PUBLIC
         FILE_SET bench_support_modules
@@ -18,6 +19,7 @@ function(javelin_add_bench_from_dir dir)
 
     add_executable(${target})
     target_sources(${target} PRIVATE "${dir}/main.cpp")
+    javelin_enable_import_std(${target})
 
     target_link_libraries(${target}
             PRIVATE
