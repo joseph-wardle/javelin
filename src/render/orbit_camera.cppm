@@ -89,6 +89,7 @@ struct OrbitCameraTuning final {
     f32 pitch_radians{-0.35f};
     f32 yaw_speed_radians{0.12f};
     f32 framing_padding{1.25f};
+    f32 distance_scale{0.5f};
     f32 min_scene_radius{1.0f};
     f32 min_distance{4.0f};
     f32 fallback_distance{8.0f};
@@ -122,8 +123,9 @@ void OrbitCameraController::frame_scene(CameraState &camera, const RenderView &v
     const f32 radius = std::max(extents.length(), tuning.min_scene_radius);
 
     focus_point = center;
-    distance = std::max(tuning.min_distance,
-                        detail::fit_distance_for_radius(camera.lens, aspect, radius, tuning.framing_padding));
+    const f32 fitted_distance =
+        detail::fit_distance_for_radius(camera.lens, aspect, radius, tuning.framing_padding);
+    distance = std::max(tuning.min_distance, fitted_distance * std::max(tuning.distance_scale, 0.1f));
     update(camera, 0.0f);
 }
 
