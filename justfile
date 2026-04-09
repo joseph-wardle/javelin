@@ -21,6 +21,9 @@ _check-format-tools:
 _check-tidy-tools:
     @command -v clang-tidy >/dev/null
 
+_check-capture-tools:
+    @command -v ffmpeg >/dev/null
+
 configure preset=default_preset: _check-build-tools
     #!/usr/bin/env bash
     set -euo pipefail
@@ -58,6 +61,47 @@ run preset=default_preset *args: (configure preset)
         echo "Sandbox binary not found after building target '{{ sandbox_target }}'." >&2
         exit 1
     fi
+
+offline-render preset=default_preset *args: _check-capture-tools (configure preset)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    scene_arg="assets/scenes/samples/stack_boxes.jvscene"
+    frames_arg="600"
+    output_arg="capture/offline"
+    width_arg="1920"
+    height_arg="1080"
+    positional=()
+    for arg in {{ args }}; do
+        case "$arg" in
+            scene=*) scene_arg="${arg#scene=}" ;;
+            frames=*) frames_arg="${arg#frames=}" ;;
+            output=*) output_arg="${arg#output=}" ;;
+            width=*) width_arg="${arg#width=}" ;;
+            height=*) height_arg="${arg#height=}" ;;
+            *) positional+=("$arg") ;;
+        esac
+    done
+    if (( ${#positional[@]} > 0 )); then scene_arg="${positional[0]}"; fi
+    if (( ${#positional[@]} > 1 )); then frames_arg="${positional[1]}"; fi
+    if (( ${#positional[@]} > 2 )); then output_arg="${positional[2]}"; fi
+    if (( ${#positional[@]} > 3 )); then width_arg="${positional[3]}"; fi
+    if (( ${#positional[@]} > 4 )); then height_arg="${positional[4]}"; fi
+    frame_dir="${output_arg}.frames"
+    video_path="${output_arg}.mp4"
+    cmake --build "{{ build_root }}/{{ preset }}" --target "{{ sandbox_target }}"
+    bin_a="{{ build_root }}/{{ preset }}/examples/{{ sandbox_target }}"
+    bin_b="{{ build_root }}/{{ preset }}/{{ sandbox_target }}"
+    if [[ -x "$bin_a" ]]; then
+        "$bin_a" offline-render "$scene_arg" --frames="$frames_arg" --output-dir="$frame_dir" --width="$width_arg" --height="$height_arg"
+    elif [[ -x "$bin_b" ]]; then
+        "$bin_b" offline-render "$scene_arg" --frames="$frames_arg" --output-dir="$frame_dir" --width="$width_arg" --height="$height_arg"
+    else
+        echo "Sandbox binary not found after building target '{{ sandbox_target }}'." >&2
+        exit 1
+    fi
+    ffmpeg -y -framerate 60 -i "$frame_dir/frame_%06d.ppm" -c:v libx264 -pix_fmt yuv420p "$video_path"
+    rm -f "$frame_dir"/frame_*.ppm "$frame_dir"/ffmpeg_command.txt
+    rmdir "$frame_dir" 2>/dev/null || true
 
 scene-tool preset=default_preset *args: (configure preset)
     #!/usr/bin/env bash
