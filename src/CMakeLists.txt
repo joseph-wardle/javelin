@@ -39,6 +39,7 @@ target_sources(javelin
             platform/platform.cppm
             platform/window.cppm
             render/fly_camera.cppm
+            render/orbit_camera.cppm
             render/color.cppm
             render/pipeline.cppm
             render/render_context.cppm

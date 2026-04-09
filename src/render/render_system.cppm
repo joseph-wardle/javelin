@@ -31,6 +31,7 @@ import javelin.render.passes.geometry_pass;
 import javelin.render.passes.sleep_debug_pass;
 import javelin.render.passes.world_grid_pass;
 import javelin.render.fly_camera;
+import javelin.render.orbit_camera;
 import javelin.render.types;
 import javelin.physics.aabb_debug;
 import javelin.physics.contact_debug;
@@ -83,6 +84,11 @@ struct RenderSystem final {
         scene,
     };
 
+    enum struct CameraMode : u8 {
+        orbit,
+        fly,
+    };
+
   public:
     void init_cpu(const Scene &scene, PhysicsSystem &physics) noexcept {
         scene_ = &scene;
@@ -92,6 +98,9 @@ struct RenderSystem final {
         // - draw lists (static)
 
         log::info(render, "Initializing CPU resources for render system");
+        camera_mode_ = CameraMode::orbit;
+        orbit_camera_ = {};
+        fly_camera_ = {};
         camera_.position = {0.0f, 5.0f, 5.0f};
         camera_.yaw_radians = 0.0f;
         camera_.pitch_radians = -0.35f;
@@ -132,6 +141,13 @@ struct RenderSystem final {
         extent_ = Extent2D{w, h};
         targets_.resize(extent_);
         pipeline_.resize(device_, extent_);
+
+        if (scene_ != nullptr) {
+            const f32 aspect =
+                (extent_.height > 0) ? static_cast<f32>(extent_.width) / static_cast<f32>(extent_.height) : 1.0f;
+            orbit_camera_.frame_scene(camera_, scene_->render_view(), aspect);
+            log::info(render, "Presentation orbit active; hold RMB to take control");
+        }
 
         init_imgui_();
         load_ui_state_();
@@ -181,7 +197,19 @@ struct RenderSystem final {
             ImGui::Render();
         }
 
-        const CursorMode cursor_mode = fly_camera_.update(camera_, input.frame(), static_cast<f32>(dt));
+        const InputFrame &frame_input = input.frame();
+        if (camera_mode_ == CameraMode::orbit && !frame_input.ui_wants_mouse && !frame_input.ui_wants_keyboard &&
+            frame_input.mouse_right) {
+            camera_mode_ = CameraMode::fly;
+            log::info(render, "Fly camera enabled");
+        }
+
+        CursorMode cursor_mode = CursorMode::normal;
+        if (camera_mode_ == CameraMode::orbit) {
+            orbit_camera_.update(camera_, static_cast<f32>(dt));
+        } else {
+            cursor_mode = fly_camera_.update(camera_, frame_input, static_cast<f32>(dt));
+        }
         glfwSetInputMode(window_.native, GLFW_CURSOR,
                          cursor_mode == CursorMode::captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 
@@ -868,7 +896,9 @@ struct RenderSystem final {
     Pipeline pipeline_{};
     DebugToggles debug_{};
     CameraState camera_{};
+    OrbitCameraController orbit_camera_{};
     FlyCameraController fly_camera_{};
+    CameraMode camera_mode_{CameraMode::orbit};
     Extent2D extent_{};
 
     static constexpr usize kDtHistory = 240;
