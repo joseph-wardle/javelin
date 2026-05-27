@@ -4,6 +4,7 @@ function(javelin_add_example_from_dir dir)
 
     add_executable(${target})
     target_sources(${target} PRIVATE "${dir}/main.cpp")
+    javelin_enable_import_std(${target})
 
     target_link_libraries(${target}
             PRIVATE

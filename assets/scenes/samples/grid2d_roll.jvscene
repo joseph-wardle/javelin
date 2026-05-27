@@ -2322,3 +2322,11 @@ body id=tile_45_47 shape=floor_tile motion=static material=0 mesh=0 px=21.5 py=0
 body id=tile_46_47 shape=floor_tile motion=static material=1 mesh=0 px=22.5 py=0.1 pz=23.5
 body id=tile_47_47 shape=floor_tile motion=static material=2 mesh=0 px=23.5 py=0.1 pz=23.5
 body id=rolling_sphere shape=roller motion=dynamic material=1 mesh=0 px=-9 py=0.55 pz=0 vx=10 vy=0 vz=0
+body id=rolling_sphere_01 shape=roller motion=dynamic material=1 mesh=0 px=-10 py=0.55 pz=-0.75 vx=10 vy=0 vz=0
+body id=rolling_sphere_02 shape=roller motion=dynamic material=1 mesh=0 px=-11 py=0.55 pz=-1.5 vx=10 vy=0 vz=0
+body id=rolling_sphere_03 shape=roller motion=dynamic material=1 mesh=0 px=-12 py=0.55 pz=-2.25 vx=10 vy=0 vz=0
+body id=rolling_sphere_04 shape=roller motion=dynamic material=1 mesh=0 px=-13 py=0.55 pz=-3 vx=10 vy=0 vz=0
+body id=rolling_sphere_05 shape=roller motion=dynamic material=1 mesh=0 px=-10 py=0.55 pz=0.75 vx=10 vy=0 vz=0
+body id=rolling_sphere_06 shape=roller motion=dynamic material=1 mesh=0 px=-11 py=0.55 pz=1.5 vx=10 vy=0 vz=0
+body id=rolling_sphere_07 shape=roller motion=dynamic material=1 mesh=0 px=-12 py=0.55 pz=2.25 vx=10 vy=0 vz=0
+body id=rolling_sphere_08 shape=roller motion=dynamic material=1 mesh=0 px=-13 py=0.55 pz=3 vx=10 vy=0 vz=0

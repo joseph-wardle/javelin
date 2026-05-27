@@ -4,6 +4,7 @@ add_library(javelin STATIC)
 add_library(javelin::javelin ALIAS javelin)
 
 target_compile_features(javelin PUBLIC cxx_std_23)
+javelin_enable_import_std(javelin)
 
 target_sources(javelin
     PUBLIC
@@ -38,6 +39,7 @@ target_sources(javelin
             platform/platform.cppm
             platform/window.cppm
             render/fly_camera.cppm
+            render/orbit_camera.cppm
             render/color.cppm
             render/pipeline.cppm
             render/render_context.cppm

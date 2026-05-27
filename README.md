@@ -65,11 +65,11 @@ flowchart LR
 
 ## Scene Demos
 
-- `assets/scenes/samples/newtons_cradle.jvscene`
-- `assets/scenes/samples/domino_chain.jvscene`
-- `assets/scenes/samples/slope_friction.jvscene`
-- `assets/scenes/samples/pyramid_topple.jvscene`
-- `assets/scenes/samples/stack_boxes.jvscene`
+- `assets/scenes/samples/cradle.jvscene`
+- `assets/scenes/samples/domino.jvscene`
+- `assets/scenes/samples/slope.jvscene`
+- `assets/scenes/samples/pyramid.jvscene`
+- `assets/scenes/samples/stack.jvscene`
 
 ## Screenshots / GIFs
 

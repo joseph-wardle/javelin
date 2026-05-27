@@ -28,6 +28,7 @@ struct CameraBasis final {
 };
 
 [[nodiscard]] CameraBasis camera_basis(const CameraState &camera) noexcept;
+[[nodiscard]] bool camera_look_at(CameraState &camera, const Vec3 &target) noexcept;
 [[nodiscard]] Mat4 camera_view(const CameraState &camera) noexcept;
 [[nodiscard]] Mat4 camera_proj(const CameraLens &lens, f32 aspect) noexcept;
 
@@ -47,6 +48,20 @@ struct CameraBasis final {
     const Vec3 up = cross(right, forward);
 
     return CameraBasis{.forward = forward, .right = right, .up = up};
+}
+
+[[nodiscard]] bool camera_look_at(CameraState &camera, const Vec3 &target) noexcept {
+    Vec3 forward = target - camera.position;
+    if (!forward.try_normalize()) {
+        return false;
+    }
+
+    const f32 horizontal_len = std::sqrt(std::max(0.0f, forward.x * forward.x + forward.z * forward.z));
+    if (horizontal_len > 1e-6f) {
+        camera.yaw_radians = std::atan2(forward.x, -forward.z);
+    }
+    camera.pitch_radians = std::atan2(forward.y, horizontal_len);
+    return true;
 }
 
 [[nodiscard]] Mat4 camera_view(const CameraState &camera) noexcept {

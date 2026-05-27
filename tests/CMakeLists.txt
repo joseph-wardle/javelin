@@ -1,5 +1,6 @@
 add_executable(javelin_physics_tests)
 target_compile_features(javelin_physics_tests PRIVATE cxx_std_23)
+javelin_enable_import_std(javelin_physics_tests)
 target_sources(javelin_physics_tests
     PRIVATE
         main.cpp
