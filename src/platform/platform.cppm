@@ -14,6 +14,7 @@ struct PlatformConfig final {
   i32 width{1280};
   i32 height{720};
   bool visible{true};
+  bool fullscreen{false};
 };
 
 struct Platform final {
@@ -39,14 +40,28 @@ struct Platform final {
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
 
-    window_.native = glfwCreateWindow(config.width, config.height, "javelin",
-                                      nullptr, nullptr);
+    GLFWmonitor *monitor = nullptr;
+    i32 win_width = config.width;
+    i32 win_height = config.height;
+    if (config.fullscreen) {
+      monitor = glfwGetPrimaryMonitor();
+      if (monitor) {
+        const GLFWvidmode *mode = glfwGetVideoMode(monitor);
+        if (mode) {
+          win_width = mode->width;
+          win_height = mode->height;
+        }
+      }
+    }
+
+    window_.native =
+        glfwCreateWindow(win_width, win_height, "javelin", monitor, nullptr);
     if (!window_.native) {
       glfwTerminate();
       log::critical(platform, "GLFW window creation failed");
     }
-    log::info(platform, "Window created: {}x{} visible={}", config.width,
-              config.height, config.visible);
+    log::info(platform, "Window created: {}x{} visible={} fullscreen={}",
+              win_width, win_height, config.visible, config.fullscreen);
 
     glfwSetWindowUserPointer(window_.native, this);
     glfwSetKeyCallback(window_.native, [](GLFWwindow *w, const int key,

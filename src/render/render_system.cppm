@@ -36,6 +36,7 @@ import javelin.render.types;
 import javelin.physics.aabb_debug;
 import javelin.physics.contact_debug;
 import javelin.physics.physics_system;
+import javelin.math.vec3;
 import javelin.scene;
 import javelin.scene.camera;
 import javelin.scene.pose_channel;
@@ -46,6 +47,9 @@ export namespace javelin {
 
 struct RenderGpuConfig final {
   bool ui_enabled{true};
+  bool fixed_world_camera{false};
+  f32 recording_orbit_start_seconds{0.0f};
+  bool draw_sleep_state{false};
 };
 
 struct RenderSystem final {
@@ -115,7 +119,7 @@ public:
     log::info(render, "Initializing GPU resources for render system");
     window_ = window;
     ui_enabled_ = config.ui_enabled;
-
+    fixed_world_camera_ = config.fixed_world_camera;
     glfwMakeContextCurrent(window_.native);
 
     if (gladLoadGL(glfwGetProcAddress) == 0) {
@@ -150,17 +154,25 @@ public:
     pipeline_.resize(device_, extent_);
 
     if (scene_ != nullptr) {
-      const f32 aspect = (extent_.height > 0)
-                             ? static_cast<f32>(extent_.width) /
-                                   static_cast<f32>(extent_.height)
-                             : 1.0f;
-      orbit_camera_.frame_scene(camera_, scene_->render_view(), aspect);
-      log::info(render, "Presentation orbit active; hold RMB to take control");
+      if (fixed_world_camera_) {
+        set_fixed_world_orbit_(config.recording_orbit_start_seconds);
+        log::info(render, "Recording orbit active; using fixed world-space anchor");
+      } else {
+        const f32 aspect = (extent_.height > 0)
+                               ? static_cast<f32>(extent_.width) /
+                                     static_cast<f32>(extent_.height)
+                               : 1.0f;
+        orbit_camera_.frame_scene(camera_, scene_->render_view(), aspect);
+        log::info(render, "Presentation orbit active; hold RMB to take control");
+      }
     }
 
     if (ui_enabled_) {
       init_imgui_();
       load_ui_state_();
+    }
+    if (config.draw_sleep_state) {
+      debug_.draw_sleep_state = true;
     }
     gpu_ready_ = true;
 
@@ -311,6 +323,12 @@ private:
   }
 
   void update_camera_without_input_(const f32 dt) noexcept {
+    if (fixed_world_camera_) {
+      orbit_camera_.update(camera_, dt);
+      glfwSetInputMode(window_.native, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+      return;
+    }
+
     if (camera_mode_ == CameraMode::orbit) {
       orbit_camera_.update(camera_, dt);
     }
@@ -1044,6 +1062,10 @@ private:
   Extent2D extent_{};
 
   static constexpr usize kDtHistory = 240;
+  static constexpr Vec3 kRecordingOrbitFocusPoint{0.0f, 5.0f, 0.0f};
+  static constexpr f32 kRecordingCameraYawRadians = 0.75f;
+  static constexpr f32 kRecordingCameraPitchRadians = -0.35f;
+  static constexpr f32 kRecordingCameraDistance = 16.0f;
   static constexpr u32 kDtSampleStride = 4;
   static constexpr usize kRenderDtHistory = kDtHistory;
   std::array<f32, kRenderDtHistory> render_dt_history_{};
@@ -1075,6 +1097,7 @@ private:
 
   bool ui_enabled_ = true;
   bool gpu_ready_ = false;
+  bool fixed_world_camera_ = false;
 
   [[nodiscard]] static u64 now_ns_() noexcept {
     const auto now = SteadyClock::now().time_since_epoch();
@@ -1108,6 +1131,18 @@ private:
     const f64 alpha = static_cast<f64>(sample_time - interpolation_start_time) /
                       static_cast<f64>(interpolation_span);
     return static_cast<f32>(alpha);
+  }
+
+  void set_fixed_world_orbit_(const f32 start_seconds) noexcept {
+    orbit_camera_.tuning.initial_yaw_radians = kRecordingCameraYawRadians;
+    orbit_camera_.tuning.pitch_radians = kRecordingCameraPitchRadians;
+    orbit_camera_.focus_point = kRecordingOrbitFocusPoint;
+    orbit_camera_.distance = kRecordingCameraDistance;
+    orbit_camera_.yaw_radians = orbit_camera_.tuning.initial_yaw_radians +
+                                orbit_camera_.tuning.yaw_speed_radians *
+                                    std::max(start_seconds, 0.0f);
+    orbit_camera_.framed = true;
+    orbit_camera_.update(camera_, 0.0f);
   }
 };
 

@@ -4,6 +4,10 @@ build_root := "build"
 default_preset := "dev"
 sandbox_target := "javelin_sandbox"
 scene_tool_target := "javelin_scene_tool"
+capture_seconds := "10"
+capture_fps := "60"
+capture_width := "1280"
+capture_height := "720"
 fmt_globs := "-g '*.{c,cc,cpp,cxx,cppm,ixx,h,hpp,hxx}'"
 tidy_globs := "-g '*.{c,cc,cpp,cxx,cppm,ixx}'"
 fmt_style := "{BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never, ColumnLimit: 120}"
@@ -65,7 +69,7 @@ run preset=default_preset *args: (configure preset)
 offline-render preset=default_preset *args: _check-capture-tools (configure preset)
     #!/usr/bin/env bash
     set -euo pipefail
-    scene_arg="assets/scenes/samples/stack_boxes.jvscene"
+    scene_arg="assets/scenes/samples/stack.jvscene"
     frames_arg="600"
     output_arg="capture/offline"
     width_arg="1920"
@@ -102,6 +106,70 @@ offline-render preset=default_preset *args: _check-capture-tools (configure pres
     ffmpeg -y -framerate 60 -i "$frame_dir/frame_%06d.ppm" -c:v libx264 -pix_fmt yuv420p "$video_path"
     rm -f "$frame_dir"/frame_*.ppm "$frame_dir"/ffmpeg_command.txt
     rmdir "$frame_dir" 2>/dev/null || true
+
+# Capture a 10-second clip for each sample scene, one scene per sandbox process.
+capture-sample-scenes preset=default_preset: _check-capture-tools (configure preset)
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    frames_arg=$(( {{ capture_seconds }} * {{ capture_fps }} ))
+    output_root="capture/scenes"
+
+    sample_scenes=(
+        assets/scenes/samples/stack.jvscene
+        assets/scenes/samples/grid3d.jvscene
+        assets/scenes/samples/grid2d_roll.jvscene
+        assets/scenes/samples/pyr3d.jvscene
+        assets/scenes/samples/cube_fall.jvscene
+        assets/scenes/samples/sphere_fall.jvscene
+        assets/scenes/samples/pyramid.jvscene
+        assets/scenes/samples/domino.jvscene
+        assets/scenes/samples/cradle.jvscene
+        assets/scenes/samples/slope.jvscene
+        assets/scenes/samples/stadium.jvscene
+        assets/scenes/samples/pendulum_wall.jvscene
+    )
+
+    cmake --build "{{ build_root }}/{{ preset }}" --target "{{ sandbox_target }}"
+    bin_a="{{ build_root }}/{{ preset }}/examples/{{ sandbox_target }}"
+    bin_b="{{ build_root }}/{{ preset }}/{{ sandbox_target }}"
+    if [[ -x "$bin_a" ]]; then
+        sandbox_bin="$bin_a"
+    elif [[ -x "$bin_b" ]]; then
+        sandbox_bin="$bin_b"
+    else
+        echo "Sandbox binary not found after building target '{{ sandbox_target }}'." >&2
+        exit 1
+    fi
+
+    capture_scene() {
+        local scene_path="$1"
+        local scene_name="${scene_path##*/}"
+        scene_name="${scene_name%.jvscene}"
+
+        local frame_dir="${output_root}/${scene_name}.frames"
+        local video_path="${output_root}/${scene_name}.mp4"
+
+        rm -rf "$frame_dir"
+        mkdir -p "$frame_dir"
+
+        "$sandbox_bin" offline-render "$scene_path" \
+            --frames="$frames_arg" \
+            --output-dir="$frame_dir" \
+            --width="{{ capture_width }}" \
+            --height="{{ capture_height }}"
+
+        ffmpeg -y -framerate "{{ capture_fps }}" -i "$frame_dir/frame_%06d.ppm" \
+            -c:v libx264 -pix_fmt yuv420p "$video_path"
+        rm -f "$frame_dir"/frame_*.ppm "$frame_dir"/ffmpeg_command.txt
+        rmdir "$frame_dir" 2>/dev/null || true
+
+        echo "Wrote $video_path"
+    }
+
+    for scene in "${sample_scenes[@]}"; do
+        capture_scene "$scene"
+    done
 
 scene-tool preset=default_preset *args: (configure preset)
     #!/usr/bin/env bash
@@ -179,12 +247,12 @@ scenes-verify-roundtrip preset=default_preset: (configure preset)
     fi
 
     sample_scenes=(
-        assets/scenes/samples/stack_boxes.jvscene
-        assets/scenes/samples/grid_boxes_3d.jvscene
-        assets/scenes/samples/grid_boxes_2d_with_rolling_sphere.jvscene
-        assets/scenes/samples/pyramid_cubes_3d.jvscene
-        assets/scenes/samples/single_cube_fall.jvscene
-        assets/scenes/samples/single_sphere_fall.jvscene
+        assets/scenes/samples/stack.jvscene
+        assets/scenes/samples/grid3d.jvscene
+        assets/scenes/samples/grid2d_roll.jvscene
+        assets/scenes/samples/pyr3d.jvscene
+        assets/scenes/samples/cube_fall.jvscene
+        assets/scenes/samples/sphere_fall.jvscene
     )
     for scene in "${sample_scenes[@]}"; do
         "$tool_bin" verify-roundtrip "$scene"

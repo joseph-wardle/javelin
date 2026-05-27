@@ -7,14 +7,15 @@ using namespace javelin;
 
 namespace {
 constexpr std::string_view kDefaultScenePath =
-    "assets/scenes/samples/stack_boxes.jvscene";
+    "assets/scenes/samples/stack.jvscene";
 
 void print_usage(const char *exe, const OfflineRenderConfig &offline_defaults) {
   std::println("Javelin sandbox");
   std::println("Usage:");
   std::println("  {} [scene.jvscene]", exe);
   std::println("  {} offline-render [scene.jvscene] [--frames=N] "
-               "[--output-dir=DIR] [--width=N] [--height=N]",
+               "[--output-dir=DIR] [--width=N] [--height=N] "
+               "[--orbit-start-seconds=N] [--sleep-debug]",
                exe);
   std::println("");
   std::println("Offline render defaults:");
@@ -23,6 +24,8 @@ void print_usage(const char *exe, const OfflineRenderConfig &offline_defaults) {
   std::println("  --output-dir={}", offline_defaults.output_dir.string());
   std::println("  --width={}", offline_defaults.width);
   std::println("  --height={}", offline_defaults.height);
+  std::println("  --orbit-start-seconds={}", offline_defaults.orbit_start_seconds);
+  std::println("  --sleep-debug={}", offline_defaults.draw_sleep_state ? "on" : "off");
 }
 
 [[nodiscard]] bool parse_u32_arg(const std::string_view text, u32 &value) {
@@ -33,6 +36,13 @@ void print_usage(const char *exe, const OfflineRenderConfig &offline_defaults) {
 }
 
 [[nodiscard]] bool parse_i32_arg(const std::string_view text, i32 &value) {
+  const char *const begin = text.data();
+  const char *const end = text.data() + text.size();
+  auto [ptr, ec] = std::from_chars(begin, end, value);
+  return ec == std::errc{} && ptr == end;
+}
+
+[[nodiscard]] bool parse_f32_arg(const std::string_view text, f32 &value) {
   const char *const begin = text.data();
   const char *const end = text.data() + text.size();
   auto [ptr, ec] = std::from_chars(begin, end, value);
@@ -77,6 +87,9 @@ void print_usage(const char *exe, const OfflineRenderConfig &offline_defaults) {
   if (key == "height") {
     return parse_i32_arg(value, config.height);
   }
+  if (key == "orbit-start-seconds") {
+    return parse_f32_arg(value, config.orbit_start_seconds);
+  }
 
   return false;
 }
@@ -104,6 +117,14 @@ int main(int argc, char **argv) {
           return 0;
         }
         if (arg.starts_with("--")) {
+          if (arg == "--sleep-debug") {
+            config.draw_sleep_state = true;
+            continue;
+          }
+          if (arg == "--no-sleep-debug") {
+            config.draw_sleep_state = false;
+            continue;
+          }
           if (!parse_offline_arg(arg, config)) {
             std::cerr << "Unrecognized offline-render argument: " << arg
                       << "\n";

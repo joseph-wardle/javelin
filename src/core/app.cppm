@@ -91,6 +91,8 @@ struct OfflineRenderConfig final {
   i32 width{1920};
   i32 height{1080};
   u32 frame_count{600};
+  f32 orbit_start_seconds{0.0f};
+  bool draw_sleep_state{false};
 };
 
 struct App final {
@@ -105,7 +107,7 @@ struct App final {
 
     log::info(app, "Start scene={}", scene_path.string());
 
-    platform.init();
+    platform.init(PlatformConfig{.fullscreen = true});
     scene = Scene::load_scene_from_disk(scene_path);
 
     renderer.init_cpu(scene, physics);
@@ -180,7 +182,12 @@ struct App final {
 
     renderer.init_cpu(scene, physics);
     renderer.init_gpu(platform.window_handle(),
-                      RenderGpuConfig{.ui_enabled = false});
+                      RenderGpuConfig{.ui_enabled = false,
+                                      .fixed_world_camera = true,
+                                      .recording_orbit_start_seconds =
+                                          config.orbit_start_seconds,
+                                      .draw_sleep_state =
+                                          config.draw_sleep_state});
 
     physics.init(scene);
 

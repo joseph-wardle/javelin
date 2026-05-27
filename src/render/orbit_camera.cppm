@@ -71,28 +71,13 @@ struct SceneBounds final {
     return bounds;
 }
 
-[[nodiscard]] inline f32 fit_distance_for_radius(const CameraLens &lens, const f32 aspect, const f32 radius,
-                                                 const f32 padding) noexcept {
-    const f32 clamped_aspect = std::max(aspect, 0.1f);
-    const f32 half_fov_y = lens.fov_y_radians * 0.5f;
-    const f32 half_fov_x = std::atan(std::tan(half_fov_y) * clamped_aspect);
-    const f32 limiting_half_fov = std::min(half_fov_x, half_fov_y);
-    const f32 sin_half_fov = std::max(std::sin(limiting_half_fov), 0.1f);
-    const f32 padded_radius = radius * std::max(padding, 1.0f);
-    return padded_radius / sin_half_fov;
-}
-
 } // namespace detail
 
 struct OrbitCameraTuning final {
     f32 initial_yaw_radians{0.75f};
     f32 pitch_radians{-0.35f};
     f32 yaw_speed_radians{0.12f};
-    f32 framing_padding{1.25f};
-    f32 distance_scale{0.5f};
-    f32 min_scene_radius{1.0f};
-    f32 min_distance{4.0f};
-    f32 fallback_distance{8.0f};
+    f32 fixed_distance{16.0f};
 };
 
 struct OrbitCameraController final {
@@ -107,25 +92,22 @@ struct OrbitCameraController final {
 };
 
 void OrbitCameraController::frame_scene(CameraState &camera, const RenderView &view, const f32 aspect) noexcept {
+    (void)aspect;
     yaw_radians = tuning.initial_yaw_radians;
     framed = true;
 
     const detail::SceneBounds bounds = detail::compute_scene_bounds(view);
     if (!bounds.valid) {
         focus_point = Vec3{};
-        distance = std::max(tuning.min_distance, tuning.fallback_distance);
+        distance = tuning.fixed_distance;
         update(camera, 0.0f);
         return;
     }
 
     const Vec3 center = (bounds.min + bounds.max) * 0.5f;
-    const Vec3 extents = (bounds.max - bounds.min) * 0.5f;
-    const f32 radius = std::max(extents.length(), tuning.min_scene_radius);
 
     focus_point = center;
-    const f32 fitted_distance =
-        detail::fit_distance_for_radius(camera.lens, aspect, radius, tuning.framing_padding);
-    distance = std::max(tuning.min_distance, fitted_distance * std::max(tuning.distance_scale, 0.1f));
+    distance = tuning.fixed_distance;
     update(camera, 0.0f);
 }
 
