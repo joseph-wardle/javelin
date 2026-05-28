@@ -109,10 +109,14 @@ int verify_roundtrip(const std::filesystem::path &input) {
 }
 
 int scene_export(const std::filesystem::path &input, const std::filesystem::path &output) {
-    Scene scene = Scene::load_scene_from_disk(input);
-    const auto saved = scene.save_scene_to_disk(output);
+    auto scene = Scene::from_path(input);
+    if (!scene) {
+        std::cerr << scene.error().formatted() << '\n';
+        return 1;
+    }
+    const auto saved = scene->save(output);
     if (!saved) {
-        std::cerr << format_scene_file_error(saved.error()) << '\n';
+        std::cerr << saved.error().formatted() << '\n';
         return 1;
     }
     std::cout << "Exported scene via runtime contract: " << input.string() << " -> " << output.string() << '\n';

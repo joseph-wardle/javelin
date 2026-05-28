@@ -13,12 +13,37 @@ import javelin.scene.bodies;
 import javelin.scene.entity;
 import javelin.scene.physics_materials;
 import javelin.scene.pose_channel;
-import javelin.scene.scene_file;
 import javelin.scene.shapes;
 
 export namespace javelin {
 
+// Error returned from Scene::from_path and Scene::save.  Carries the source
+// file path and (when applicable) line number of the offending record.
+struct SceneError final {
+    std::filesystem::path path{};
+    u32 line{0};
+    std::string message{};
+
+    // Render the error as "path:line: message", "path: message", or just
+    // "message" depending on which fields are populated.
+    [[nodiscard]] std::string formatted() const {
+        if (!path.empty() && line > 0u) {
+            return std::format("{}:{}: {}", path.string(), line, message);
+        }
+        if (!path.empty()) {
+            return std::format("{}: {}", path.string(), message);
+        }
+        return message;
+    }
+};
+
+// Options accepted by Scene::save.
+struct SceneSaveOptions final {
+    bool validate_before_write{true};
+};
+
 struct Scene final {
+
     /*
     Scene data contract (v1)
 
@@ -67,10 +92,10 @@ struct Scene final {
         shape_ids_.clear();
         shape_ids_.reserve(capacity_);
         body_ids_.resize(capacity_);
-        body_motion_.resize(capacity_, SceneFileBodyMotion::dynamic_body);
+        body_motion_.resize(capacity_, BodyMotion::dynamic_body);
         material_.resize(capacity_);
         // Physics material pool always starts with the default at index 0.
-        // load_scene_from_disk expands it to cover all authored material indices.
+        // from_path expands it to cover all authored material indices.
         physics_material_restitution_.assign(1u, kDefaultPhysicsMaterial.restitution);
         physics_material_friction_.assign(1u, kDefaultPhysicsMaterial.friction);
         mesh_.resize(capacity_);
@@ -169,10 +194,9 @@ struct Scene final {
 
     // Serialise the authored portion of the scene back to disk. Body simulation state
     // is exported from the initial-state mirrors, so saving a stepped scene still
-    // round-trips the authored configuration.  Defined in scene_builder.cppm.
-    [[nodiscard]] std::expected<void, SceneFileError>
-    save_scene_to_disk(std::filesystem::path scene_path,
-                       const SceneFileSaveOptions &save_options = {}) const;
+    // round-trips the authored configuration.  Defined in scene_builder.cpp.
+    [[nodiscard]] std::expected<void, SceneError> save(std::filesystem::path scene_path,
+                                                       const SceneSaveOptions &options = {}) const;
 
   private:
     void snapshot_initial_state_from_sim_() noexcept {
@@ -200,8 +224,8 @@ struct Scene final {
     // Construct a Scene from an authored scene file. Computes derived properties
     // (per-body inv_mass / inv_inertia from shape + material density + motion intent),
     // resolves shape/body/constraint string ids, sizes the material pool, and
-    // publishes the initial pose snapshot.  Defined in scene_builder.cppm.
-    [[nodiscard]] static Scene load_scene_from_disk(std::filesystem::path scene_path);
+    // publishes the initial pose snapshot.  Defined in scene_builder.cpp.
+    [[nodiscard]] static std::expected<Scene, SceneError> from_path(std::filesystem::path scene_path);
 
   private:
     // Runtime bookkeeping (derived/transient).
@@ -229,7 +253,7 @@ struct Scene final {
     std::vector<std::string> constraint_ids_{};
 
     // Authored motion intent (serialized values, preserved for round-trip export).
-    std::vector<SceneFileBodyMotion> body_motion_{};
+    std::vector<BodyMotion> body_motion_{};
 
     // Authored render/material references (serialized values).
     std::vector<MaterialId> material_{}; // per-body index into physics material pool

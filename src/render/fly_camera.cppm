@@ -21,14 +21,14 @@ struct FlyCameraTuning final {
     f32 pitch_limit{1.55334f}; // ~89 degrees
 };
 
-struct FlyCameraController final : CameraController {
+struct FlyCameraController final {
     FlyCameraTuning tuning{};
     f32 speed{tuning.base_speed};
 
     // Avoid a giant mouse delta the first frame you capture.
     bool ignore_next_mouse_delta{true};
 
-    [[nodiscard]] CursorMode update(CameraState &camera, const InputFrame &in, f32 dt_seconds) noexcept override;
+    [[nodiscard]] CursorMode update(CameraState &camera, const InputFrame &in, f32 dt_seconds) noexcept;
 };
 
 CursorMode FlyCameraController::update(CameraState &camera, const InputFrame &in, f32 dt_seconds) noexcept {

@@ -82,7 +82,7 @@ struct OrbitCameraTuning final {
     f32 fixed_distance{16.0f};
 };
 
-struct OrbitCameraController final : CameraController {
+struct OrbitCameraController final {
     OrbitCameraTuning tuning{};
     Vec3 focus_point{};
     f32 distance{8.0f};
@@ -90,7 +90,7 @@ struct OrbitCameraController final : CameraController {
     bool framed{};
 
     void frame_scene(CameraState &camera, const BodiesRead &view, f32 aspect) noexcept;
-    [[nodiscard]] CursorMode update(CameraState &camera, const InputFrame &input, f32 dt_seconds) noexcept override;
+    [[nodiscard]] CursorMode update(CameraState &camera, const InputFrame &input, f32 dt_seconds) noexcept;
 };
 
 void OrbitCameraController::frame_scene(CameraState &camera, const BodiesRead &view, const f32 aspect) noexcept {

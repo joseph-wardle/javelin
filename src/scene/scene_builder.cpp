@@ -80,9 +80,8 @@ namespace {
     return Vec3{};
 }
 
-[[nodiscard]] f32 shape_inv_mass(const SceneFileBodyMotion motion, const ShapeData &shape,
-                                 const f32 density) noexcept {
-    if (motion == SceneFileBodyMotion::static_body) {
+[[nodiscard]] f32 shape_inv_mass(const BodyMotion motion, const ShapeData &shape, const f32 density) noexcept {
+    if (motion == BodyMotion::static_body) {
         return 0.0f;
     }
     switch (shape.kind) {
@@ -94,16 +93,23 @@ namespace {
     return 0.0f;
 }
 
+[[nodiscard]] SceneError scene_error_from_scene_file_error(SceneFileError error) {
+    return SceneError{
+        .path = std::move(error.path),
+        .line = error.line,
+        .message = std::move(error.message),
+    };
+}
+
 } // namespace
 
-Scene Scene::load_scene_from_disk(std::filesystem::path scene_path) {
+std::expected<Scene, SceneError> Scene::from_path(std::filesystem::path scene_path) {
     ZoneScopedN("Scene load from disk");
     log::info(scene, "Loading scene file: {}", scene_path.string());
 
-    const auto file = SceneFile::load(scene_path);
+    auto file = SceneFile::load(scene_path);
     if (!file) {
-        log::error(scene, "{}", format_scene_file_error(file.error()));
-        std::terminate();
+        return std::unexpected(scene_error_from_scene_file_error(std::move(file.error())));
     }
 
     const SceneFile &in = *file;
@@ -147,8 +153,11 @@ Scene Scene::load_scene_from_disk(std::filesystem::path scene_path) {
         const SceneFileBody &body = in.bodies[idx];
         const auto shape_it = shape_lookup.find(body.shape_id);
         if (shape_it == shape_lookup.end()) {
-            log::error(scene, "Body references unknown shape (body='{}' shape='{}')", body.id, body.shape_id);
-            std::terminate();
+            return std::unexpected(SceneError{
+                .path = scene_path,
+                .line = 0u,
+                .message = std::format("Body '{}' references unknown shape '{}'", body.id, body.shape_id),
+            });
         }
         const u32 shape_index = shape_it->second;
         const ShapeData &shape = out.shapes_[shape_index];
@@ -181,7 +190,7 @@ Scene Scene::load_scene_from_disk(std::filesystem::path scene_path) {
             ++box_count;
             break;
         }
-        if (body.motion == SceneFileBodyMotion::static_body) {
+        if (body.motion == BodyMotion::static_body) {
             ++static_count;
         } else {
             ++dynamic_count;
@@ -226,9 +235,12 @@ Scene Scene::load_scene_from_disk(std::filesystem::path scene_path) {
             const auto b_it = body_lookup.find(c.body_b_id);
             // Body refs were already cross-validated by SceneFile::load(); this is a safety net.
             if (a_it == body_lookup.end() || b_it == body_lookup.end()) {
-                log::error(scene, "Constraint '{}' references unknown body (body_a='{}' body_b='{}')", c.id,
-                           c.body_a_id, c.body_b_id);
-                std::terminate();
+                return std::unexpected(SceneError{
+                    .path = scene_path,
+                    .line = 0u,
+                    .message = std::format("Constraint '{}' references unknown body (body_a='{}' body_b='{}')", c.id,
+                                           c.body_a_id, c.body_b_id),
+                });
             }
             out.constraints_.push_back(DistanceConstraint{
                 .body_a = a_it->second,
@@ -252,13 +264,12 @@ Scene Scene::load_scene_from_disk(std::filesystem::path scene_path) {
     return out;
 }
 
-std::expected<void, SceneFileError>
-Scene::save_scene_to_disk(std::filesystem::path scene_path, const SceneFileSaveOptions &save_options) const {
+std::expected<void, SceneError> Scene::save(std::filesystem::path scene_path, const SceneSaveOptions &options) const {
     ZoneScopedN("Scene save to disk");
     log::info(scene, "Saving scene file: {}", scene_path.string());
 
-    auto error = [&scene_path](std::string message) -> std::expected<void, SceneFileError> {
-        return std::unexpected(SceneFileError{
+    auto error = [&scene_path](std::string message) -> std::expected<void, SceneError> {
+        return std::unexpected(SceneError{
             .path = scene_path,
             .line = 0u,
             .message = std::move(message),
@@ -375,9 +386,9 @@ Scene::save_scene_to_disk(std::filesystem::path scene_path, const SceneFileSaveO
         });
     }
 
-    auto save_result = out.save(scene_path, save_options);
+    auto save_result = out.save(scene_path, SceneFileSaveOptions{.validate_before_write = options.validate_before_write});
     if (!save_result) {
-        return std::unexpected(save_result.error());
+        return std::unexpected(scene_error_from_scene_file_error(std::move(save_result.error())));
     }
 
     log::info(scene, "Saved scene file '{}' (shapes={}, bodies={}, constraints={})", scene_path.string(),

@@ -53,11 +53,6 @@ Scene file text schema (v1, .jvscene):
   held to the same contract.
 */
 
-enum struct SceneFileBodyMotion : u8 {
-    dynamic_body,
-    static_body,
-};
-
 [[nodiscard]] constexpr std::string_view to_string(const ShapeKind kind) noexcept {
     switch (kind) {
     case ShapeKind::sphere:
@@ -68,33 +63,12 @@ enum struct SceneFileBodyMotion : u8 {
     return "unknown";
 }
 
-[[nodiscard]] constexpr std::string_view to_string(const SceneFileBodyMotion motion) noexcept {
-    switch (motion) {
-    case SceneFileBodyMotion::dynamic_body:
-        return "dynamic";
-    case SceneFileBodyMotion::static_body:
-        return "static";
-    }
-    return "unknown";
-}
-
 [[nodiscard]] constexpr std::optional<ShapeKind> parse_shape_kind(const std::string_view token) noexcept {
     if (token == "sphere") {
         return ShapeKind::sphere;
     }
     if (token == "box") {
         return ShapeKind::box;
-    }
-    return std::nullopt;
-}
-
-[[nodiscard]] constexpr std::optional<SceneFileBodyMotion>
-parse_scene_file_body_motion(const std::string_view token) noexcept {
-    if (token == "dynamic") {
-        return SceneFileBodyMotion::dynamic_body;
-    }
-    if (token == "static") {
-        return SceneFileBodyMotion::static_body;
     }
     return std::nullopt;
 }
@@ -123,7 +97,7 @@ struct SceneFileShape final {
 struct SceneFileBody final {
     std::string id{};
     std::string shape_id{};
-    SceneFileBodyMotion motion{SceneFileBodyMotion::dynamic_body};
+    BodyMotion motion{BodyMotion::dynamic_body};
     MaterialId material{0u};
     MeshId mesh{0u};
 
@@ -612,7 +586,7 @@ parse_scene_header_record(const std::string_view payload) {
     take_required_identifier(p, "shape", "body shape id", out.shape_id);
 
     if (const auto motion_value = p.take_raw("motion")) {
-        const auto parsed = parse_scene_file_body_motion(*motion_value);
+        const auto parsed = parse_body_motion(*motion_value);
         if (!parsed) {
             p.fail(std::format("Invalid body motion '{}' (expected dynamic|static)", *motion_value));
         } else {

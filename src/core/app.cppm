@@ -37,7 +37,11 @@ struct App final {
     log::info(app, "Start scene={}", scene_path.string());
 
     platform.init(PlatformConfig{.fullscreen = true});
-    scene = Scene::load_scene_from_disk(scene_path);
+    auto loaded_scene = Scene::from_path(scene_path);
+    if (!loaded_scene) {
+      log::critical(app, "Failed to load scene: {}", loaded_scene.error().formatted());
+    }
+    scene = std::move(*loaded_scene);
 
     renderer.init_cpu(scene, physics);
     renderer.init_gpu(platform.window_handle());
@@ -97,7 +101,11 @@ struct App final {
         .height = config.height,
         .visible = false,
     });
-    scene = Scene::load_scene_from_disk(scene_path);
+    auto loaded_scene = Scene::from_path(scene_path);
+    if (!loaded_scene) {
+      log::critical(app, "Failed to load scene: {}", loaded_scene.error().formatted());
+    }
+    scene = std::move(*loaded_scene);
 
     renderer.init_cpu(scene, physics);
     renderer.init_gpu(platform.window_handle(),

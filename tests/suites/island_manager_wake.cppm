@@ -4,8 +4,8 @@ import std;
 
 import javelin.core.types;
 import javelin.math;
+import javelin.physics.body_graph;
 import javelin.physics.constraint_types;
-import javelin.physics.island_manager;
 import javelin.physics.types;
 import javelin.tests.assert;
 
@@ -21,7 +21,7 @@ namespace {
 
 export void island_manager_chain_and_wake() {
     constexpr u32 kBodyCount = 4u;
-    IslandManager islands;
+    BodyGraph islands;
     islands.reserve(kBodyCount);
     islands.clear(kBodyCount);
 

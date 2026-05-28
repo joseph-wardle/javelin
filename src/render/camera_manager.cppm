@@ -19,15 +19,17 @@ export namespace javelin {
 // per-frame FrameCamera (view/proj/view_proj) used by the render pipeline.
 // Knows nothing about windows or GLFW — returns CursorMode and lets the caller
 // apply it.
+//
+// Transitions are one-way: the manager starts in orbit and switches to fly the
+// first frame the user starts holding RMB outside an ImGui window.  Once in
+// fly mode, the manager stays there for the session, so the orbit controller's
+// state is not preserved across the transition.
 struct CameraManager final {
     void init_default_pose() noexcept {
-        orbit_camera_ = {};
-        fly_camera_ = {};
-        active_camera_ = &orbit_camera_;
+        active_camera_ = OrbitCameraController{};
         camera_.position = {0.0f, 5.0f, 5.0f};
         camera_.yaw_radians = 0.0f;
         camera_.pitch_radians = -0.35f;
-        fixed_world_camera_ = false;
     }
 
     // Called once the scene and framebuffer extent are known. Chooses between a
@@ -36,7 +38,6 @@ struct CameraManager final {
                              const i32 extent_height,
                              const bool fixed_world_camera,
                              const f32 recording_orbit_start_seconds) noexcept {
-        fixed_world_camera_ = fixed_world_camera;
         if (fixed_world_camera) {
             set_fixed_world_orbit_(recording_orbit_start_seconds);
             log::info(render, "Recording orbit active; using fixed world-space anchor");
@@ -46,7 +47,9 @@ struct CameraManager final {
                                ? static_cast<f32>(extent_width) /
                                      static_cast<f32>(extent_height)
                                : 1.0f;
-        orbit_camera_.frame_scene(camera_, scene.bodies(), aspect);
+        OrbitCameraController orbit{};
+        orbit.frame_scene(camera_, scene.bodies(), aspect);
+        active_camera_ = std::move(orbit);
         log::info(render, "Presentation orbit active; hold RMB to take control");
     }
 
@@ -54,19 +57,21 @@ struct CameraManager final {
     // handoff when the user starts holding RMB outside an ImGui window.
     [[nodiscard]] CursorMode update_interactive(const InputFrame &frame_input,
                                                 const f32 dt) noexcept {
-        if (active_camera_ == &orbit_camera_ && !frame_input.ui_wants_mouse &&
-            !frame_input.ui_wants_keyboard && frame_input.mouse_right) {
-            active_camera_ = &fly_camera_;
+        if (std::holds_alternative<OrbitCameraController>(active_camera_) &&
+            !frame_input.ui_wants_mouse && !frame_input.ui_wants_keyboard &&
+            frame_input.mouse_right) {
+            active_camera_ = FlyCameraController{};
             log::info(render, "Fly camera enabled");
         }
-        return active_camera_->update(camera_, frame_input, dt);
+        return std::visit([&](auto &controller) { return controller.update(camera_, frame_input, dt); },
+                          active_camera_);
     }
 
     // Offline / headless: only orbit animates; fly is purely input-driven so it
     // would freeze without an InputFrame. Always returns CursorMode::normal.
     CursorMode update_offline(const f32 dt) noexcept {
-        if (fixed_world_camera_ || active_camera_ == &orbit_camera_) {
-            static_cast<void>(orbit_camera_.update(camera_, InputFrame{}, dt));
+        if (auto *orbit = std::get_if<OrbitCameraController>(&active_camera_)) {
+            static_cast<void>(orbit->update(camera_, InputFrame{}, dt));
         }
         return CursorMode::normal;
     }
@@ -90,23 +95,20 @@ private:
     static constexpr f32 kRecordingCameraPitchRadians = -0.35f;
     static constexpr f32 kRecordingCameraDistance = 16.0f;
 
-    OrbitCameraController orbit_camera_{};
-    FlyCameraController fly_camera_{};
-    CameraController *active_camera_{&orbit_camera_};
+    std::variant<OrbitCameraController, FlyCameraController> active_camera_{OrbitCameraController{}};
     CameraState camera_{};
-    bool fixed_world_camera_{false};
 
     void set_fixed_world_orbit_(const f32 start_seconds) noexcept {
-        orbit_camera_.tuning.initial_yaw_radians = kRecordingCameraYawRadians;
-        orbit_camera_.tuning.pitch_radians = kRecordingCameraPitchRadians;
-        orbit_camera_.focus_point = kRecordingOrbitFocusPoint;
-        orbit_camera_.distance = kRecordingCameraDistance;
-        orbit_camera_.yaw_radians = orbit_camera_.tuning.initial_yaw_radians +
-                                    orbit_camera_.tuning.yaw_speed_radians *
-                                        std::max(start_seconds, 0.0f);
-        orbit_camera_.framed = true;
-        static_cast<void>(orbit_camera_.update(camera_, InputFrame{}, 0.0f));
-        active_camera_ = &orbit_camera_;
+        OrbitCameraController orbit{};
+        orbit.tuning.initial_yaw_radians = kRecordingCameraYawRadians;
+        orbit.tuning.pitch_radians = kRecordingCameraPitchRadians;
+        orbit.focus_point = kRecordingOrbitFocusPoint;
+        orbit.distance = kRecordingCameraDistance;
+        orbit.yaw_radians = orbit.tuning.initial_yaw_radians +
+                            orbit.tuning.yaw_speed_radians * std::max(start_seconds, 0.0f);
+        orbit.framed = true;
+        static_cast<void>(orbit.update(camera_, InputFrame{}, 0.0f));
+        active_camera_ = std::move(orbit);
     }
 };
 

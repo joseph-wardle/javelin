@@ -2,43 +2,65 @@ module;
 
 #include <tracy/Tracy.hpp>
 
-export module javelin.physics.island_manager;
+export module javelin.physics.body_graph;
 
 import std;
 import javelin.core.logging;
 import javelin.core.types;
 import javelin.math;
+import javelin.physics.aabb;
+import javelin.physics.bvh_dynamic;
+import javelin.physics.bvh_static;
 import javelin.physics.constraint_types;
 import javelin.physics.types;
+import javelin.scene.bodies;
+import javelin.scene.shapes;
 
 export namespace javelin {
 
-// Owns the connected-component view of contact + constraint edges across
-// dynamic bodies, plus the persistent sleep-island bookkeeping that decides
-// when settled groups go to sleep and when active edges wake them back up.
+// Owns the per-tick "topology" of the simulation: per-body bounds, the
+// static/dynamic split and its two BVHs, the awake/moved-awake subsets, the
+// per-tick connected-component view of contact + constraint edges, and the
+// persistent sleep-island ledger that decides when settled groups sleep and
+// when active edges wake them.
 //
-// Per-tick lifecycle:
-//   1. build_activity_masks(view, manifolds) — fills the contact + constraint
-//      activity bitmaps.  Resting-clamp and sleep timers consume the contact
-//      mask so constraint-only motion is not mistaken for resting contact.
-//   2. build_dynamic_islands(view, manifolds) — runs union-find over the
-//      contact and constraint edges to group dynamic bodies into islands.
-//      Returns the largest island size, which the contact solver uses to
-//      decide adaptive iteration mode.
-//   3. wake_with_active_edges(view, manifolds, sleep_timer, asleep) — for any
-//      edge that connects an awake body to a sleeping one, wakes the sleeping
-//      island.
-//   4. update_sleep_timers(view, sleep_timer, asleep) — increments per-body
-//      timers for resting bodies, resets them for moving bodies, and decays
-//      slowly when the body briefly leaves contact (hysteresis).
-//   5. put_settled_to_sleep(view, sleep_timer, asleep) — marks every body in
-//      an island asleep when the entire island has reached the threshold,
-//      and records the island in the persistent sleep-island ledger.
+// The contract is organised around the three points in a tick where this
+// state is touched, in temporal order:
 //
-// `clamp_rest_counter` is the per-body consecutive-tick counter consumed by
-// the velocity clamp.  It lives here because it shares the contact-activity
-// signal and the same per-body lifetime.
-struct IslandManager final {
+//   prepare_collision_inputs(view)
+//     - pre broad phase.  Rebuilds the bounds cache, refreshes the
+//       static/dynamic split (rebuilding the static BVH if marked dirty),
+//       builds the awake-dynamic mask, and folds the relevant bodies into
+//       the dynamic BVH, recording the moved-awake subset.
+//   register_contact_graph(view, manifolds) -> max island size
+//     - between narrow phase and the contact solver.  Builds the contact +
+//       constraint activity masks, runs union-find over dynamic-dynamic
+//       edges, and wakes sleeping bodies that share an active edge with an
+//       awake body.  The returned max island size feeds the contact
+//       solver's adaptive iteration cap.
+//   evolve_sleep(view)
+//     - post solve.  Updates per-body sleep timers from final velocities +
+//       contact activity, then puts every body in a fully-settled island to
+//       sleep.
+//
+// Between phases 2 and 3 the resting-contact velocity clamp consumes
+// `contact_activity_mask` and `clamp_rest_counter`; those accessors are
+// exposed for that one external touchpoint.
+//
+// The finer per-stage methods (build_activity_masks, build_dynamic_islands,
+// wake_with_active_edges, update_sleep_timers, put_settled_to_sleep) remain
+// public test seams.  Production code uses register_contact_graph and
+// evolve_sleep; tests use the finer seams to verify intermediate state.
+//
+// Lifecycle:
+// - mark_dirty() forces a rebuild of the static/dynamic split (and the
+//   static BVH) on the next prepare_collision_inputs.  It is set on
+//   body-count changes and resets.
+// - reserve(count) grows internal scratch up to `count` bodies.
+// - clear(capacity) drops transient island scratch and resets the
+//   persistent sleep ledger to `capacity`.  Called on reset and on
+//   body-count changes.
+struct BodyGraph final {
     struct WakeStats final {
         u32 woken_island_count{};
         u32 woken_body_count{};
@@ -49,9 +71,8 @@ struct IslandManager final {
         u32 slept_body_count{};
     };
 
-    // Sleep thresholds.  See the comments at the original definitions for the
-    // rationale behind each value (60 ticks = 1 s settling, 5 cm/s linear /
-    // 0.10 rad/s angular as the rest cutoff).
+    // Sleep thresholds.  60 ticks = 1 s settling.  5 cm/s linear and
+    // 0.10 rad/s angular are the rest cutoffs.
     static constexpr u32 kSleepTickThreshold = 60u;
     static constexpr f32 kSleepLinearSpeedThreshold = 0.05f;
     static constexpr f32 kSleepAngularSpeedThreshold = 0.10f;
@@ -66,40 +87,55 @@ struct IslandManager final {
 
     static constexpr u32 kInvalidIsland = std::numeric_limits<u32>::max();
 
-    void reserve(const u32 capacity) {
-        island_parent_.reserve(capacity);
-        island_rank_.reserve(capacity);
-        island_member_head_.reserve(capacity);
-        island_member_next_.reserve(capacity);
-        island_member_count_.reserve(capacity);
-        island_roots_.reserve(capacity);
-        sleep_island_of_body_.reserve(capacity);
-        sleep_island_next_body_.reserve(capacity);
-        sleep_island_head_.reserve(capacity);
-        sleep_island_size_.reserve(capacity);
-        sleep_island_free_ids_.reserve(capacity);
-        contact_activity_mask_.reserve(capacity);
-        constraint_activity_mask_.reserve(capacity);
-        clamp_rest_counter_.reserve(capacity);
-        if (sleep_island_of_body_.size() < capacity) {
-            sleep_island_of_body_.resize(capacity, kInvalidIsland);
+    // ---- Lifecycle ----
+
+    void mark_dirty() noexcept { partition_dirty_ = true; }
+
+    void reserve(const u32 count) {
+        ZoneScopedN("BodyGraph reserve");
+        bounds_cache_.reserve(count);
+        dynamic_bvh_.reserve(count);
+        static_bvh_.reserve(count);
+        static_ids_.reserve(count);
+        dynamic_ids_.reserve(count);
+        awake_dynamic_ids_.reserve(count);
+        awake_dynamic_mask_.reserve(count);
+        moved_awake_dynamic_ids_.reserve(count);
+        moved_awake_mask_.reserve(count);
+        island_parent_.reserve(count);
+        island_rank_.reserve(count);
+        island_member_head_.reserve(count);
+        island_member_next_.reserve(count);
+        island_member_count_.reserve(count);
+        island_roots_.reserve(count);
+        sleep_island_of_body_.reserve(count);
+        sleep_island_next_body_.reserve(count);
+        sleep_island_head_.reserve(count);
+        sleep_island_size_.reserve(count);
+        sleep_island_free_ids_.reserve(count);
+        contact_activity_mask_.reserve(count);
+        constraint_activity_mask_.reserve(count);
+        clamp_rest_counter_.reserve(count);
+        if (sleep_island_of_body_.size() < count) {
+            sleep_island_of_body_.resize(count, kInvalidIsland);
         }
-        if (sleep_island_next_body_.size() < capacity) {
-            sleep_island_next_body_.resize(capacity, kInvalidBody);
+        if (sleep_island_next_body_.size() < count) {
+            sleep_island_next_body_.resize(count, kInvalidBody);
         }
-        if (contact_activity_mask_.size() < capacity) {
-            contact_activity_mask_.resize(capacity, 0u);
+        if (contact_activity_mask_.size() < count) {
+            contact_activity_mask_.resize(count, 0u);
         }
-        if (constraint_activity_mask_.size() < capacity) {
-            constraint_activity_mask_.resize(capacity, 0u);
+        if (constraint_activity_mask_.size() < count) {
+            constraint_activity_mask_.resize(count, 0u);
         }
-        if (clamp_rest_counter_.size() < capacity) {
-            clamp_rest_counter_.resize(capacity, 0u);
+        if (clamp_rest_counter_.size() < count) {
+            clamp_rest_counter_.resize(count, 0u);
         }
     }
 
     // Drop transient island scratch and reset the persistent sleep ledger to
-    // the body capacity.  Called on body-count changes and on reset.
+    // the body capacity.  Does not touch the partition / BVHs themselves;
+    // mark_dirty() is what forces those to rebuild.
     void clear(const u32 capacity) {
         island_roots_.clear();
         sleep_island_head_.clear();
@@ -111,6 +147,100 @@ struct IslandManager final {
         constraint_activity_mask_.assign(capacity, 0u);
         clamp_rest_counter_.assign(capacity, 0u);
     }
+
+    // ---- Phase 1: pre-broad-phase ----
+
+    // Rebuild bounds + partition + dynamic BVH for the upcoming tick.
+    //
+    // Reads:   view.position, view.orientation, view.shape_kind,
+    //          view.shape_index, view.shapes, view.inv_mass, view.asleep
+    // Writes:  bounds cache, static/dynamic split, awake mask, dynamic BVH,
+    //          moved-awake subset, rebuilt_body_sets flag.
+    //
+    // The choice of BVH update set (full dynamic vs. awake-only) is made
+    // internally based on whether the static/dynamic split was rebuilt this
+    // tick: after a rebuild every dynamic leaf is refreshed so sleeping
+    // bodies are present and in sync, otherwise only awake bodies are folded.
+    void prepare_collision_inputs(const Bodies &view) {
+        rebuild_bounds_(view);
+        const bool rebuilt = refresh_partition_(view);
+        const std::span<const u32> bvh_update_ids = rebuilt ? dynamic_ids() : awake_dynamic_ids();
+        update_dynamic_bvh_(bvh_update_ids, view.count);
+        rebuilt_body_sets_this_tick_ = rebuilt;
+    }
+
+    // True iff prepare_collision_inputs rebuilt the static/dynamic split this
+    // tick.  The broad-phase incremental-vs-full-query policy uses this in
+    // combination with the moved-awake ratio.
+    [[nodiscard]] bool rebuilt_body_sets_this_tick() const noexcept { return rebuilt_body_sets_this_tick_; }
+
+    // ---- Phase 2: post-narrow-phase, pre-solve ----
+
+    // Build contact + constraint activity masks, union-find dynamic islands,
+    // and wake any sleeping body that shares an active edge with an awake one.
+    //
+    // Reads:   view.inv_mass, view.constraints, manifolds.
+    // Writes:  activity masks, island scratch, view.asleep, view.sleep_timer.
+    // Returns: the largest dynamic island size, used by the contact solver's
+    //          adaptive iteration cap.
+    [[nodiscard]] u32 register_contact_graph(const Bodies &view,
+                                              std::span<const ContactManifold> manifolds) {
+        build_activity_masks(view.count, manifolds, view.constraints, view.inv_mass);
+        const u32 max_island_size =
+            build_dynamic_islands(view.count, view.inv_mass, manifolds, view.constraints, dynamic_ids());
+        static_cast<void>(wake_with_active_edges(manifolds, view.constraints, view.inv_mass, view.asleep,
+                                                  view.sleep_timer));
+        return max_island_size;
+    }
+
+    // ---- Phase 3: post-solve ----
+
+    // Update per-body sleep timers from final velocities + contact activity,
+    // then put fully-settled dynamic islands to sleep.
+    //
+    // Reads:   view.velocity, view.angular_velocity, view.inv_mass, internal
+    //          contact_activity_mask, island scratch.
+    // Writes:  view.sleep_timer, view.asleep, persistent sleep-island ledger.
+    void evolve_sleep(const Bodies &view) noexcept {
+        update_sleep_timers(view.count, view.velocity, view.angular_velocity, view.inv_mass, view.sleep_timer,
+                            view.asleep);
+        static_cast<void>(put_settled_to_sleep(view.sleep_timer, view.asleep));
+    }
+
+    // ---- Phase 1 outputs (broad/narrow phase consumers) ----
+
+    [[nodiscard]] std::span<const Aabb> bounds() const noexcept { return std::span<const Aabb>{bounds_cache_}; }
+    [[nodiscard]] Aabb bounds_at(const u32 id) const noexcept { return bounds_cache_[id]; }
+    [[nodiscard]] std::span<const u32> dynamic_ids() const noexcept { return std::span<const u32>{dynamic_ids_}; }
+    [[nodiscard]] std::span<const u32> awake_dynamic_ids() const noexcept {
+        return std::span<const u32>{awake_dynamic_ids_};
+    }
+    [[nodiscard]] std::span<const u8> awake_dynamic_mask(const u32 body_count) const noexcept {
+        return std::span<const u8>{awake_dynamic_mask_.data(), body_count};
+    }
+    [[nodiscard]] std::span<const u32> moved_awake_dynamic_ids() const noexcept {
+        return std::span<const u32>{moved_awake_dynamic_ids_};
+    }
+    [[nodiscard]] std::span<const u8> moved_awake_mask(const u32 body_count) const noexcept {
+        return std::span<const u8>{moved_awake_mask_.data(), body_count};
+    }
+    [[nodiscard]] const DynamicBvh &dynamic_bvh() const noexcept { return dynamic_bvh_; }
+    [[nodiscard]] DynamicBvh &dynamic_bvh() noexcept { return dynamic_bvh_; }
+    [[nodiscard]] const StaticBvh &static_bvh() const noexcept { return static_bvh_; }
+
+    // ---- Between-phase accessors (consumed by resting-velocity clamp) ----
+
+    [[nodiscard]] std::span<const u8> contact_activity_mask(const u32 body_count) const noexcept {
+        return std::span<const u8>{contact_activity_mask_.data(), body_count};
+    }
+    [[nodiscard]] std::span<u8> clamp_rest_counter(const u32 body_count) noexcept {
+        return std::span<u8>{clamp_rest_counter_.data(), body_count};
+    }
+
+    // ---- Finer per-stage methods (test seams + reusable internals) ----
+    //
+    // register_contact_graph and evolve_sleep delegate to these.  They remain
+    // public so existing unit tests can verify intermediate state.
 
     void build_activity_masks(const u32 body_count, std::span<const ContactManifold> manifolds,
                               std::span<const DistanceConstraint> constraints, std::span<const f32> inv_mass) {
@@ -379,15 +509,150 @@ struct IslandManager final {
         return stats;
     }
 
-    [[nodiscard]] std::span<const u8> contact_activity_mask(const u32 body_count) const noexcept {
-        return std::span<const u8>{contact_activity_mask_.data(), body_count};
-    }
-
-    [[nodiscard]] std::span<u8> clamp_rest_counter(const u32 body_count) noexcept {
-        return std::span<u8>{clamp_rest_counter_.data(), body_count};
-    }
-
   private:
+    // ---- Phase 1 helpers ----
+
+    void rebuild_bounds_(const Bodies &view) {
+        ZoneScopedN("Physics build bounds cache");
+        const u32 count = view.count;
+        bounds_cache_.resize(count);
+        for (u32 i = 0; i < count; ++i) {
+#ifndef NDEBUG
+            if (view.shape_index[i] >= view.shapes.size()) {
+                log::error(physics, "Shape index out of range (id={} shape_id={})", i, view.shape_index[i]);
+                std::terminate();
+            }
+#endif
+            const ShapeData &shape = view.shapes[view.shape_index[i]];
+            switch (view.shape_kind[i]) {
+            case ShapeKind::sphere: {
+#ifndef NDEBUG
+                if (shape.kind != ShapeKind::sphere) {
+                    log::error(physics, "Shape kind mismatch (id={})", i);
+                    std::terminate();
+                }
+#endif
+                const SphereShape &sphere = shape_sphere(shape);
+                bounds_cache_[i] = Aabb::from_sphere(view.position[i], sphere.radius);
+            } break;
+            case ShapeKind::box: {
+#ifndef NDEBUG
+                if (shape.kind != ShapeKind::box) {
+                    log::error(physics, "Shape kind mismatch (id={})", i);
+                    std::terminate();
+                }
+#endif
+                const BoxShape &box = shape_box(shape);
+                const Mat3 rot = to_mat3(view.orientation[i]);
+                const Vec3 c0 = rot.col(0);
+                const Vec3 c1 = rot.col(1);
+                const Vec3 c2 = rot.col(2);
+                const Vec3 abs0{std::fabs(c0.x), std::fabs(c0.y), std::fabs(c0.z)};
+                const Vec3 abs1{std::fabs(c1.x), std::fabs(c1.y), std::fabs(c1.z)};
+                const Vec3 abs2{std::fabs(c2.x), std::fabs(c2.y), std::fabs(c2.z)};
+                const Vec3 extents =
+                    abs0 * box.half_extents.x + abs1 * box.half_extents.y + abs2 * box.half_extents.z;
+                const Vec3 center = view.position[i];
+                bounds_cache_[i] = Aabb{center - extents, center + extents};
+            } break;
+            }
+        }
+    }
+
+    // Rebuilds the static/dynamic split if dirty, then builds the awake-dynamic
+    // set.  Returns true iff the split was rebuilt this call.
+    [[nodiscard]] bool refresh_partition_(const Bodies &view) {
+        bool rebuilt = false;
+        if (partition_dirty_) {
+            rebuild_static_dynamic_split_(view);
+            last_count_ = view.count;
+            partition_dirty_ = false;
+            rebuilt = true;
+        }
+        build_awake_dynamic_set_(view.count, view.asleep);
+        return rebuilt;
+    }
+
+    void rebuild_static_dynamic_split_(const Bodies &view) {
+        ZoneScopedN("BodyGraph rebuild body sets");
+        if (view.count != last_count_) {
+            // Count changed: clear to avoid stale nodes for removed ids.
+            dynamic_bvh_.clear();
+        }
+        static_ids_.clear();
+        dynamic_ids_.clear();
+        for (u32 i = 0; i < view.count; ++i) {
+            if (view.inv_mass[i] == 0.0f) {
+                static_ids_.push_back(i);
+            } else {
+                dynamic_ids_.push_back(i);
+            }
+        }
+
+        for (const u32 id : static_ids_) {
+            dynamic_bvh_.remove(id);
+        }
+
+        if (!static_ids_.empty()) {
+            static_bvh_.build(static_ids_, bounds());
+        } else {
+            static_bvh_.clear();
+        }
+    }
+
+    void build_awake_dynamic_set_(const u32 body_count, std::span<const u8> asleep) {
+        ZoneScopedN("BodyGraph build awake dynamic ids");
+        if (awake_dynamic_mask_.size() < body_count) {
+            awake_dynamic_mask_.resize(body_count);
+        }
+        std::fill_n(awake_dynamic_mask_.begin(), body_count, static_cast<u8>(0u));
+
+        awake_dynamic_ids_.clear();
+        awake_dynamic_ids_.reserve(dynamic_ids_.size());
+        for (const u32 id : dynamic_ids_) {
+#ifndef NDEBUG
+            if (id >= body_count) {
+                log::error(physics, "Dynamic id out of range while building awake set (id={} count={})", id,
+                           body_count);
+                std::terminate();
+            }
+#endif
+            if (asleep[id] != 0u) {
+                continue;
+            }
+            awake_dynamic_mask_[id] = 1u;
+            awake_dynamic_ids_.push_back(id);
+        }
+    }
+
+    void update_dynamic_bvh_(std::span<const u32> bvh_update_ids, const u32 body_count) {
+        ZoneScopedN("BodyGraph update dynamic BVH");
+        if (moved_awake_mask_.size() < body_count) {
+            moved_awake_mask_.resize(body_count);
+        }
+        std::fill_n(moved_awake_mask_.begin(), body_count, static_cast<u8>(0u));
+
+        moved_awake_dynamic_ids_.clear();
+        moved_awake_dynamic_ids_.reserve(awake_dynamic_ids_.size());
+        for (const u32 id : bvh_update_ids) {
+#ifndef NDEBUG
+            if (id >= body_count) {
+                log::error(physics, "BVH update id out of range while collecting moved set (id={} count={})", id,
+                           body_count);
+                std::terminate();
+            }
+#endif
+            const bool moved = dynamic_bvh_.update(id, bounds_cache_[id]);
+            if (!moved || awake_dynamic_mask_[id] == 0u) {
+                continue;
+            }
+            moved_awake_mask_[id] = 1u;
+            moved_awake_dynamic_ids_.push_back(id);
+        }
+    }
+
+    // ---- Union-find helpers ----
+
     [[nodiscard]] u32 find_root_(const u32 body) {
         u32 root = body;
         while (island_parent_[root] != root) {
@@ -418,6 +683,8 @@ struct IslandManager final {
             ++island_rank_[root_lhs];
         }
     }
+
+    // ---- Sleep-island ledger helpers ----
 
     [[nodiscard]] u32 allocate_sleep_island_id_() {
         if (!sleep_island_free_ids_.empty()) {
@@ -483,24 +750,43 @@ struct IslandManager final {
         return woken_body_count;
     }
 
-    // Per-tick island scratch (union-find + component member lists).
+    // ---- State ----
+
+    // Phase 1: bounds + partition + BVHs + awake/moved sets.
+    std::vector<Aabb> bounds_cache_{};
+    DynamicBvh dynamic_bvh_{};
+    StaticBvh static_bvh_{};
+    std::vector<u32> static_ids_{};
+    std::vector<u32> dynamic_ids_{};
+    std::vector<u32> awake_dynamic_ids_{};
+    std::vector<u8> awake_dynamic_mask_{};
+    std::vector<u32> moved_awake_dynamic_ids_{};
+    std::vector<u8> moved_awake_mask_{};
+    bool partition_dirty_{true};
+    bool rebuilt_body_sets_this_tick_{false};
+    u32 last_count_{0};
+
+    // Phase 2: per-tick island scratch (union-find + component member lists).
     std::vector<u32> island_parent_{};
     std::vector<u8> island_rank_{};
     std::vector<u32> island_member_head_{};
     std::vector<u32> island_member_next_{};
     std::vector<u32> island_member_count_{};
     std::vector<u32> island_roots_{};
+
     // Persistent sleeping-island membership for island-level wake propagation.
     std::vector<u32> sleep_island_of_body_{};
     std::vector<u32> sleep_island_next_body_{};
     std::vector<u32> sleep_island_head_{};
     std::vector<u32> sleep_island_size_{};
     std::vector<u32> sleep_island_free_ids_{};
+
     // Per-body activity masks.  contact_activity_mask_ feeds sleep timers and
     // the resting-velocity clamp; constraint_activity_mask_ is kept separate
     // for diagnostics (constraint-only motion is not a resting-contact signal).
     std::vector<u8> contact_activity_mask_{};
     std::vector<u8> constraint_activity_mask_{};
+
     // Per-body consecutive resting-contact ticks used by velocity clamp hysteresis.
     std::vector<u8> clamp_rest_counter_{};
 };

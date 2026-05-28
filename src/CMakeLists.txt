@@ -25,8 +25,7 @@ target_sources(javelin
             math/vec4.cppm
             physics/aabb.cppm
             physics/aabb_debug.cppm
-            physics/body_partition.cppm
-            physics/bounds_builder.cppm
+            physics/body_graph.cppm
             physics/bvh_dynamic.cppm
             physics/bvh_static.cppm
             physics/broad_phase.cppm
@@ -34,12 +33,10 @@ target_sources(javelin
             physics/constraint_types.cppm
             physics/debug_publisher.cppm
             physics/integrate.cppm
-            physics/island_manager.cppm
             physics/narrow_phase.cppm
             physics/publish.cppm
             physics/solver.cppm
             physics/physics_system.cppm
-            physics/tick_pipeline.cppm
             physics/types.cppm
             platform/input.cppm
             platform/platform.cppm
