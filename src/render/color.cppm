@@ -2,8 +2,7 @@ export module javelin.render.color;
 
 import std;
 
-import javelin.math.mat3;
-import javelin.math.vec3;
+import javelin.math;
 
 export namespace javelin {
 

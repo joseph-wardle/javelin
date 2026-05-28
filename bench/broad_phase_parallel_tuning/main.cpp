@@ -5,7 +5,7 @@ import javelin.bench.stats;
 import javelin.bench.timer;
 import javelin.core.time;
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.aabb;
 import javelin.physics.broad_phase;
 import javelin.physics.bvh_dynamic;

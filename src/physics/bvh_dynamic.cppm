@@ -6,7 +6,7 @@ export module javelin.physics.bvh_dynamic;
 
 import std;
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.aabb;
 
 export namespace javelin {

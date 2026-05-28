@@ -3,7 +3,7 @@ export module javelin.scene.shapes;
 import std;
 
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math;
 
 export namespace javelin {
 enum struct ShapeKind : u8 { sphere, box /*, capsule...*/ };

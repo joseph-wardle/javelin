@@ -5,8 +5,8 @@ import javelin.physics.aabb_debug;
 import javelin.physics.contact_debug;
 import javelin.render.types;
 import javelin.render.render_targets;
-import javelin.math.mat4;
-import javelin.scene.render_view;
+import javelin.math;
+import javelin.scene.bodies;
 import javelin.scene.pose_channel;
 
 export namespace javelin {
@@ -32,7 +32,7 @@ struct RenderContext final {
     Extent2D extent;
     FrameCamera camera;
 
-    RenderView view;
+    BodiesRead view;
     PoseSnapshot poses;
     ContactDebugSnapshot contacts;
     AabbDebugSnapshot aabbs;

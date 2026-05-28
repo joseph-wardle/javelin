@@ -3,9 +3,11 @@ export module javelin.render.orbit_camera;
 import std;
 
 import javelin.core.types;
-import javelin.math.quat;
+import javelin.math;
+import javelin.platform.input;
+import javelin.render.camera_controller;
 import javelin.scene.camera;
-import javelin.scene.render_view;
+import javelin.scene.bodies;
 import javelin.scene.shapes;
 
 export namespace javelin {
@@ -37,7 +39,7 @@ struct SceneBounds final {
     return Vec3{};
 }
 
-[[nodiscard]] inline SceneBounds compute_scene_bounds(const RenderView &view) noexcept {
+[[nodiscard]] inline SceneBounds compute_scene_bounds(const BodiesRead &view) noexcept {
     SceneBounds bounds{};
 
     const usize count = std::min({view.alive.size(), view.shape_index.size(), view.position.size(), view.orientation.size()});
@@ -80,18 +82,18 @@ struct OrbitCameraTuning final {
     f32 fixed_distance{16.0f};
 };
 
-struct OrbitCameraController final {
+struct OrbitCameraController final : CameraController {
     OrbitCameraTuning tuning{};
     Vec3 focus_point{};
     f32 distance{8.0f};
     f32 yaw_radians{tuning.initial_yaw_radians};
     bool framed{};
 
-    void frame_scene(CameraState &camera, const RenderView &view, f32 aspect) noexcept;
-    void update(CameraState &camera, f32 dt_seconds) noexcept;
+    void frame_scene(CameraState &camera, const BodiesRead &view, f32 aspect) noexcept;
+    [[nodiscard]] CursorMode update(CameraState &camera, const InputFrame &input, f32 dt_seconds) noexcept override;
 };
 
-void OrbitCameraController::frame_scene(CameraState &camera, const RenderView &view, const f32 aspect) noexcept {
+void OrbitCameraController::frame_scene(CameraState &camera, const BodiesRead &view, const f32 aspect) noexcept {
     (void)aspect;
     yaw_radians = tuning.initial_yaw_radians;
     framed = true;
@@ -100,7 +102,7 @@ void OrbitCameraController::frame_scene(CameraState &camera, const RenderView &v
     if (!bounds.valid) {
         focus_point = Vec3{};
         distance = tuning.fixed_distance;
-        update(camera, 0.0f);
+        static_cast<void>(update(camera, InputFrame{}, 0.0f));
         return;
     }
 
@@ -108,12 +110,12 @@ void OrbitCameraController::frame_scene(CameraState &camera, const RenderView &v
 
     focus_point = center;
     distance = tuning.fixed_distance;
-    update(camera, 0.0f);
+    static_cast<void>(update(camera, InputFrame{}, 0.0f));
 }
 
-void OrbitCameraController::update(CameraState &camera, const f32 dt_seconds) noexcept {
+CursorMode OrbitCameraController::update(CameraState &camera, const InputFrame &, const f32 dt_seconds) noexcept {
     if (!framed) {
-        return;
+        return CursorMode::normal;
     }
 
     constexpr f32 tau = 6.28318530717958647692f;
@@ -126,6 +128,7 @@ void OrbitCameraController::update(CameraState &camera, const f32 dt_seconds) no
     const Vec3 forward = camera_basis(orbit_pose).forward;
     camera.position = focus_point - forward * distance;
     [[maybe_unused]] const bool aligned = camera_look_at(camera, focus_point);
+    return CursorMode::normal;
 }
 
 } // namespace javelin

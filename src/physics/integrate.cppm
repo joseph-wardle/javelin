@@ -6,8 +6,7 @@ export module javelin.physics.integrate;
 
 import std;
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 
 namespace javelin::detail {
 // Skip orientation integration when |angular_velocity|² < kAngularVelocityEpsSq

@@ -10,10 +10,10 @@ import std;
 
 import javelin.core.types;
 import javelin.core.logging;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.render.color;
 import javelin.render.render_context;
+import javelin.render.shader_utils;
 import javelin.render.types;
 import javelin.scene.entity;
 import javelin.scene.pose_channel;
@@ -185,50 +185,6 @@ u32 midpoint_index(const u32 a, const u32 b, std::vector<Vec3> &positions, std::
     return mesh;
 }
 
-u32 compile_shader(const GLenum type, const std::string_view source) noexcept {
-    const GLuint shader = glCreateShader(type);
-    const char *src = source.data();
-    const GLint len = static_cast<GLint>(source.size());
-    glShaderSource(shader, 1, &src, &len);
-    glCompileShader(shader);
-
-    GLint ok = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok == GL_TRUE) {
-        return shader;
-    }
-
-    std::array<char, 1024> info{};
-    glGetShaderInfoLog(shader, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "Geometry shader compile failed: {}", info.data());
-    glDeleteShader(shader);
-    return 0;
-}
-
-u32 link_program(const u32 vs, const u32 fs) noexcept {
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
-
-    GLint ok = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (ok == GL_TRUE) {
-        glDetachShader(program, vs);
-        glDetachShader(program, fs);
-        glDeleteShader(vs);
-        glDeleteShader(fs);
-        return program;
-    }
-
-    std::array<char, 1024> info{};
-    glGetProgramInfoLog(program, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "Geometry shader link failed: {}", info.data());
-    glDeleteProgram(program);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return 0;
-}
 } // namespace javelin::detail
 
 export namespace javelin {
@@ -253,10 +209,10 @@ struct GeometryPass final {
     void execute(RenderContext &ctx) {
         ZoneScopedN("GeometryPass");
         TracyGpuZone("GeometryPass");
-        if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0) {
+        if (!ctx.targets.ready()) {
             return;
         }
-        glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
+        ctx.targets.bind_for_drawing();
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);
         glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_TRUE);
@@ -430,19 +386,8 @@ struct GeometryPass final {
             return;
         }
 
-        const u32 vs = detail::compile_shader(GL_VERTEX_SHADER, detail::kGeometryVertexShader);
-        const u32 fs = detail::compile_shader(GL_FRAGMENT_SHADER, detail::kGeometryFragmentShader);
-        if (vs == 0 || fs == 0) {
-            if (vs != 0) {
-                glDeleteShader(vs);
-            }
-            if (fs != 0) {
-                glDeleteShader(fs);
-            }
-            return;
-        }
-
-        program_ = detail::link_program(vs, fs);
+        program_ = shader_utils::build_program(detail::kGeometryVertexShader, detail::kGeometryFragmentShader,
+                                               "Geometry");
         if (program_ == 0) {
             return;
         }

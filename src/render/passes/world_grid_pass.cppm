@@ -9,9 +9,10 @@ import std;
 
 import javelin.core.logging;
 import javelin.core.types;
-import javelin.math.mat4;
+import javelin.math;
 import javelin.render.render_context;
 import javelin.render.render_targets;
+import javelin.render.shader_utils;
 import javelin.render.types;
 
 namespace javelin::detail {
@@ -95,50 +96,6 @@ void main() {
 // Precomputed via inverse OCIO display transform to preserve the pre-ACES look.
 constexpr Vec3 kGridColor = Vec3{0.132375f, 0.139544f, 0.169055f};
 
-u32 compile_shader(const GLenum type, const std::string_view source) noexcept {
-    const GLuint shader = glCreateShader(type);
-    const char *src = source.data();
-    const GLint len = static_cast<GLint>(source.size());
-    glShaderSource(shader, 1, &src, &len);
-    glCompileShader(shader);
-
-    GLint ok = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok == GL_TRUE) {
-        return shader;
-    }
-
-    std::array<char, 1024> info{};
-    glGetShaderInfoLog(shader, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "World grid shader compile failed: {}", info.data());
-    glDeleteShader(shader);
-    return 0;
-}
-
-u32 link_program(const u32 vs, const u32 fs) noexcept {
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
-
-    GLint ok = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (ok == GL_TRUE) {
-        glDetachShader(program, vs);
-        glDetachShader(program, fs);
-        glDeleteShader(vs);
-        glDeleteShader(fs);
-        return program;
-    }
-
-    std::array<char, 1024> info{};
-    glGetProgramInfoLog(program, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "World grid shader link failed: {}", info.data());
-    glDeleteProgram(program);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return 0;
-}
 } // namespace javelin::detail
 
 export namespace javelin {
@@ -170,13 +127,13 @@ struct WorldGridPass final {
     }
 
     void execute(RenderContext &ctx) {
-        if (!ctx.extent.is_valid() || ctx.targets.scene_fbo == 0) {
+        if (!ctx.targets.ready()) {
             return;
         }
 
         ZoneScopedN("WorldGridPass");
         TracyGpuZone("WorldGridPass");
-        glBindFramebuffer(GL_FRAMEBUFFER, ctx.targets.scene_fbo);
+        ctx.targets.bind_for_drawing();
         glViewport(0, 0, ctx.extent.width, ctx.extent.height);
         if (!ctx.debug.draw_grid || program_ == 0 || vao_ == 0) {
             return;
@@ -215,19 +172,7 @@ struct WorldGridPass final {
             return;
         }
 
-        const u32 vs = detail::compile_shader(GL_VERTEX_SHADER, detail::kGridVertexShader);
-        const u32 fs = detail::compile_shader(GL_FRAGMENT_SHADER, detail::kGridFragmentShader);
-        if (vs == 0 || fs == 0) {
-            if (vs != 0) {
-                glDeleteShader(vs);
-            }
-            if (fs != 0) {
-                glDeleteShader(fs);
-            }
-            return;
-        }
-
-        program_ = detail::link_program(vs, fs);
+        program_ = shader_utils::build_program(detail::kGridVertexShader, detail::kGridFragmentShader, "World grid");
         if (program_ == 0) {
             return;
         }

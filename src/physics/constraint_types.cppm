@@ -1,7 +1,7 @@
 export module javelin.physics.constraint_types;
 
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math;
 
 export namespace javelin {
 

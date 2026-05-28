@@ -3,8 +3,7 @@ export module javelin.scene.camera;
 import std;
 
 import javelin.core.types;
-import javelin.math.vec3;
-import javelin.math.mat4;
+import javelin.math;
 
 export namespace javelin {
 

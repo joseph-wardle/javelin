@@ -11,6 +11,7 @@ import javelin.core.logging;
 import javelin.core.types;
 import javelin.render.render_context;
 import javelin.render.render_targets;
+import javelin.render.shader_utils;
 import javelin.render.types;
 
 namespace javelin::detail {
@@ -96,50 +97,6 @@ std::vector<f32> read_f32_file(std::string_view path, const usize expected_count
     return data;
 }
 
-u32 compile_shader(const GLenum type, const std::string_view source) noexcept {
-    const GLuint shader = glCreateShader(type);
-    const char *src = source.data();
-    const GLint len = static_cast<GLint>(source.size());
-    glShaderSource(shader, 1, &src, &len);
-    glCompileShader(shader);
-
-    GLint ok = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok == GL_TRUE) {
-        return shader;
-    }
-
-    std::array<char, 1024> info{};
-    glGetShaderInfoLog(shader, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "Display shader compile failed: {}", info.data());
-    glDeleteShader(shader);
-    return 0;
-}
-
-u32 link_program(const u32 vs, const u32 fs) noexcept {
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
-
-    GLint ok = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (ok == GL_TRUE) {
-        glDetachShader(program, vs);
-        glDetachShader(program, fs);
-        glDeleteShader(vs);
-        glDeleteShader(fs);
-        return program;
-    }
-
-    std::array<char, 1024> info{};
-    glGetProgramInfoLog(program, static_cast<GLsizei>(info.size()), nullptr, info.data());
-    log::error(render, "Display shader link failed: {}", info.data());
-    glDeleteProgram(program);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return 0;
-}
 } // namespace javelin::detail
 
 export namespace javelin {
@@ -160,7 +117,7 @@ struct DisplayPass final {
     }
 
     void execute(RenderContext &ctx) {
-        if (!ctx.extent.is_valid() || ctx.targets.scene_color == 0) {
+        if (!ctx.targets.ready()) {
             return;
         }
 
@@ -168,14 +125,7 @@ struct DisplayPass final {
         TracyGpuZone("DisplayPass");
         if (!ctx.debug.apply_color_transform || program_ == 0 || vao_ == 0 || reach_m_tex_ == 0 ||
             gamut_cusp_tex_ == 0) {
-            if (ctx.targets.scene_fbo == 0) {
-                return;
-            }
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, ctx.targets.scene_fbo);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-            glViewport(0, 0, ctx.extent.width, ctx.extent.height);
-            glBlitFramebuffer(0, 0, ctx.extent.width, ctx.extent.height, 0, 0, ctx.extent.width, ctx.extent.height,
-                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            ctx.targets.blit_color_to_default();
             return;
         }
 
@@ -188,8 +138,7 @@ struct DisplayPass final {
 
         glUseProgram(program_);
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, ctx.targets.scene_color);
+        ctx.targets.bind_color_for_sampling(0);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_1D, reach_m_tex_);
         glActiveTexture(GL_TEXTURE2);
@@ -228,8 +177,8 @@ struct DisplayPass final {
         fragment_source.append(ocio_block);
         fragment_source.append(detail::kDisplayFragmentSuffix);
 
-        const u32 vs = detail::compile_shader(GL_VERTEX_SHADER, detail::kDisplayVertexShader);
-        const u32 fs = detail::compile_shader(GL_FRAGMENT_SHADER, fragment_source);
+        const u32 vs = shader_utils::compile_shader(GL_VERTEX_SHADER, detail::kDisplayVertexShader, "Display");
+        const u32 fs = shader_utils::compile_shader(GL_FRAGMENT_SHADER, fragment_source, "Display");
         if (vs == 0 || fs == 0) {
             if (vs != 0) {
                 glDeleteShader(vs);
@@ -240,7 +189,7 @@ struct DisplayPass final {
             return;
         }
 
-        program_ = detail::link_program(vs, fs);
+        program_ = shader_utils::link_program(vs, fs, "Display");
         if (program_ == 0) {
             return;
         }

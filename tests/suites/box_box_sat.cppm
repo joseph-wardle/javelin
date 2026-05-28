@@ -3,8 +3,7 @@ export module javelin.tests.box_box_sat;
 import std;
 
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.narrow_phase;
 import javelin.physics.types;
 import javelin.scene.shapes;

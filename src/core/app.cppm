@@ -9,80 +9,9 @@ import javelin.core.logging;
 import javelin.core.types;
 import javelin.physics.physics_system;
 import javelin.platform;
+import javelin.render.frame_exporter;
 import javelin.render.render_system;
 import javelin.scene;
-
-namespace javelin::detail {
-
-[[nodiscard]] std::filesystem::path
-offline_frame_path(const std::filesystem::path &output_dir,
-                   const u32 frame_index) {
-  return output_dir / std::format("frame_{:06}.ppm", frame_index);
-}
-
-[[nodiscard]] std::expected<void, std::string>
-ensure_output_dir(const std::filesystem::path &output_dir) {
-  std::error_code ec{};
-  std::filesystem::create_directories(output_dir, ec);
-  if (ec) {
-    return std::unexpected(
-        std::format("Unable to create output directory '{}': {}",
-                    output_dir.string(), ec.message()));
-  }
-  return {};
-}
-
-[[nodiscard]] std::expected<void, std::string>
-write_ppm_frame(const std::filesystem::path &path, const i32 width,
-                const i32 height, std::span<const u8> rgba) {
-  std::ofstream out{path, std::ios::binary | std::ios::trunc};
-  if (!out.is_open()) {
-    return std::unexpected(
-        std::format("Unable to open frame output '{}'", path.string()));
-  }
-
-  out << "P6\n" << width << ' ' << height << "\n255\n";
-
-  const usize row_rgba_size = static_cast<usize>(width) * 4u;
-  std::vector<char> row_rgb(static_cast<usize>(width) * 3u);
-  for (i32 y = height - 1; y >= 0; --y) {
-    const usize src_row = static_cast<usize>(y) * row_rgba_size;
-    for (i32 x = 0; x < width; ++x) {
-      const usize src = src_row + static_cast<usize>(x) * 4u;
-      const usize dst = static_cast<usize>(x) * 3u;
-      row_rgb[dst + 0u] = static_cast<char>(rgba[src + 0u]);
-      row_rgb[dst + 1u] = static_cast<char>(rgba[src + 1u]);
-      row_rgb[dst + 2u] = static_cast<char>(rgba[src + 2u]);
-    }
-    out.write(row_rgb.data(), static_cast<std::streamsize>(row_rgb.size()));
-    if (!out) {
-      return std::unexpected(
-          std::format("I/O error while writing '{}'", path.string()));
-    }
-  }
-
-  return {};
-}
-
-[[nodiscard]] std::expected<void, std::string>
-write_ffmpeg_hint(const std::filesystem::path &output_dir, const u32 fps) {
-  const auto hint_path = output_dir / "ffmpeg_command.txt";
-  std::ofstream out{hint_path, std::ios::trunc};
-  if (!out.is_open()) {
-    return std::unexpected(
-        std::format("Unable to open hint file '{}'", hint_path.string()));
-  }
-
-  out << "ffmpeg -framerate " << fps
-      << " -i frame_%06d.ppm -c:v libx264 -pix_fmt yuv420p output.mp4\n";
-  if (!out) {
-    return std::unexpected(
-        std::format("I/O error while writing '{}'", hint_path.string()));
-  }
-  return {};
-}
-
-} // namespace javelin::detail
 
 export namespace javelin {
 
@@ -163,16 +92,6 @@ struct App final {
               scene_path.string(), config.frame_count, config.width,
               config.height, config.output_dir.string());
 
-    const auto dir_result = detail::ensure_output_dir(config.output_dir);
-    if (!dir_result) {
-      log::critical(app, "Offline render failed: {}", dir_result.error());
-    }
-    const auto hint_result = detail::write_ffmpeg_hint(
-        config.output_dir, PhysicsSystem::fixed_step_hz());
-    if (!hint_result) {
-      log::critical(app, "Offline render failed: {}", hint_result.error());
-    }
-
     platform.init(PlatformConfig{
         .width = config.width,
         .height = config.height,
@@ -197,9 +116,13 @@ struct App final {
                     extent.width, extent.height);
     }
 
-    std::vector<u8> frame_rgba(static_cast<usize>(extent.width) *
-                               static_cast<usize>(extent.height) *
-                               static_cast<usize>(4u));
+    FrameExporter exporter{};
+    if (auto r = exporter.init(config.output_dir, extent,
+                               PhysicsSystem::fixed_step_hz());
+        !r) {
+      log::critical(app, "Offline render failed: {}", r.error());
+    }
+
     const double fixed_dt =
         static_cast<double>(PhysicsSystem::fixed_step_dt_seconds());
 
@@ -208,17 +131,8 @@ struct App final {
       const double render_dt = (frame_index == 0u) ? 0.0 : fixed_dt;
       renderer.render_offline_frame(render_dt, 1.0f);
 
-      if (!renderer.readback_rgba8(frame_rgba)) {
-        log::critical(app, "Offline render failed to read back frame {}",
-                      frame_index);
-      }
-
-      const auto frame_path =
-          detail::offline_frame_path(config.output_dir, frame_index);
-      const auto write_result = detail::write_ppm_frame(
-          frame_path, extent.width, extent.height, frame_rgba);
-      if (!write_result) {
-        log::critical(app, "Offline render failed: {}", write_result.error());
+      if (auto r = exporter.capture(renderer, frame_index); !r) {
+        log::critical(app, "Offline render failed: {}", r.error());
       }
 
       const u32 completed_frames = frame_index + 1u;

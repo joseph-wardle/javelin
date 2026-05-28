@@ -3,8 +3,7 @@ export module javelin.tests.solve_contact_velocities;
 import std;
 
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.solve;
 import javelin.physics.types;
 import javelin.tests.assert;

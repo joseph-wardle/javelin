@@ -4,7 +4,7 @@ export module javelin.physics.aabb;
 
 import std;
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math;
 
 export namespace javelin {
 

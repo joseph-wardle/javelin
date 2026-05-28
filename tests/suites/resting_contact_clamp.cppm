@@ -3,7 +3,7 @@ export module javelin.tests.resting_contact_clamp;
 import std;
 
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.integrate;
 import javelin.tests.assert;
 

@@ -3,8 +3,7 @@ export module javelin.tests.sphere_sphere_contact;
 import std;
 
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.narrow_phase;
 import javelin.physics.types;
 import javelin.scene.shapes;

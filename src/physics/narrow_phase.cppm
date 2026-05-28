@@ -7,8 +7,7 @@ export module javelin.physics.narrow_phase;
 import std;
 import javelin.core.logging;
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.types;
 import javelin.scene.shapes;
 
@@ -1268,5 +1267,518 @@ void narrow_phase_contacts(std::span<const Vec3> position, std::span<const Quat>
         }
     }
 }
+
+// Total number of valid contact points across a sequence of manifolds.
+[[nodiscard]] inline u32 contact_point_count(std::span<const ContactManifold> manifolds) noexcept {
+    u32 count = 0u;
+    for (const ContactManifold &manifold : manifolds) {
+        count += manifold.point_count;
+    }
+    return count;
+}
+
+// Aggregated narrow-phase stage: owns the double-buffered manifold storage,
+// the deterministic post-build sort, and the cross-frame warm-start
+// persistence refresh.
+//
+// Lifecycle per tick:
+//   1. prepare() — assert the previous manifolds are still pair-sorted and
+//      reset next_manifolds_.
+//   2. run(view, candidate_pairs, awake_dynamic_ids) — generate next-frame
+//      manifolds via narrow_phase_contacts, sort them deterministically,
+//      refresh warm-start caches against the previous frame, then swap
+//      next_manifolds_ into manifolds_.
+//   3. manifolds() — read or mutate the current-frame manifolds.  The contact
+//      solver mutates them (accumulates impulses) which will then become the
+//      previous-frame state for next tick.
+//
+// All cross-frame point matching is deterministic and falls back through
+// feature-id, local-anchor, then ordered-float key tie-breakers.
+struct NarrowPhaseStage final {
+    struct RunStats final {
+        u32 manifold_count{};
+        u32 contact_point_count{};
+        u32 previous_point_count{};
+        u32 next_point_count{};
+        u32 matched_point_count{};
+        u32 dropped_point_count{};
+        u32 axis_flip_count{};
+        u32 cache_invalidation_count{};
+    };
+
+    static constexpr u32 kManifoldReserveFactor = 4u;
+    // Persistence thresholds in world-space meters.
+    static constexpr f32 kAnchorThreshold = 0.03f;
+    static constexpr f32 kAnchorThresholdSq = kAnchorThreshold * kAnchorThreshold;
+    static constexpr f32 kNormalBreakThreshold = 0.015f;
+    static constexpr f32 kTangentialDriftBreakThreshold = 0.025f;
+    static constexpr f32 kTangentialDriftBreakThresholdSq =
+        kTangentialDriftBreakThreshold * kTangentialDriftBreakThreshold;
+    static constexpr f32 kMatchEps = 1e-6f;
+    // If manifold normal rotates too much between frames, drop warm-start
+    // impulses for that manifold to avoid injecting stale impulses.
+    static constexpr f32 kNormalSimilarityThreshold = 0.98f;
+    // Feature-id tag bits (mirror narrow_phase::detail).
+    static constexpr u32 kBoxAxisFeatureTag = 1u << 10u;
+    static constexpr u32 kBoxFaceFaceFeatureTag = 1u << 13u;
+
+    void reserve(const u32 body_count) {
+        const usize manifold_reserve = static_cast<usize>(body_count) * kManifoldReserveFactor;
+        if (manifold_reserve > manifolds_.capacity()) {
+            manifolds_.reserve(manifold_reserve);
+            next_manifolds_.reserve(manifold_reserve);
+        }
+        update_reserve_hint_(manifolds_.capacity(), reserve_hint_);
+    }
+
+    void clear() noexcept {
+        manifolds_.clear();
+        next_manifolds_.clear();
+    }
+
+    void prepare() {
+        ZoneScopedN("Physics prepare previous manifolds");
+        next_manifolds_.clear();
+#ifndef NDEBUG
+        for (u32 i = 1; i < manifolds_.size(); ++i) {
+            const ContactManifold &prev = manifolds_[i - 1u];
+            const ContactManifold &curr = manifolds_[i];
+            if (pair_less_(curr, prev)) {
+                log::error(physics,
+                           "Previous manifolds are not pair-sorted (index={} prev=({}, {}) curr=({}, {}))",
+                           i, prev.a, prev.b, curr.a, curr.b);
+                std::terminate();
+            }
+            if (!pair_less_(prev, curr) && !pair_less_(curr, prev)) {
+                log::error(physics, "Duplicate previous manifold pair (index={} pair=({}, {}))", i, curr.a, curr.b);
+                std::terminate();
+            }
+        }
+#endif
+    }
+
+    [[nodiscard]] RunStats run(std::span<const Vec3> position, std::span<const Quat> orientation,
+                               std::span<const ShapeKind> shape_kind, std::span<const ShapeData> shapes,
+                               std::span<const u32> shape_index, std::span<const f32> inv_mass,
+                               std::span<const BodyPair> pairs, std::span<const u32> awake_dynamic_ids) {
+        narrow_phase_contacts(position, orientation, shape_kind, shapes, shape_index, inv_mass, pairs,
+                              std::span<const ContactManifold>{manifolds_}, awake_dynamic_ids, next_manifolds_);
+        sort_manifold_points_all_(next_manifolds_);
+        sort_manifolds_(next_manifolds_);
+        const RunStats refresh_stats = refresh_manifold_persistence_(position, orientation);
+        manifolds_.swap(next_manifolds_);
+        RunStats stats = refresh_stats;
+        stats.manifold_count = static_cast<u32>(manifolds_.size());
+        stats.contact_point_count = contact_point_count(std::span<const ContactManifold>{manifolds_});
+        update_reserve_hint_(stats.manifold_count, reserve_hint_);
+        return stats;
+    }
+
+    [[nodiscard]] std::span<const ContactManifold> manifolds() const noexcept {
+        return std::span<const ContactManifold>{manifolds_};
+    }
+    [[nodiscard]] std::span<ContactManifold> manifolds() noexcept { return std::span<ContactManifold>{manifolds_}; }
+    [[nodiscard]] usize manifold_capacity() const noexcept { return manifolds_.capacity(); }
+
+  private:
+    struct BoxAxisKey final {
+        u8 type{};
+        u8 i{};
+        u8 j{};
+    };
+
+    [[nodiscard]] static usize grown_capacity_(const usize current_capacity, const usize required_capacity) noexcept {
+        if (required_capacity <= current_capacity) {
+            return current_capacity;
+        }
+        const usize base = std::max<usize>(current_capacity, 64u);
+        const usize grown = base + base / 2u;
+        return std::max(grown, required_capacity);
+    }
+
+    static void update_reserve_hint_(const usize observed_size, usize &reserve_hint) noexcept {
+        if (observed_size <= reserve_hint) {
+            return;
+        }
+        reserve_hint = grown_capacity_(reserve_hint, observed_size);
+    }
+
+    [[nodiscard]] static bool pair_less_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        return lhs.b < rhs.b;
+    }
+
+    [[nodiscard]] static bool pair_equal_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
+        return lhs.a == rhs.a && lhs.b == rhs.b;
+    }
+
+    [[nodiscard]] static bool manifold_less_(const ContactManifold &lhs, const ContactManifold &rhs) noexcept {
+        if (lhs.a != rhs.a) {
+            return lhs.a < rhs.a;
+        }
+        if (lhs.b != rhs.b) {
+            return lhs.b < rhs.b;
+        }
+        if (lhs.manifold_feature_id != rhs.manifold_feature_id) {
+            return lhs.manifold_feature_id < rhs.manifold_feature_id;
+        }
+        if (lhs.point_count != rhs.point_count) {
+            return lhs.point_count < rhs.point_count;
+        }
+        const u32 point_count = std::min(lhs.point_count, rhs.point_count);
+        for (u32 i = 0; i < point_count; ++i) {
+            const u32 lhs_feature = lhs.points[i].feature_id;
+            const u32 rhs_feature = rhs.points[i].feature_id;
+            if (lhs_feature != rhs_feature) {
+                return lhs_feature < rhs_feature;
+            }
+        }
+        const u32 lhs_nx = ordered_float_key(lhs.normal.x);
+        const u32 rhs_nx = ordered_float_key(rhs.normal.x);
+        if (lhs_nx != rhs_nx) {
+            return lhs_nx < rhs_nx;
+        }
+        const u32 lhs_ny = ordered_float_key(lhs.normal.y);
+        const u32 rhs_ny = ordered_float_key(rhs.normal.y);
+        if (lhs_ny != rhs_ny) {
+            return lhs_ny < rhs_ny;
+        }
+        const u32 lhs_nz = ordered_float_key(lhs.normal.z);
+        const u32 rhs_nz = ordered_float_key(rhs.normal.z);
+        if (lhs_nz != rhs_nz) {
+            return lhs_nz < rhs_nz;
+        }
+        return false;
+    }
+
+    static void sort_manifold_points_all_(std::vector<ContactManifold> &manifolds) {
+        ZoneScopedN("Physics sort manifold points");
+        for (ContactManifold &manifold : manifolds) {
+            sort_manifold_points(manifold);
+        }
+    }
+
+    static void sort_manifolds_(std::vector<ContactManifold> &manifolds) {
+        ZoneScopedN("Physics sort manifolds");
+        if (manifolds.size() <= 1u) {
+            return;
+        }
+        std::sort(manifolds.begin(), manifolds.end(), manifold_less_);
+    }
+
+    [[nodiscard]] static bool decode_box_axis_feature_id_(const u32 feature_id, BoxAxisKey &out) noexcept {
+        if ((feature_id & kBoxAxisFeatureTag) == 0u) {
+            return false;
+        }
+        if ((feature_id & kBoxFaceFaceFeatureTag) != 0u) {
+            return false;
+        }
+        const u32 type = feature_id & 0x3u;
+        if (type > 2u) {
+            return false;
+        }
+        out.type = static_cast<u8>(type);
+        out.i = static_cast<u8>((feature_id >> 2u) & 0x3u);
+        out.j = static_cast<u8>((feature_id >> 4u) & 0x3u);
+        return true;
+    }
+
+    [[nodiscard]] static bool axis_flipped_(const ContactManifold &previous_manifold,
+                                            const ContactManifold &next_manifold) noexcept {
+        if (previous_manifold.point_count == 0u || next_manifold.point_count == 0u) {
+            return false;
+        }
+        BoxAxisKey previous_axis{};
+        BoxAxisKey next_axis{};
+        if (!decode_box_axis_feature_id_(previous_manifold.manifold_feature_id, previous_axis) ||
+            !decode_box_axis_feature_id_(next_manifold.manifold_feature_id, next_axis)) {
+            return false;
+        }
+        return previous_axis.type != next_axis.type || previous_axis.i != next_axis.i ||
+               previous_axis.j != next_axis.j;
+    }
+
+    [[nodiscard]] static bool normal_changed_(const ContactManifold &previous_manifold,
+                                              const ContactManifold &next_manifold) noexcept {
+        if (previous_manifold.point_count == 0u || next_manifold.point_count == 0u) {
+            return true;
+        }
+        Vec3 previous_normal = previous_manifold.normal;
+        Vec3 next_normal = next_manifold.normal;
+        if (!previous_normal.try_normalize() || !next_normal.try_normalize()) {
+            return true;
+        }
+        return dot(previous_normal, next_normal) < kNormalSimilarityThreshold;
+    }
+
+    [[nodiscard]] static f32 local_anchor_match_distance_sq_(const ContactPoint &lhs, const ContactPoint &rhs,
+                                                             const bool manifold_has_body_b) noexcept {
+        const f32 anchor_delta_a_sq = (lhs.local_anchor_a - rhs.local_anchor_a).length_sq();
+        if (!manifold_has_body_b) {
+            return anchor_delta_a_sq;
+        }
+        const f32 anchor_delta_b_sq = (lhs.local_anchor_b - rhs.local_anchor_b).length_sq();
+        return std::max(anchor_delta_a_sq, anchor_delta_b_sq);
+    }
+
+    static void reset_point_cache_(ContactPoint &point) noexcept {
+        point.normal_impulse = 0.0f;
+        point.tangent_impulse = Vec3{};
+        point.persisted = false;
+    }
+
+    static void copy_point_cache_(ContactPoint &dst, const ContactPoint &src) noexcept {
+        dst.normal_impulse = src.normal_impulse;
+        dst.tangent_impulse = src.tangent_impulse;
+        dst.persisted = true;
+    }
+
+    static void reset_manifold_point_cache_(ContactManifold &manifold) noexcept {
+        for (u32 i = 0; i < manifold.point_count; ++i) {
+            reset_point_cache_(manifold.points[i]);
+        }
+    }
+
+    [[nodiscard]] bool should_drop_persisted_point_(std::span<const Vec3> position, std::span<const Quat> orientation,
+                                                    const ContactManifold &manifold, const ContactPoint &next_point,
+                                                    const ContactPoint &previous_point) const noexcept {
+        const u32 a = manifold.a;
+        const Vec3 world_a_previous = position[a] + rotate(orientation[a], previous_point.local_anchor_a);
+        const Vec3 world_a_next = position[a] + rotate(orientation[a], next_point.local_anchor_a);
+
+        f32 normal_separation = 0.0f;
+        f32 normal_drift = 0.0f;
+        Vec3 tangential_delta{};
+        if (manifold.b != kInvalidBody) {
+            const u32 b = manifold.b;
+            const Vec3 world_b_previous = position[b] + rotate(orientation[b], previous_point.local_anchor_b);
+            const Vec3 world_b_next = position[b] + rotate(orientation[b], next_point.local_anchor_b);
+            const Vec3 delta_previous = world_b_previous - world_a_previous;
+            const Vec3 delta_next = world_b_next - world_a_next;
+
+            const f32 normal_previous = dot(delta_previous, manifold.normal);
+            const f32 normal_next = dot(delta_next, manifold.normal);
+            normal_separation = normal_next;
+            normal_drift = std::fabs(normal_next - normal_previous);
+
+            const Vec3 tangential_previous = delta_previous - manifold.normal * normal_previous;
+            const Vec3 tangential_next = delta_next - manifold.normal * normal_next;
+            tangential_delta = tangential_next - tangential_previous;
+        } else {
+            const Vec3 delta = world_a_previous - world_a_next;
+            const f32 normal_component = dot(delta, manifold.normal);
+            normal_separation = std::fabs(normal_component);
+            normal_drift = std::fabs(normal_component);
+            tangential_delta = delta - manifold.normal * normal_component;
+        }
+
+        const bool normal_break_exceeded = normal_separation > kNormalBreakThreshold;
+        const bool normal_drift_exceeded = normal_drift > kNormalBreakThreshold;
+        const bool tangential_drift_exceeded = tangential_delta.length_sq() > kTangentialDriftBreakThresholdSq;
+        return normal_break_exceeded || normal_drift_exceeded || tangential_drift_exceeded;
+    }
+
+    void match_and_transfer_point_cache_(std::span<const Vec3> position, std::span<const Quat> orientation,
+                                          ContactManifold &next_manifold,
+                                          const ContactManifold &previous_manifold) const {
+#ifndef NDEBUG
+        if (next_manifold.point_count > kMaxManifoldPoints || previous_manifold.point_count > kMaxManifoldPoints) {
+            log::error(physics,
+                       "Invalid manifold point_count during persistence refresh (next={} previous={})",
+                       next_manifold.point_count, previous_manifold.point_count);
+            std::terminate();
+        }
+#endif
+        const u32 next_point_count = next_manifold.point_count;
+        const u32 previous_point_count = previous_manifold.point_count;
+        const bool manifold_has_body_b = next_manifold.b != kInvalidBody;
+        u8 previous_used_mask = 0u;
+        const u8 all_previous_used_mask = static_cast<u8>((1u << previous_point_count) - 1u);
+
+        for (u32 i = 0; i < next_point_count; ++i) {
+            reset_point_cache_(next_manifold.points[i]);
+        }
+
+        // Match order is deterministic: feature id pass first, then local-anchor fallback.
+        auto try_match_point = [&](const u32 next_index, const bool match_feature_first) {
+            ContactPoint &next_point = next_manifold.points[next_index];
+            const u32 next_feature_id = next_point.feature_id;
+            if (match_feature_first && next_feature_id == kInvalidContactFeature) {
+                return false;
+            }
+
+            u32 best_previous = kMaxManifoldPoints;
+            f32 best_metric = std::numeric_limits<f32>::infinity();
+            for (u32 previous_index = 0; previous_index < previous_point_count; ++previous_index) {
+                const u8 previous_bit = static_cast<u8>(1u << previous_index);
+                if ((previous_used_mask & previous_bit) != 0u) {
+                    continue;
+                }
+                const ContactPoint &previous_point = previous_manifold.points[previous_index];
+                if (match_feature_first && previous_point.feature_id != next_feature_id) {
+                    continue;
+                }
+
+                const f32 metric = local_anchor_match_distance_sq_(next_point, previous_point, manifold_has_body_b);
+                if (metric > kAnchorThresholdSq) {
+                    continue;
+                }
+
+                const bool better = metric < best_metric - kMatchEps ||
+                                    (std::fabs(metric - best_metric) <= kMatchEps && previous_index < best_previous);
+                if (better) {
+                    best_metric = metric;
+                    best_previous = previous_index;
+                }
+            }
+
+            if (best_previous == kMaxManifoldPoints) {
+                return false;
+            }
+            const ContactPoint &previous_point = previous_manifold.points[best_previous];
+            if (should_drop_persisted_point_(position, orientation, next_manifold, next_point, previous_point)) {
+                return false;
+            }
+
+            copy_point_cache_(next_point, previous_point);
+            previous_used_mask |= static_cast<u8>(1u << best_previous);
+            return true;
+        };
+
+        for (u32 i = 0; i < next_point_count; ++i) {
+            if (previous_used_mask == all_previous_used_mask) {
+                return;
+            }
+            static_cast<void>(try_match_point(i, true));
+        }
+        for (u32 i = 0; i < next_point_count; ++i) {
+            if (previous_used_mask == all_previous_used_mask) {
+                return;
+            }
+            if (next_manifold.points[i].persisted) {
+                continue;
+            }
+            static_cast<void>(try_match_point(i, false));
+        }
+    }
+
+    // Refreshes per-point warm-start caches by matching next_manifolds_ against
+    // manifolds_.  Matching order is deterministic; stats are returned for
+    // diagnostics.
+    [[nodiscard]] RunStats refresh_manifold_persistence_(std::span<const Vec3> position,
+                                                          std::span<const Quat> orientation) {
+        ZoneScopedN("Physics refresh manifold persistence");
+        RunStats stats{
+            .previous_point_count = contact_point_count(std::span<const ContactManifold>{manifolds_}),
+        };
+        const u32 previous_count = static_cast<u32>(manifolds_.size());
+        const u32 next_count = static_cast<u32>(next_manifolds_.size());
+        auto reset_unmatched_next_range = [&](const u32 begin, const u32 end) {
+            for (u32 i = begin; i < end; ++i) {
+                ContactManifold &next_manifold = next_manifolds_[i];
+                stats.next_point_count += next_manifold.point_count;
+                reset_manifold_point_cache_(next_manifold);
+            }
+        };
+#ifndef NDEBUG
+        for (u32 i = 1; i < next_count; ++i) {
+            const ContactManifold &prev = next_manifolds_[i - 1u];
+            const ContactManifold &curr = next_manifolds_[i];
+            if (pair_less_(curr, prev)) {
+                log::error(physics,
+                           "Next manifolds are not pair-sorted (index={} prev=({}, {}) curr=({}, {}))",
+                           i, prev.a, prev.b, curr.a, curr.b);
+                std::terminate();
+            }
+            if (pair_equal_(curr, prev)) {
+                log::error(physics, "Duplicate next manifold pair (index={} pair=({}, {}))", i, curr.a, curr.b);
+                std::terminate();
+            }
+        }
+#endif
+        if (next_count == 0u) {
+            return stats;
+        }
+        if (previous_count == 0u) {
+            reset_unmatched_next_range(0u, next_count);
+            return stats;
+        }
+
+        const ContactManifold &previous_first = manifolds_.front();
+        const ContactManifold &previous_last = manifolds_.back();
+        const ContactManifold &next_first = next_manifolds_.front();
+        const ContactManifold &next_last = next_manifolds_.back();
+        const bool disjoint_pair_ranges =
+            pair_less_(previous_last, next_first) || pair_less_(next_last, previous_first);
+        if (disjoint_pair_ranges) {
+            reset_unmatched_next_range(0u, next_count);
+            return stats;
+        }
+
+        u32 next_index = static_cast<u32>(
+            std::lower_bound(next_manifolds_.begin(), next_manifolds_.end(), previous_first, pair_less_) -
+            next_manifolds_.begin());
+        reset_unmatched_next_range(0u, next_index);
+        if (next_index >= next_count) {
+            return stats;
+        }
+
+        u32 previous_index = static_cast<u32>(
+            std::lower_bound(manifolds_.begin(), manifolds_.end(), next_manifolds_[next_index], pair_less_) -
+            manifolds_.begin());
+        while (next_index < next_count && previous_index < previous_count) {
+            ContactManifold &next_manifold = next_manifolds_[next_index];
+            const ContactManifold &previous_manifold = manifolds_[previous_index];
+
+            if (pair_less_(previous_manifold, next_manifold)) {
+                ++previous_index;
+                continue;
+            }
+            stats.next_point_count += next_manifold.point_count;
+            if (pair_less_(next_manifold, previous_manifold)) {
+                reset_manifold_point_cache_(next_manifold);
+                ++next_index;
+                continue;
+            }
+#ifndef NDEBUG
+            if (!pair_equal_(previous_manifold, next_manifold)) {
+                log::error(physics,
+                           "Manifold pair mismatch during persistence refresh (next=({}, {}) previous=({}, {}))",
+                           next_manifold.a, next_manifold.b, previous_manifold.a, previous_manifold.b);
+                std::terminate();
+            }
+#endif
+            const bool axis_flipped = axis_flipped_(previous_manifold, next_manifold);
+            if (axis_flipped) {
+                ++stats.axis_flip_count;
+            }
+            if (axis_flipped || normal_changed_(previous_manifold, next_manifold)) {
+                reset_manifold_point_cache_(next_manifold);
+                ++stats.cache_invalidation_count;
+                ++previous_index;
+                ++next_index;
+                continue;
+            }
+            match_and_transfer_point_cache_(position, orientation, next_manifold, previous_manifold);
+            for (u32 i = 0; i < next_manifold.point_count; ++i) {
+                stats.matched_point_count += next_manifold.points[i].persisted ? 1u : 0u;
+            }
+            ++previous_index;
+            ++next_index;
+        }
+        reset_unmatched_next_range(next_index, next_count);
+        stats.dropped_point_count =
+            (stats.previous_point_count > stats.matched_point_count)
+                ? (stats.previous_point_count - stats.matched_point_count)
+                : 0u;
+        return stats;
+    }
+
+    std::vector<ContactManifold> manifolds_{};
+    std::vector<ContactManifold> next_manifolds_{};
+    usize reserve_hint_{0};
+};
 
 } // namespace javelin

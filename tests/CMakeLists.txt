@@ -14,6 +14,8 @@ target_sources(javelin_physics_tests
             suites/box_box_sat.cppm
             suites/solve_contact_velocities.cppm
             suites/resting_contact_clamp.cppm
+            suites/narrow_phase_stage_persistence.cppm
+            suites/island_manager_wake.cppm
 )
 target_link_libraries(javelin_physics_tests PRIVATE javelin::javelin)
 
@@ -21,3 +23,5 @@ add_test(NAME sphere_sphere_contact COMMAND javelin_physics_tests sphere_sphere_
 add_test(NAME box_box_sat COMMAND javelin_physics_tests box_box_sat)
 add_test(NAME solve_contact_velocities COMMAND javelin_physics_tests solve_contact_velocities)
 add_test(NAME resting_contact_clamp COMMAND javelin_physics_tests resting_contact_clamp)
+add_test(NAME narrow_phase_stage_persistence COMMAND javelin_physics_tests narrow_phase_stage_persistence)
+add_test(NAME island_manager_chain_and_wake COMMAND javelin_physics_tests island_manager_chain_and_wake)

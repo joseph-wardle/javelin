@@ -6,8 +6,7 @@ export module javelin.physics.publish;
 
 import std;
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.scene.pose_channel;
 
 export namespace javelin {

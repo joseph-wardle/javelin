@@ -7,8 +7,7 @@ export module javelin.physics.solve;
 import std;
 import javelin.core.logging;
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.constraint_types;
 import javelin.physics.types;
 

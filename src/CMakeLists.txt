@@ -16,6 +16,7 @@ target_sources(javelin
             core/time.cppm
             core/types.cppm
             math/constants.cppm
+            math/math.cppm
             math/mat3.cppm
             math/mat4.cppm
             math/quat.cppm
@@ -24,21 +25,28 @@ target_sources(javelin
             math/vec4.cppm
             physics/aabb.cppm
             physics/aabb_debug.cppm
+            physics/body_partition.cppm
+            physics/bounds_builder.cppm
             physics/bvh_dynamic.cppm
             physics/bvh_static.cppm
             physics/broad_phase.cppm
             physics/contact_debug.cppm
             physics/constraint_types.cppm
+            physics/debug_publisher.cppm
             physics/integrate.cppm
+            physics/island_manager.cppm
             physics/narrow_phase.cppm
             physics/publish.cppm
             physics/solver.cppm
             physics/physics_system.cppm
+            physics/tick_pipeline.cppm
             physics/types.cppm
             platform/input.cppm
             platform/platform.cppm
-            platform/window.cppm
+            render/camera_controller.cppm
+            render/camera_manager.cppm
             render/fly_camera.cppm
+            render/frame_exporter.cppm
             render/orbit_camera.cppm
             render/color.cppm
             render/pipeline.cppm
@@ -46,24 +54,32 @@ target_sources(javelin
             render/render_device.cppm
             render/render_targets.cppm
             render/render_system.cppm
+            render/shader_utils.cppm
             render/types.cppm
+            render/ui_panels.cppm
             render/passes/geometry_pass.cppm
             render/passes/aabb_debug_pass.cppm
             render/passes/contact_debug_pass.cppm
             render/passes/constraint_debug_pass.cppm
+            render/passes/line_overlay_pass.cppm
             render/passes/velocity_debug_pass.cppm
             render/passes/sleep_debug_pass.cppm
             render/passes/display_pass.cppm
             render/passes/world_grid_pass.cppm
+            scene/bodies.cppm
             scene/camera.cppm
             scene/entity.cppm
             scene/physics_materials.cppm
-            scene/physics_view.cppm
             scene/pose_channel.cppm
-            scene/render_view.cppm
             scene/scene.cppm
             scene/scene_file.cppm
             scene/shapes.cppm
+)
+
+# Module implementation units (not module interface units, so they go in
+# normal target_sources, not the CXX_MODULES file set).
+target_sources(javelin PRIVATE
+    scene/scene_builder.cpp
 )
 
 

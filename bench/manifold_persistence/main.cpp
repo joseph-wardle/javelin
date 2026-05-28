@@ -5,8 +5,7 @@ import javelin.bench.stats;
 import javelin.bench.timer;
 import javelin.core.time;
 import javelin.core.types;
-import javelin.math.quat;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.physics.types;
 
 using namespace javelin;

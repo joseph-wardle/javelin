@@ -39,72 +39,67 @@ void validate_fbo(const char *label) noexcept {
 
 export namespace javelin {
 
-struct RenderTargets final {
-    Extent2D extent{};
-
-    // Main scene target (linear color + depth)
-    FboHandle scene_fbo{};
-    TextureHandle scene_color{};
-    TextureHandle scene_depth{};
-
-    // Post ping-pong (for bloom/SSAO later)
-    FboHandle ping_fbo{};
-    TextureHandle ping_color{};
-    FboHandle pong_fbo{};
-    TextureHandle pong_color{};
-
+class RenderTargets final {
+  public:
     void init();
-    void resize(Extent2D extent);
+    void resize(Extent2D new_extent);
     void shutdown();
+
+    [[nodiscard]] Extent2D extent() const noexcept { return extent_; }
+    [[nodiscard]] bool ready() const noexcept { return scene_fbo_ != 0 && extent_.is_valid(); }
+
+    void bind_for_drawing() const noexcept { glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo_); }
+
+    void bind_color_for_sampling(const u32 texture_unit) const noexcept {
+        glActiveTexture(GL_TEXTURE0 + texture_unit);
+        glBindTexture(GL_TEXTURE_2D, scene_color_);
+    }
+
+    void blit_color_to_default() const noexcept {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, scene_fbo_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glViewport(0, 0, extent_.width, extent_.height);
+        glBlitFramebuffer(0, 0, extent_.width, extent_.height, 0, 0, extent_.width, extent_.height,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    }
+
+  private:
+    Extent2D extent_{};
+    FboHandle scene_fbo_{};
+    TextureHandle scene_color_{};
+    TextureHandle scene_depth_{};
 };
 
 void RenderTargets::init() {
     ZoneScopedN("RenderTargets init");
     log::info(render, "Initializing render targets");
-    glGenFramebuffers(1, &scene_fbo);
-    glGenTextures(1, &scene_color);
-    glGenTextures(1, &scene_depth);
-
-    glGenFramebuffers(1, &ping_fbo);
-    glGenTextures(1, &ping_color);
-    glGenFramebuffers(1, &pong_fbo);
-    glGenTextures(1, &pong_color);
+    glGenFramebuffers(1, &scene_fbo_);
+    glGenTextures(1, &scene_color_);
+    glGenTextures(1, &scene_depth_);
 }
 
 void RenderTargets::resize(const Extent2D new_extent) {
     if (!new_extent.is_valid()) {
-        extent = new_extent;
+        extent_ = new_extent;
         return;
     }
-    if (extent.width == new_extent.width && extent.height == new_extent.height) {
+    if (extent_.width == new_extent.width && extent_.height == new_extent.height) {
         return;
     }
 
     ZoneScopedN("RenderTargets resize");
-    extent = new_extent;
-    log::info(render, "Render targets resized to {}x{}", extent.width, extent.height);
+    extent_ = new_extent;
+    log::info(render, "Render targets resized to {}x{}", extent_.width, extent_.height);
 
-    detail::setup_color_target(scene_color, extent);
-    detail::setup_depth_target(scene_depth, extent);
+    detail::setup_color_target(scene_color_, extent_);
+    detail::setup_depth_target(scene_depth_, extent_);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, scene_color, 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, scene_depth, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, scene_fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, scene_color_, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, scene_depth_, 0);
     const GLenum scene_attachments[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(1, scene_attachments);
     detail::validate_fbo("scene");
-
-    detail::setup_color_target(ping_color, extent);
-    glBindFramebuffer(GL_FRAMEBUFFER, ping_fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ping_color, 0);
-    glDrawBuffers(1, scene_attachments);
-    detail::validate_fbo("ping");
-
-    detail::setup_color_target(pong_color, extent);
-    glBindFramebuffer(GL_FRAMEBUFFER, pong_fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pong_color, 0);
-    glDrawBuffers(1, scene_attachments);
-    detail::validate_fbo("pong");
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -113,37 +108,20 @@ void RenderTargets::resize(const Extent2D new_extent) {
 void RenderTargets::shutdown() {
     ZoneScopedN("RenderTargets shutdown");
     log::info(render, "Render targets shutdown");
-    if (scene_fbo != 0) {
-        glDeleteFramebuffers(1, &scene_fbo);
-        scene_fbo = 0;
+    if (scene_fbo_ != 0) {
+        glDeleteFramebuffers(1, &scene_fbo_);
+        scene_fbo_ = 0;
     }
-    if (ping_fbo != 0) {
-        glDeleteFramebuffers(1, &ping_fbo);
-        ping_fbo = 0;
+    if (scene_color_ != 0) {
+        glDeleteTextures(1, &scene_color_);
+        scene_color_ = 0;
     }
-    if (pong_fbo != 0) {
-        glDeleteFramebuffers(1, &pong_fbo);
-        pong_fbo = 0;
-    }
-
-    if (scene_color != 0) {
-        glDeleteTextures(1, &scene_color);
-        scene_color = 0;
-    }
-    if (scene_depth != 0) {
-        glDeleteTextures(1, &scene_depth);
-        scene_depth = 0;
-    }
-    if (ping_color != 0) {
-        glDeleteTextures(1, &ping_color);
-        ping_color = 0;
-    }
-    if (pong_color != 0) {
-        glDeleteTextures(1, &pong_color);
-        pong_color = 0;
+    if (scene_depth_ != 0) {
+        glDeleteTextures(1, &scene_depth_);
+        scene_depth_ = 0;
     }
 
-    extent = {};
+    extent_ = {};
 }
 
 } // namespace javelin

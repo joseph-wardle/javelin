@@ -1,7 +1,7 @@
 export module javelin.platform.input;
 
 import javelin.core.types;
-import javelin.math.vec2;
+import javelin.math;
 
 export namespace javelin {
 

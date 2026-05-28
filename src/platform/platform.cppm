@@ -6,9 +6,14 @@ export module javelin.platform;
 import javelin.core.logging;
 import javelin.core.types;
 export import javelin.platform.input;
-export import javelin.platform.window;
 
 export namespace javelin {
+
+struct WindowHandle final {
+    GLFWwindow *native{};
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return native != nullptr; }
+};
 
 struct PlatformConfig final {
   i32 width{1280};

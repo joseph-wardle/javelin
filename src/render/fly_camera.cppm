@@ -3,13 +3,12 @@ export module javelin.render.fly_camera;
 import std;
 
 import javelin.core.types;
-import javelin.math.vec3;
+import javelin.math;
 import javelin.platform.input;
+import javelin.render.camera_controller;
 import javelin.scene.camera;
 
 export namespace javelin {
-
-enum struct CursorMode : u8 { normal, captured };
 
 struct FlyCameraTuning final {
     f32 mouse_sensitivity{0.0025f}; // rad per pixel-ish
@@ -22,14 +21,14 @@ struct FlyCameraTuning final {
     f32 pitch_limit{1.55334f}; // ~89 degrees
 };
 
-struct FlyCameraController final {
+struct FlyCameraController final : CameraController {
     FlyCameraTuning tuning{};
     f32 speed{tuning.base_speed};
 
     // Avoid a giant mouse delta the first frame you capture.
     bool ignore_next_mouse_delta{true};
 
-    [[nodiscard]] CursorMode update(CameraState &camera, const InputFrame &in, f32 dt_seconds) noexcept;
+    [[nodiscard]] CursorMode update(CameraState &camera, const InputFrame &in, f32 dt_seconds) noexcept override;
 };
 
 CursorMode FlyCameraController::update(CameraState &camera, const InputFrame &in, f32 dt_seconds) noexcept {
